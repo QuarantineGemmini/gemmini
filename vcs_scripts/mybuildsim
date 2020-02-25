@@ -1,0 +1,43 @@
+#!/bin/bash
+
+set -euo pipefail
+
+#=============================================================================
+# setup notes
+#=============================================================================
+# this builds either the fast or debug vcs simulator (doesn't run it tho)
+
+#DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+DIR="$(dirname "${BASH_SOURCE[0]}")"
+source "$DIR/../../sourceme.sh"
+
+# from lab2
+#CONFIG_FAST=GemminiEE290Lab2RocketConfig
+#CONFIG_SLOW=GemminiEE290Lab2RocketConfig
+#CONFIG_SPAD=GemminiEE290Lab2BigSPRocketConfig
+CONFIG_BASE=GemminiEE290Lab3RocketConfig
+
+BIN_BASE="$DIR/simv-example-${CONFIG_BASE}"
+
+#=============================================================================
+# subroutines
+#=============================================================================
+err() { echo "[ERROR]: $@"; exit 1; }
+info() { echo "[INFO]: $@"; }
+
+#=============================================================================
+# configuration
+#=============================================================================
+cd "$DIR"
+
+if [ $# -ne 1 ] ; then err "usage: $0 <base>" ; fi
+case $1 in
+  base) 
+    rm -f "$BIN_BASE"
+    make CONFIG=$CONFIG_BASE
+    info "finished building $CONFIG_BASE"
+    ;;
+  *) 
+    err "invalid option: $1"
+    ;;
+esac

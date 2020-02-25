@@ -1,0 +1,137 @@
+#!/bin/bash
+
+set -euo pipefail
+
+#=============================================================================
+# setup notes
+#=============================================================================
+# before running, do the following in order:
+#  1) build the simulator with the `buildsim` command
+#  2) build the workloads in the gemmini/software/gemmini-rocc-tests dir
+
+# 1) which test to run (or multiple)
+# 2) use debug compile or fast compile
+# 3) use mesh-ucli, or some other ucli
+
+#DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+DIR="$(dirname "${BASH_SOURCE[0]}")"
+source "$DIR/../../sourceme.sh"
+
+#=============================================================================
+# configuration options
+#=============================================================================
+LOGDIR="$DIR/logs"
+
+ORIG_WORKLOADS="$DIR/../../generators/gemmini/software/gemmini-rocc-tests/build/ee290-orig"
+NEW_WORKLOADS="$DIR/../../generators/gemmini/software/gemmini-rocc-tests/build/ee290"
+
+CONFIG_BASE=GemminiEE290Lab3RocketConfig
+BIN_BASE="$DIR/simv-example-${CONFIG_BASE}"
+
+UCLI_SCH="$LOGDIR/ucli_sch.tcl"
+
+TEST_1=large_matmul_without_cpu
+TEST_2=very_large_matmul
+TEST_3=cifar_quant
+
+#=============================================================================
+# defaults
+#=============================================================================
+WORKLOADS="$NEW_WORKLOADS"
+LOG_WORKLOAD="new"
+
+SIM_TYPE="vcs"
+
+BIN="$BIN_BASE"
+UCLI=""
+
+#=============================================================================
+# subroutines
+#=============================================================================
+err() { echo "[ERROR]: $@"; exit 1; }
+info() { echo "[INFO]: $@"; }
+
+display_usage() {
+  cat <<EOF
+
+  myrunsim [options] <num1> [options] [<num2> ...]
+  --------
+  Utility to run simulators with different workloads. By default, it runs
+  the base rtl model on vcs simulator. Workload numbers are:
+    1: $TEST_1 
+    2: $TEST_2 
+    3: $TEST_3 
+    
+  options
+  -------
+  -spike      --> run spike simulator instead of vcs (no ucli is used)
+  -orig       --> run the original, unmodified benchmarks 
+  -ucli_sch   --> generates a vcd strictly for schematic viewing in DVE
+  -h|help     --> display this help
+
+EOF
+  exit 1
+}
+
+create_uclis() {
+  local testname="${1}"
+  cat >>"$UCLI_SCH" <<EOF
+dump -file "$LOGDIR/${1}-ucli_sch.vpd"
+run
+EOF
+}
+
+runsim() {
+  local testname="${LOG_WORKLOAD}__${SIM_TYPE}__${1}"
+  local logfile="$LOGDIR/${testname}.log"
+  local starttime=$SECONDS
+
+  info "$testname started"
+  #------------------------
+  if [ "$SIM_TYPE" == "vcs" ] ; then
+    if [ -n "$UCLI" ] ; then 
+      create_uclis "$testname"
+    fi
+    $BIN "$WORKLOADS/${1}-baremetal" $UCLI &> "$logfile"
+    stty echo
+  elif [ "$SIM_TYPE" == "spike" ] ; then
+    spike --extension=gemmini "$WORKLOADS/${1}-baremetal" &> "$logfile"
+  else 
+    err "invalid SIM_TYPE: $SIM_TYPE"
+  fi
+  #------------------------
+  totaltime=$(( $SECONDS-$starttime ))
+  if grep FAIL "$logfile" ; then 
+    err "$testname failed!"; 
+  fi
+  info "$testname succeeded in $totaltime seconds"
+}
+
+#=============================================================================
+# run
+#=============================================================================
+
+if [ ! -d "$LOGDIR" ] ; then mkdir "$LOGDIR" ; fi
+#rm -f "$LOGDIR"/*
+
+if [ $# -eq 0 ] ; then display_usage; fi
+
+while [ $# -ne 0 ] ; do
+  arg=$1; shift;
+  case $arg in
+    -spike) 
+      SIM_TYPE="spike"
+      ;;
+    -orig) 
+      WORKLOADS="$ORIG_WORKLOADS" 
+      LOG_WORKLOAD="orig"
+      ;;
+    -ucli_sch)  
+      UCLI="-ucli -i $UCLI_SCH"
+      ;;
+    1) runsim $TEST_1 ;;
+    2) runsim $TEST_2 ;;
+    3) runsim $TEST_3 ;;
+    *) 
+  esac
+done
