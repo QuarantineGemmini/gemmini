@@ -14,7 +14,6 @@ import chisel3.experimental._
   * @param meshRows
   * @param meshColumns
   */
-/*
 class Mesh[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T,
                                    df: Dataflow.Value, pe_latency: Int,
                                    val tileRows: Int, val tileColumns: Int,
@@ -85,4 +84,3 @@ class Mesh[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T,
     v := tile.io.out_valid
   }
 }
-*/
