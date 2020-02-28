@@ -30,9 +30,10 @@ BIN_BASE="$DIR/simv-example-${CONFIG_BASE}"
 
 UCLI_SCH="$LOGDIR/ucli_sch.tcl"
 
-TEST_1=large_matmul_without_cpu
-TEST_2=very_large_matmul
-TEST_3=cifar_quant
+TEST_1=large_matmul
+TEST_2=large_matmul_without_cpu
+TEST_3=very_large_matmul
+TEST_4=cifar_quant
 
 #=============================================================================
 # defaults
@@ -61,6 +62,7 @@ display_usage() {
     1: $TEST_1 
     2: $TEST_2 
     3: $TEST_3 
+    4: $TEST_4 
     
   options
   -------
@@ -132,6 +134,7 @@ while [ $# -ne 0 ] ; do
     1) runsim $TEST_1 ;;
     2) runsim $TEST_2 ;;
     3) runsim $TEST_3 ;;
+    4) runsim $TEST_4 ;;
     *) 
   esac
 done
