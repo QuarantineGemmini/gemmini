@@ -99,13 +99,17 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     new_entry.op1.bits := cmd.rs1.asTypeOf(local_addr_t)
 
     new_entry.op2.valid := funct_is_compute || funct === LOAD_CMD || funct === STORE_CMD
-    new_entry.op2.bits := cmd.rs2.asTypeOf(local_addr_t)
+    //new_entry.op2.bits := cmd.rs2.asTypeOf(local_addr_t)
+    new_entry.op2.bits := Cat(cmd.rs2(31), Cat(0.U(1.W), cmd.rs2(29,0))).asTypeOf(local_addr_t)
 
     new_entry.op3.valid := funct_is_compute
     new_entry.op3.bits := cmd.rs1(63, 32).asTypeOf(local_addr_t)
 
     new_entry.dst.valid := funct_is_compute || funct === LOAD_CMD
-    new_entry.dst.bits.start := Mux(funct_is_compute, cmd.rs2(63, 32), cmd.rs2(31, 0)).asTypeOf(local_addr_t)
+    //new_entry.dst.bits.start := Mux(funct_is_compute, cmd.rs2(63, 32), cmd.rs2(31, 0)).asTypeOf(local_addr_t)
+    new_entry.dst.bits.start := Mux(funct_is_compute, 
+                                    Cat(cmd.rs2(63), Cat(0.U(1.W), cmd.rs2(61,32))),
+                                    Cat(cmd.rs2(31), Cat(0.U(1.W), cmd.rs2(29,0)))).asTypeOf(local_addr_t)
     new_entry.dst.bits.len := Mux(funct_is_compute, 1.U, cmd.rs2(63, spAddrBits)) // TODO magic number
 
     val is_load = (funct === LOAD_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)

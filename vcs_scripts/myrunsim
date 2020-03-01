@@ -21,29 +21,36 @@ source "$DIR/../../sourceme.sh"
 # configuration options
 #=============================================================================
 LOGDIR="$DIR/logs"
+GEMMINI_SW_DIR="$DIR/../../generators/gemmini/software/gemmini-rocc-tests/build"
 
-ORIG_WORKLOADS="$DIR/../../generators/gemmini/software/gemmini-rocc-tests/build/ee290-orig"
-NEW_WORKLOADS="$DIR/../../generators/gemmini/software/gemmini-rocc-tests/build/ee290"
+ORIG_BASIC="${GEMMINI_SW_DIR}/ee290-orig"
+NEW_BASIC="${GEMMINI_SW_DIR}/ee290"
+ORIG_IMGNET="${GEMMINI_SW_DIR}/imagenet-orig"
+NEW_IMGNET="${GEMMINI_SW_DIR}/imagenet"
 
 CONFIG_BASE=GemminiEE290Lab3RocketConfig
 BIN_BASE="$DIR/simv-example-${CONFIG_BASE}"
 
-UCLI_SCH="$LOGDIR/ucli_sch.tcl"
+# for vcs sim only
+# UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
 
 TEST_1=large_matmul
 TEST_2=large_matmul_without_cpu
 TEST_3=very_large_matmul
 TEST_4=cifar_quant
+TEST_5=mobilenet
+TEST_6=resnet50
 
 #=============================================================================
 # defaults
 #=============================================================================
-WORKLOADS="$NEW_WORKLOADS"
-LOG_WORKLOAD="new"
+BIN="$BIN_BASE"
+
+NEW_OR_ORIG="new"
+BASIC_DIR="${NEW_BASIC}"
+IMGNET_DIR="${NEW_IMGNET}"
 
 SIM_TYPE="vcs"
-
-BIN="$BIN_BASE"
 UCLI=""
 
 #=============================================================================
@@ -63,44 +70,56 @@ display_usage() {
     2: $TEST_2 
     3: $TEST_3 
     4: $TEST_4 
+    5: $TEST_5 
+    6: $TEST_6 
     
   options
   -------
-  -spike      --> run spike simulator instead of vcs (no ucli is used)
   -orig       --> run the original, unmodified benchmarks 
-  -ucli_sch   --> generates a vcd strictly for schematic viewing in DVE
+  -new        --> run the new, modified benchmarks (default)
+  -spike      --> run spike simulator instead of vcs (no ucli is used)
+  -vcs        --> run the vcs simulator (default)
+  #-ucli_mesh --> generates a vcd strictly for schematic viewing in DVE
   -h|help     --> display this help
 
 EOF
   exit 1
 }
 
-create_uclis() {
-  local testname="${1}"
-  cat >>"$UCLI_SCH" <<EOF
-dump -file "$LOGDIR/${1}-ucli_sch.vpd"
-run
-EOF
-}
+#create_uclis() {
+#  local testname="${1}"
+#  cat >>"$UCLI_MESH" <<EOF
+#dump -file "$LOGDIR/${1}-ucli_sch.vpd"
+#run
+#EOF
+#}
 
 runsim() {
-  local testname="${LOG_WORKLOAD}__${SIM_TYPE}__${1}"
-  local logfile="$LOGDIR/${testname}.log"
+  local workload_dir="$1"
+  local workload_name="$2"
+  local workload_binary="${workload_dir}/${workload_name}-baremetal"
+  local testname="${NEW_OR_ORIG}__${SIM_TYPE}__${workload_name}"
+  local logfile="${LOGDIR}/${testname}.log"
   local starttime=$SECONDS
 
   info "$testname started"
   #------------------------
-  if [ "$SIM_TYPE" == "vcs" ] ; then
-    if [ -n "$UCLI" ] ; then 
-      create_uclis "$testname"
-    fi
-    $BIN "$WORKLOADS/${1}-baremetal" $UCLI &> "$logfile"
-    stty echo
-  elif [ "$SIM_TYPE" == "spike" ] ; then
-    spike --extension=gemmini "$WORKLOADS/${1}-baremetal" &> "$logfile"
-  else 
-    err "invalid SIM_TYPE: $SIM_TYPE"
-  fi
+  case $SIM_TYPE in
+    vcs)
+      #if [ -n "$UCLI" ] ; then 
+      #  create_uclis "$testname"
+      #fi
+      $BIN "$workload_binary" $UCLI &> "$logfile"
+      stty echo
+      ;;
+    spike)
+      spike --extension=gemmini "$workload_binary" &> "$logfile"
+      #spike -d --extension=gemmini "$workload_binary" 
+      ;;
+    *)
+      err "invalid SIM_TYPE: $SIM_TYPE"
+      ;;
+  esac
   #------------------------
   totaltime=$(( $SECONDS-$starttime ))
   if grep FAIL "$logfile" ; then 
@@ -121,20 +140,34 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
+    -vcs) 
+      SIM_TYPE="vcs"
+      ;;
     -spike) 
       SIM_TYPE="spike"
       ;;
+    -new) 
+      NEW_OR_ORIG="new"
+      BASIC_DIR="${NEW_BASIC}"
+      IMGNET_DIR="${NEW_IMGNET}"
+      ;;
     -orig) 
-      WORKLOADS="$ORIG_WORKLOADS" 
-      LOG_WORKLOAD="orig"
+      NEW_OR_ORIG="orig"
+      BASIC_DIR="${ORIG_BASIC}"
+      IMGNET_DIR="${ORIG_IMGNET}"
       ;;
-    -ucli_sch)  
-      UCLI="-ucli -i $UCLI_SCH"
+    -ucli_mesh)  
+      err "ucli_mesh not implemented"
+      exit 1
+      #UCLI="-ucli -i $UCLI_MESH"
       ;;
-    1) runsim $TEST_1 ;;
-    2) runsim $TEST_2 ;;
-    3) runsim $TEST_3 ;;
-    4) runsim $TEST_4 ;;
-    *) 
+    -h|-help) display_usage ;;
+    1) runsim "$BASIC_DIR"  "$TEST_1" ;;
+    2) runsim "$BASIC_DIR"  "$TEST_2" ;;
+    3) runsim "$BASIC_DIR"  "$TEST_3" ;;
+    4) runsim "$BASIC_DIR"  "$TEST_4" ;;
+    5) runsim "$IMGNET_DIR" "$TEST_5" ;;
+    6) runsim "$IMGNET_DIR" "$TEST_6" ;;
+    *) err "invalid option; $1" ;;
   esac
 done
