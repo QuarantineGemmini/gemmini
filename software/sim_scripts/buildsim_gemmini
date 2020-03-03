@@ -12,9 +12,9 @@ source "$CY_DIR/sourceme.sh"
 
 # set simulator dirs
 VCS_DIR="$CY_DIR/sims/vcs"
-VL8_DIR="$CY_DIR/sims/verilator"
-FSIM_DIR="$CY_DIR/sims/firesim"
-SPK_DIR="$CY_DIR/sims/spike"
+VERILATOR_DIR="$CY_DIR/sims/verilator"
+FIRESIM_DIR="$CY_DIR/sims/firesim"
+SPIKE_DIR="$CY_DIR/sims/spike"
 
 # for eecs290-2 lab3
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
@@ -41,17 +41,17 @@ display_usage() {
   Utility to build simulators for various gemmini configurations. By default
   it assumes the spike simulator (nothing to be done). Output simulators
   will be placed in the respective directories. Available configurations are:
-  	lab3: $CONFIG_LAB3
+    lab3: $CONFIG_LAB3
     
   options
   -------
-  -spike	      --> build all following configs from spike compiler (no-op)
-  -vcs		      --> build all following configs from vcs compiler
-  -vl8		      --> build all following configs from verilator compiler
-  -fsim		      --> build all following configs from firesim (on manager node)
+  -spike        --> build all following configs from spike compiler (no-op)
+  -vcs          --> build all following configs from vcs compiler
+  -vl8          --> build all following configs from verilator compiler
+  -fsim         --> build all following configs from firesim (on manager node)
   -printf <pat> --> python regex pattern for printf() strings to selectively 
-  								  set to verbose mode in the simulator (no-op for spike)
-  -h|help  		  --> display this help
+                    set to verbose mode in the simulator (no-op for spike)
+  -h|help       --> display this help
 
 EOF
   exit 1
@@ -63,28 +63,28 @@ EOF
 buildsim() {
   local config_name="$1"
   local ts="$(date "+%Y-%M-%d_%H:%M:%S")"
-	local compile_name="${ts}_compile_${SIM_TYPE}_${config_name}"
+  local compile_name="${ts}_compile_${SIM_TYPE}_${config_name}"
   local starttime=$SECONDS
 
   info "$compile_name started"
   #------------------------
   case $SIM_TYPE in
     spike)
-  		err "spike not supported yet"
-  		;;
+      err "spike not supported yet"
+      ;;
     vcs)
-  		local logdir="$VCS_DIR/logs"
-  		local logfile="${logdir}/${compile_name}.log"
-  		if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
-  		cd "$VCS_DIR"
-  		make CONFIG="$config_name" |& tee "$logfile"
-  		;;
+      local logdir="$VCS_DIR/logs"
+      local logfile="${logdir}/${compile_name}.log"
+      if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
+      cd "$VCS_DIR"
+      make CONFIG="$config_name" |& tee "$logfile"
+      ;;
     verilator)
-  		err "verilator not supported yet"
-  		;;
-  	firesim)
-  		err "firesim not supported yet"
-  		;;
+      err "verilator not supported yet"
+      ;;
+    firesim)
+      err "firesim not supported yet"
+      ;;
     *)
       err "invalid SIM_TYPE: $SIM_TYPE"
       ;;
@@ -104,30 +104,30 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
-  	-spike)
-  		SIM_TYPE="spike"
-  		;;
-  	-vcs)
-  		SIM_TYPE="vcs"
-  		;;
-  	-verilator)
-  		SIM_TYPE="verilator"
-  		;;
-  	-firesim)
-  		SIM_TYPE="firesim"
-  		;;
-  	-printf)
-  		if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
-  		export ENABLE_PRINTF_PATTERN="$1"
-  		;;
+    -spike)
+      SIM_TYPE="spike"
+      ;;
+    -vcs)
+      SIM_TYPE="vcs"
+      ;;
+    -verilator)
+      SIM_TYPE="verilator"
+      ;;
+    -firesim)
+      SIM_TYPE="firesim"
+      ;;
+    -printf)
+      if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
+      export ENABLE_PRINTF_PATTERN="$1"
+      ;;
     -h|-help) 
-  		display_usage 
-  		;;
-  	lab3) 
-  		buildsim "$CONFIG_LAB3"
-  		;;
+      display_usage 
+      ;;
+    lab3) 
+      buildsim "$CONFIG_LAB3"
+      ;;
     *) 
-  		err "invalid option; $1" 
-  		;;
+      err "invalid option; $1" 
+      ;;
   esac
 done
