@@ -8,6 +8,8 @@ import freechips.rocketchip.tile.RoCCCommand
 import GemminiISA._
 import Util._
 
+import midas.targetutils
+
 
 // TODO unify this class with GemminiCmdWithDeps
 class ROBIssue[T <: Data](cmd_t: T, nEntries: Int) extends Bundle {
@@ -44,6 +46,9 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     val q = q_t.cloneType
 
     val is_config = Bool()
+    val is_load   = Bool() // true on config_load
+    val is_store  = Bool() // true on config_store
+    val is_ex     = Bool() // true on config_ex
 
     val op1 = UDValid(local_addr_t.cloneType)
     val op2 = UDValid(local_addr_t.cloneType)
@@ -116,6 +121,11 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     val is_store = (funct === STORE_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_STORE)
     val is_ex = funct_is_compute || (funct === CONFIG_CMD && config_cmd_type === CONFIG_EX)
 
+    // ssteffl: added for debug
+    new_entry.is_load  := is_load
+    new_entry.is_store := is_store
+    new_entry.is_ex    := is_ex
+
     new_entry.q := Mux1H(Seq(
       is_load -> ldq,
       is_store -> stq,
@@ -177,6 +187,49 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     io.valid := entries.map(e => e.valid && e.bits.ready() && !e.bits.issued && e.bits.q === q).reduce(_ || _)
     io.cmd := entries(issue_id).bits.cmd
     io.rob_id := issue_id
+
+    // ssteff: added for debug
+    when(io.fire()) {
+      when(entries(issue_id).bits.is_config) {
+        when (entries(issue_id).bits.is_load) {
+          printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%d\n", 
+            entries(issue_id).bits.cmd.rs2))
+        }
+        .elsewhen (entries(issue_id).bits.is_store) {
+          printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvout: stride=%d\n", 
+            entries(issue_id).bits.cmd.rs2))
+        }
+        .otherwise {
+          printf(midas.targetutils.SynthesizePrintf(
+            "ISSUE config_ex: acc_rshift_in=%d, acc_rshift_out=%d, relu6_lshift_in=%d\n", 
+            entries(issue_id).bits.cmd.s1(63,32),
+            entries(issue_id).bits.cmd.s2(31,0),
+            entries(issue_id).bits.cmd.s2(63,32)))
+        }
+      }
+      .elsewhen (entries(issue_id).bits.is_load) {
+        printf(midas.targetutils.SynthesizePrintf(
+          "ISSUE mvin: dram_src=%x, spad_dst=%x, tiles=%d",
+          entries(issue_id).bits.cmd.rs1,
+          entries(issue_id).bits.cmd.rs2(31,0),
+          entries(issue_id).bits.cmd.rs2(63,0)))
+      }
+      .elsewhen (entries(issue_id).bits.is_store) {
+        printf(midas.targetutils.SynthesizePrintf(
+          "ISSUE mvout: dram_dst=%x, spad_src=%x, tiles=%d",
+          entries(issue_id).bits.cmd.rs1,
+          entries(issue_id).bits.cmd.rs2(31,0),
+          entries(issue_id).bits.cmd.rs2(63,0)))
+      }
+      .otherwise {
+        printf(midas.targetutils.SynthesizePrintf(
+          "ISSUE ex: A_spad=%x, B_spad=%x, D_spad=%x, C_spad=%x",
+          entries(issue_id).bits.cmd.rs1(31,0),
+          entries(issue_id).bits.cmd.rs1(63,32),
+          entries(issue_id).bits.cmd.rs2(31,0),
+          entries(issue_id).bits.cmd.rs2(63,32)))
+      }
+    }
 
     when (io.fire()) {
       entries(issue_id).bits.issued := true.B
