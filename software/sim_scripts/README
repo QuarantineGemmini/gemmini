@@ -1,2 +1,1 @@
-softlink these to the sims/vcs rundir. i'm just keeping these
-here because i can track them with my private git repo
+add this dir to PATH in your chipyard-level sourceme if your debugging gemmini-builds

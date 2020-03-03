@@ -1,0 +1,155 @@
+#!/bin/bash
+
+set -euo pipefail
+
+#=============================================================================
+# setup notes
+#=============================================================================
+# this builds different workloads with various parameters for gemmini
+
+DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
+source "$CY_DIR/sourceme.sh"
+
+# set simulator dirs
+VCS_DIR="$CY_DIR/sims/vcs"
+VL8_DIR="$CY_DIR/sims/verilator"
+FSIM_DIR="$CY_DIR/sims/firesim"
+SPK_DIR="$CY_DIR/sims/spike"
+
+SW_DIR="$CY_DIR/generators/gemmini/software"
+LOGDIR="$SW_DIR/logs"
+
+ORIG_CFLAGS="${CFLAGS:-}"
+
+ORIG_MAKEFLAGS="${MAKEFLAGS:-}"
+MAKEFLAGS="-j$(cat /proc/cpuinfo | grep '^processor' | wc -l)"
+export MAKEFLAGS="$MAKEFLAGS $ORIG_MAKEFLAGS --warn-undefined-variables"
+
+#=============================================================================
+# defaults
+#=============================================================================
+WORKLOAD_TYPE="bare"
+
+FORCE_MODE="no_force"
+
+TILER_MODE="new_tiler"
+TILER_CFLAGS="-DUSE_CUSTOM_TILER"
+
+DEBUG_MODE="no_debug"
+DEBUG_CFLAGS="-DNODEBUG"
+
+#=============================================================================
+# subroutines
+#=============================================================================
+err() { echo "[ERROR]: $@"; exit 1; }
+info() { echo "[INFO]: $@"; }
+
+display_usage() {
+  cat <<EOF
+
+  buildworkload_gemmini [options] <cfg1> [options] [<cfg2> ...]
+  --------------------------------------------------------
+  Utility to build parameterized workloads for gemmini simulation. By default
+  it incrementally generates bare-metal workloads for the new-tiler in 
+  non-debug mode. Available workload configurations are:
+    bare:  build for bare-metal sims (most likely for spike, vcs, verilator)
+    linux: build for linux simulation (most likely for firesim)
+    
+  options
+  -------
+  -no_force   --> don't force-rebuild the build/ directory (default)
+  -force      --> force rebuild by deleting build/ dir first
+  -no_debug   --> disable verbose software debugging (default)
+  -debug      --> enable verbose software debugging
+  -new_tiler  --> use new original tiler algorithm (default)
+  -old_tiler  --> use the original tiler algorithm
+  -h|help     --> display this help
+
+EOF
+  exit 1
+}
+
+#=============================================================================
+# build 
+#=============================================================================
+buildworkload() {
+  local workload_type="$1"
+  local ts="$(date "+%Y-%M-%d_%H:%M:%S")"
+  local flags="${FORCE_MODE}_${TILER_MODE}_${DEBUG_MODE}"
+  local run_name="${ts}_${workload_type}_${flags}"
+  local logfile="$LOGDIR/${run_name}.log"
+  local starttime=$SECONDS
+
+  # set the CFLAGS and MAKEFLAGS 
+  export CFLAGS="$ORIG_CFLAGS $TILER_CFLAGS $DEBUG_CFLAGS"
+
+  info "$run_name started"
+  #------------------------
+  case $workload_type in
+    bare)
+      cd "$SW_DIR/gemmini-rocc-tests"
+      if [ "$FORCE_MODE" == "force" ] ; then
+        rm -fr "build/"
+      fi
+      ./build.sh |& tee "$logfile"
+      ;;
+    linux)
+      err "linux not supported yet"
+      ;;
+    *)
+      err "invalid workload_type: $workload_type"
+      ;;
+  esac
+  #------------------------
+  totaltime=$(( $SECONDS-$starttime ))
+  info "$run_name finished in $totaltime seconds"
+}
+
+#=============================================================================
+# configuration
+#=============================================================================
+if [ ! -d "$LOGDIR" ]; then mkdir -p "$LOGDIR" ; fi
+
+if [ $# -eq 0 ] ; then display_usage; fi
+
+while [ $# -ne 0 ] ; do
+  arg=$1; shift;
+  case $arg in
+    -no_force)
+      FORCE_MODE="no_force"
+      ;;
+    -force)
+      FORCE_MODE="force"
+      ;;
+    -no_debug)
+      DEBUG_MODE="no_debug"
+      DEBUG_CFLAGS="-DNODEBUG"
+      ;;
+    -debug)
+      DEBUG_MODE="debug"
+      DEBUG_CFLAGS=""
+      ;;
+    -new_tiler)
+      TILER_MODE="new_tiler"
+      TILER_CFLAGS="-DUSE_CUSTOM_TILER"
+      ;;
+    -old_tiler)
+      TILER_MODE="old_tiler"
+      TILER_CFLAGS=""
+      ;;
+    -h|-help) 
+      display_usage 
+      ;;
+    bare) 
+      buildworkload "bare"
+      ;;
+    linux) 
+      buildworkload "linux"
+      ;;
+    *) 
+      err "invalid option: $arg" 
+      ;;
+  esac
+done
+

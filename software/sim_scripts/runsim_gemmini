@@ -5,31 +5,46 @@ set -euo pipefail
 #=============================================================================
 # setup notes
 #=============================================================================
-# before running, do the following in order:
-#  1) build the simulator with the `buildsim` command
+# before running anything, do the following in order:
+#  1) build the simulator with the `buildsim_gemmini` command
 #  2) build the workloads in the gemmini/software/gemmini-rocc-tests dir
+#			by running `rm -fr build && ./build.sh`
 
 # 1) which test to run (or multiple)
 # 2) use debug compile or fast compile
 # 3) use mesh-ucli, or some other ucli
 
-#DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-DIR="$(dirname "${BASH_SOURCE[0]}")"
-source "$DIR/../../sourceme.sh"
+# this builds variations of each simulator for your gemmini simulations
+DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
+source "$CY_DIR/sourceme.sh"
+
+# set simulator dirs
+VCS_DIR="$CY_DIR/sims/vcs"
+VL8_DIR="$CY_DIR/sims/verilator"
+FSIM_DIR="$CY_DIR/sims/firesim"
+SPK_DIR="$CY_DIR/sims/spike"
+
+# for eecs290-2 lab3
+CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 
 #=============================================================================
-# configuration options
+# workload configuration options
 #=============================================================================
 LOGDIR="$DIR/logs"
 GEMMINI_SW_DIR="$DIR/../../generators/gemmini/software/gemmini-rocc-tests/build"
 
+# software loads
 ORIG_BASIC="${GEMMINI_SW_DIR}/ee290-orig"
 NEW_BASIC="${GEMMINI_SW_DIR}/ee290"
 ORIG_IMGNET="${GEMMINI_SW_DIR}/imagenet-orig"
 NEW_IMGNET="${GEMMINI_SW_DIR}/imagenet"
 
-CONFIG_BASE=GemminiEE290Lab3RocketConfig
-BIN_BASE="$DIR/simv-example-${CONFIG_BASE}"
+# config for eecs290-2 lab3
+CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+
+# simulators build with different configs
+BIN_LAB3="$DIR/simv-example-${CONFIG_LAB3}"
 
 # for vcs sim only
 # UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
@@ -44,7 +59,7 @@ TEST_6=resnet50
 #=============================================================================
 # defaults
 #=============================================================================
-BIN="$BIN_BASE"
+BIN="$BIN_LAB3"
 
 NEW_OR_ORIG="new"
 BASIC_DIR="${NEW_BASIC}"
@@ -142,11 +157,11 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
-    -vcs) 
-      SIM_TYPE="vcs"
-      ;;
     -spike) 
       SIM_TYPE="spike"
+      ;;
+    -vcs) 
+      SIM_TYPE="vcs"
       ;;
     -new) 
       NEW_OR_ORIG="new"
