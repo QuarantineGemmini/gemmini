@@ -5,19 +5,19 @@ set -euo pipefail
 #=============================================================================
 # setup notes
 #=============================================================================
-# this builds either the fast or debug vcs simulator (doesn't run it tho)
+# this builds variations of the vcs simulator for your project
 
 #DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 DIR="$(dirname "${BASH_SOURCE[0]}")"
 source "$DIR/../../sourceme.sh"
 
 # from lab2
-#CONFIG_FAST=GemminiEE290Lab2RocketConfig
-#CONFIG_SLOW=GemminiEE290Lab2RocketConfig
-#CONFIG_SPAD=GemminiEE290Lab2BigSPRocketConfig
 CONFIG_BASE=GemminiEE290Lab3RocketConfig
 
 BIN_BASE="$DIR/simv-example-${CONFIG_BASE}"
+
+# for selective printfs (see Makefile)
+export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
 
 #=============================================================================
 # subroutines

@@ -109,6 +109,8 @@ runsim() {
       #if [ -n "$UCLI" ] ; then 
       #  create_uclis "$testname"
       #fi
+      #$BIN +permissive +verbose +permissive-off \
+      #  "$workload_binary" $UCLI &> "$logfile"
       $BIN "$workload_binary" $UCLI &> "$logfile"
       stty echo
       ;;

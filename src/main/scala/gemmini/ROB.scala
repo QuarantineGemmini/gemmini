@@ -42,13 +42,21 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
   val ldq :: stq :: exq :: Nil = Enum(3)
   val q_t = ldq.cloneType
 
+  val MAX_CMD_ID   = 1000000            // FOR DEBUGGING ONLY
+  val debug_cycle  = RegInit(0.U(32.W)) // FOR DEBUGGING ONLY
+
+  debug_cycle := debug_cycle + 1.U      // FOR DEBUGGING ONLY
+  val cmd_id = Counter(MAX_CMD_ID)      // FOR DEBUGGING ONLY
+
   class Entry extends Bundle {
     val q = q_t.cloneType
 
     val is_config = Bool()
-    val is_load   = Bool() // true on config_load
-    val is_store  = Bool() // true on config_store
-    val is_ex     = Bool() // true on config_ex
+
+    val cmd_id   = UInt(log2Up(MAX_CMD_ID).W)   // FOR DEBUGGING ONLY
+    val is_load  = Bool()    // true on config_load.  FOR DEBUGGING ONLY
+    val is_store = Bool()    // true on config_store. FOR DEBUGGING ONLY
+    val is_ex    = Bool()    // true on config_ex.    FOR DEBUGGING ONLY
 
     val op1 = UDValid(local_addr_t.cloneType)
     val op2 = UDValid(local_addr_t.cloneType)
@@ -85,7 +93,8 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
   val new_entry = Wire(new Entry)
   new_entry := DontCare
-  val new_entry_id = MuxCase((nEntries-1).U, entries.zipWithIndex.map { case (e, i) => !e.valid -> i.U })
+  val new_entry_id = MuxCase((nEntries-1).U, entries.zipWithIndex.map { 
+                                        case (e, i) => !e.valid -> i.U })
   val alloc_fire = io.alloc.fire()
 
   when (io.alloc.fire()) {
@@ -111,20 +120,75 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     new_entry.op3.bits := cmd.rs1(63, 32).asTypeOf(local_addr_t)
 
     new_entry.dst.valid := funct_is_compute || funct === LOAD_CMD
-    //new_entry.dst.bits.start := Mux(funct_is_compute, cmd.rs2(63, 32), cmd.rs2(31, 0)).asTypeOf(local_addr_t)
+    //new_entry.dst.bits.start := Mux(funct_is_compute, cmd.rs2(63, 32), 
+    //                                cmd.rs2(31, 0)).asTypeOf(local_addr_t)
     new_entry.dst.bits.start := Mux(funct_is_compute, 
                                     Cat(cmd.rs2(63), Cat(0.U(1.W), cmd.rs2(61,32))),
-                                    Cat(cmd.rs2(31), Cat(0.U(1.W), cmd.rs2(29,0)))).asTypeOf(local_addr_t)
+                                    Cat(cmd.rs2(31), Cat(0.U(1.W), cmd.rs2(29,0)))
+                                ).asTypeOf(local_addr_t)
     new_entry.dst.bits.len := Mux(funct_is_compute, 1.U, cmd.rs2(63, spAddrBits)) // TODO magic number
 
     val is_load = (funct === LOAD_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
     val is_store = (funct === STORE_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_STORE)
     val is_ex = funct_is_compute || (funct === CONFIG_CMD && config_cmd_type === CONFIG_EX)
 
-    // ssteffl: added for debug
-    new_entry.is_load  := is_load
-    new_entry.is_store := is_store
-    new_entry.is_ex    := is_ex
+    // never allow this to wrap.FOR DEBUGGING ONLY
+    assert(!cmd_id.inc())
+    new_entry.cmd_id   := cmd_id.value // FOR DEBUGGING ONLY
+    new_entry.is_load  := is_load      // FOR DEBUGGING ONLY
+    new_entry.is_store := is_store     // FOR DEBUGGING ONLY
+    new_entry.is_ex    := is_ex        // FOR DEBUGGING ONLY
+    //======================================================================
+    // debug
+    //======================================================================
+    when(new_entry.is_config) {
+      when (new_entry.is_load) {
+        //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
+        //  new_entry.bits.cmd.rs2))
+        printf(
+          "cycle[%d], entry[%d], accept[%d], config_mvin[stride=%x]\n", 
+          debug_cycle, cmd_id.value, new_entry_id, 
+          new_entry.cmd.rs2)
+        printf(
+          "cycle[%d], entry[%d], final[%d], config_mvin\n", 
+          debug_cycle, cmd_id.value, new_entry_id)
+      }
+      .elsewhen (new_entry.is_store) {
+        printf(
+          "cycle[%d], entry[%d], accept[%d], config_mvout[stride=%x]\n", 
+          debug_cycle, cmd_id.value, new_entry_id, 
+          new_entry.cmd.rs2)
+        printf(
+          "cycle[%d], entry[%d], final[%d], config_mvout\n", 
+          debug_cycle, cmd_id.value, new_entry_id)
+      }
+      .otherwise {
+        printf(
+          "cycle[%d], entry[%d], accept[%d], config_ex[matmul_rshift=%x, acc_rshift=%x, relu6_lshift=%x]\n", 
+          debug_cycle, cmd_id.value, new_entry_id, 
+          cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+      }
+    }
+    .elsewhen (new_entry.is_load) {
+      printf(
+        "cycle[%d], entry[%d], accept[%d], mvin[dram=%x, spad=%x, tiles=%x]\n",
+        debug_cycle, cmd_id.value, new_entry_id, 
+        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,32))
+    }
+    .elsewhen (new_entry.is_store) {
+      printf(
+        "cycle[%d], entry[%d], accept[%d], mvout[dram=%x, spad=%x, tiles=%x]\n",
+        debug_cycle, cmd_id.value, new_entry_id, 
+        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,32))
+    }
+    .otherwise {
+      printf(
+        "cycle[%d], entry[%d], accept[%d], ex[A=%x, B=%x, D=%x, C=%x]\n",
+        debug_cycle, cmd_id.value, new_entry_id, 
+        cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+    }
+
+    //======================================================================
 
     new_entry.q := Mux1H(Seq(
       is_load -> ldq,
@@ -134,41 +198,73 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
     val raws = entries.map { e =>
       // We search for all entries which write to an address which we read from
-      e.valid && e.bits.dst.valid && (
-        (new_entry.op1.valid && e.bits.dst.bits.start <= new_entry.op1.bits && e.bits.dst.bits.end() > new_entry.op1.bits) ||
-          (new_entry.op2.valid && e.bits.dst.bits.start <= new_entry.op2.bits && e.bits.dst.bits.end() > new_entry.op2.bits) ||
-          (new_entry.op3.valid && e.bits.dst.bits.start <= new_entry.op3.bits && e.bits.dst.bits.end() > new_entry.op3.bits))
+      e.valid && 
+      e.bits.dst.valid && (
+        (new_entry.op1.valid && 
+         e.bits.dst.bits.start <= new_entry.op1.bits && 
+         e.bits.dst.bits.end() > new_entry.op1.bits) ||
+        (new_entry.op2.valid && 
+         e.bits.dst.bits.start <= new_entry.op2.bits && 
+         e.bits.dst.bits.end() > new_entry.op2.bits) ||
+        (new_entry.op3.valid && 
+         e.bits.dst.bits.start <= new_entry.op3.bits && 
+         e.bits.dst.bits.end() > new_entry.op3.bits))
     }
 
     val wars = entries.map { e =>
       // We search for all entries which read from an address that we write to
-      e.valid && new_entry.dst.valid && (
-        (e.bits.op1.valid && new_entry.dst.bits.start <= e.bits.op1.bits && new_entry.dst.bits.end() > e.bits.op1.bits) ||
-          (e.bits.op2.valid && new_entry.dst.bits.start <= e.bits.op2.bits && new_entry.dst.bits.end() > e.bits.op2.bits) ||
-          (e.bits.op3.valid && new_entry.dst.bits.start <= e.bits.op3.bits && new_entry.dst.bits.end() > e.bits.op3.bits))
+      e.valid && 
+      new_entry.dst.valid && (
+        (e.bits.op1.valid && 
+         new_entry.dst.bits.start <= e.bits.op1.bits && 
+         new_entry.dst.bits.end() > e.bits.op1.bits) ||
+        (e.bits.op2.valid && 
+         new_entry.dst.bits.start <= e.bits.op2.bits && 
+         new_entry.dst.bits.end() > e.bits.op2.bits) ||
+        (e.bits.op3.valid && 
+         new_entry.dst.bits.start <= e.bits.op3.bits && 
+         new_entry.dst.bits.end() > e.bits.op3.bits))
     }
 
     val waws = entries.map { e =>
       // We search for all entries which write to an address that we write to
-      e.valid && new_entry.dst.valid && e.bits.dst.valid && (
-        (new_entry.dst.bits.start <= e.bits.dst.bits.start && new_entry.dst.bits.end() > e.bits.dst.bits.start) ||
-          (e.bits.dst.bits.start <= new_entry.dst.bits.start && e.bits.dst.bits.end() > new_entry.dst.bits.start))
+      e.valid && 
+      new_entry.dst.valid && 
+      e.bits.dst.valid && (
+        (new_entry.dst.bits.start <= e.bits.dst.bits.start && 
+         new_entry.dst.bits.end() > e.bits.dst.bits.start) ||
+        (e.bits.dst.bits.start <= new_entry.dst.bits.start && 
+         e.bits.dst.bits.end() > new_entry.dst.bits.start))
     }
 
     val older_in_same_q = entries.map { e =>
-      e.valid && e.bits.q === new_entry.q && !e.bits.issued
+      e.valid && 
+      e.bits.q === new_entry.q && 
+      !e.bits.issued
     }
 
     val is_st_and_must_wait_for_prior_ex_config = entries.map { e =>
-      e.valid && new_entry.q === stq && !new_entry.is_config && e.bits.q === exq && e.bits.is_config
+      e.valid && 
+      new_entry.q === stq && 
+      !new_entry.is_config && 
+      e.bits.q === exq && 
+      e.bits.is_config
     }
 
     val is_ex_config_and_must_wait_for_prior_st = entries.map { e =>
-      e.valid && new_entry.q === exq && new_entry.is_config && e.bits.q === stq && !e.bits.is_config
+      e.valid && 
+      new_entry.q === exq && 
+      new_entry.is_config && 
+      e.bits.q === stq && !e.bits.is_config
     }
 
-    new_entry.deps := (Cat(raws) | Cat(wars) | Cat(waws) | Cat(older_in_same_q) |
-      Cat(is_st_and_must_wait_for_prior_ex_config) | Cat(is_ex_config_and_must_wait_for_prior_st)).toBools().reverse
+    new_entry.deps := (Cat(raws) | 
+                       Cat(wars) | 
+                       Cat(waws) | 
+                       Cat(older_in_same_q) |
+                       Cat(is_st_and_must_wait_for_prior_ex_config) | 
+                       Cat(is_ex_config_and_must_wait_for_prior_st)
+                      ).asBools().reverse
 
     new_entry.complete_on_issue := new_entry.is_config && new_entry.q =/= exq
 
@@ -184,54 +280,52 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
       (e.valid && e.bits.ready() && !e.bits.issued && e.bits.q === q) -> i.U
     })
 
-    io.valid := entries.map(e => e.valid && e.bits.ready() && !e.bits.issued && e.bits.q === q).reduce(_ || _)
+    io.valid := entries.map(e => e.valid && e.bits.ready() && 
+                                !e.bits.issued && e.bits.q === q).reduce(_ || _)
     io.cmd := entries(issue_id).bits.cmd
     io.rob_id := issue_id
 
     // ssteff: added for debug
     when(io.fire()) {
+      //======================================================================
+      // debug
+      //======================================================================
       when(entries(issue_id).bits.is_config) {
         when (entries(issue_id).bits.is_load) {
-          printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%d\n", 
-            entries(issue_id).bits.cmd.rs2))
+          //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
+          //  entries(issue_id).bits.cmd.rs2))
+          printf(
+            "cycle[%d], entry[%d], issue[%d], config_mvout\n",
+            debug_cycle, entries(issue_id).bits.cmd_id, issue_id)
         }
         .elsewhen (entries(issue_id).bits.is_store) {
-          printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvout: stride=%d\n", 
-            entries(issue_id).bits.cmd.rs2))
+          printf(
+            "cycle[%d], entry[%d], issue[%d], config_mvin\n",
+            debug_cycle, entries(issue_id).bits.cmd_id, issue_id)
         }
         .otherwise {
-          printf(midas.targetutils.SynthesizePrintf(
-            "ISSUE config_ex: acc_rshift_in=%d, acc_rshift_out=%d, relu6_lshift_in=%d\n", 
-            entries(issue_id).bits.cmd.s1(63,32),
-            entries(issue_id).bits.cmd.s2(31,0),
-            entries(issue_id).bits.cmd.s2(63,32)))
+          printf(
+            "cycle[%d], entry[%d], issue[%d], config_ex\n",
+            debug_cycle, entries(issue_id).bits.cmd_id, issue_id)
         }
       }
       .elsewhen (entries(issue_id).bits.is_load) {
-        printf(midas.targetutils.SynthesizePrintf(
-          "ISSUE mvin: dram_src=%x, spad_dst=%x, tiles=%d",
-          entries(issue_id).bits.cmd.rs1,
-          entries(issue_id).bits.cmd.rs2(31,0),
-          entries(issue_id).bits.cmd.rs2(63,0)))
+        printf(
+          "cycle[%d], entry[%d], issue[%d], mvin\n",
+          debug_cycle, entries(issue_id).bits.cmd_id, issue_id)
       }
       .elsewhen (entries(issue_id).bits.is_store) {
-        printf(midas.targetutils.SynthesizePrintf(
-          "ISSUE mvout: dram_dst=%x, spad_src=%x, tiles=%d",
-          entries(issue_id).bits.cmd.rs1,
-          entries(issue_id).bits.cmd.rs2(31,0),
-          entries(issue_id).bits.cmd.rs2(63,0)))
+        printf(
+          "cycle[%d], entry[%d], issue[%d], mvout\n",
+          debug_cycle, entries(issue_id).bits.cmd_id, issue_id)
       }
       .otherwise {
-        printf(midas.targetutils.SynthesizePrintf(
-          "ISSUE ex: A_spad=%x, B_spad=%x, D_spad=%x, C_spad=%x",
-          entries(issue_id).bits.cmd.rs1(31,0),
-          entries(issue_id).bits.cmd.rs1(63,32),
-          entries(issue_id).bits.cmd.rs2(31,0),
-          entries(issue_id).bits.cmd.rs2(63,32)))
+        printf(
+          "cycle[%d], entry[%d], issue[%d], ex\n",
+          debug_cycle, entries(issue_id).bits.cmd_id, issue_id)
       }
-    }
+      //======================================================================
 
-    when (io.fire()) {
       entries(issue_id).bits.issued := true.B
 
       // Clear out all the dependency bits for instructions which depend on the same queue
@@ -251,6 +345,47 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
   // Mark entries as completed once they've returned
   when (io.completed.fire()) {
+    //======================================================================
+    // debug
+    //======================================================================
+    //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
+    //  entries(io.completed.bits).bits.cmd.rs2))
+    when (entries(io.completed.bits).bits.is_config) {
+      when (entries(io.completed.bits).bits.is_load) {
+        //printf(midas.targetutils.SynthesizePrintf("FINAL config_mvin: stride=%x\n", 
+        //  entries(io.completed.bits).bits.cmd.rs2))
+        printf(
+          "cycle[%d], entry[%d], final[%d], config_mvin\n",
+          debug_cycle, entries(io.completed.bits).bits.cmd_id, io.completed.bits)
+      }
+      .elsewhen (entries(io.completed.bits).bits.is_store) {
+        printf(
+          "cycle[%d], entry[%d], final[%d], config_mvout\n",
+          debug_cycle, entries(io.completed.bits).bits.cmd_id, io.completed.bits)
+      }
+      .otherwise {
+        printf(
+          "cycle[%d], entry[%d], final[%d], config_ex\n",
+          debug_cycle, entries(io.completed.bits).bits.cmd_id, io.completed.bits)
+      }
+    }
+    .elsewhen (entries(io.completed.bits).bits.is_load) {
+      printf(
+        "cycle[%d], entry[%d], final[%d], mvin\n",
+        debug_cycle, entries(io.completed.bits).bits.cmd_id, io.completed.bits)
+    }
+    .elsewhen (entries(io.completed.bits).bits.is_store) {
+      printf(
+        "cycle[%d], entry[%d], final[%d], mvout\n",
+        debug_cycle, entries(io.completed.bits).bits.cmd_id, io.completed.bits)
+    }
+    .otherwise {
+      printf(
+        "cycle[%d], entry[%d], final[%d], ex\n",
+        debug_cycle, entries(io.completed.bits).bits.cmd_id, io.completed.bits)
+    }
+    //======================================================================
+
     entries.foreach(_.bits.deps(io.completed.bits) := false.B)
 
     entries(io.completed.bits).valid := false.B
@@ -258,9 +393,15 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
   }
 
   val utilization = PopCount(entries.map(e => e.valid))
-  val utilization_ld_q_unissued = PopCount(entries.map(e => e.valid && !e.bits.issued && e.bits.q === ldq))
-  val utilization_st_q_unissued = PopCount(entries.map(e => e.valid && !e.bits.issued && e.bits.q === stq))
-  val utilization_ex_q_unissued = PopCount(entries.map(e => e.valid && !e.bits.issued && e.bits.q === exq))
+  val utilization_ld_q_unissued = PopCount(entries.map(e => e.valid && 
+                                                            !e.bits.issued && 
+                                                            e.bits.q === ldq))
+  val utilization_st_q_unissued = PopCount(entries.map(e => e.valid && 
+                                                            !e.bits.issued && 
+                                                            e.bits.q === stq))
+  val utilization_ex_q_unissued = PopCount(entries.map(e => e.valid && 
+                                                            !e.bits.issued && 
+                                                            e.bits.q === exq))
   val utilization_ld_q = PopCount(entries.map(e => e.valid && e.bits.q === ldq))
   val utilization_st_q = PopCount(entries.map(e => e.valid && e.bits.q === stq))
   val utilization_ex_q = PopCount(entries.map(e => e.valid && e.bits.q === exq))
