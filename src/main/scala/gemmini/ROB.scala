@@ -102,6 +102,7 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     val cmd = io.alloc.bits
     val funct = cmd.inst.funct
     val funct_is_compute = funct === COMPUTE_AND_STAY_CMD || funct === COMPUTE_AND_FLIP_CMD
+    val funct_is_compute_preload = funct === COMPUTE_AND_FLIP_CMD
     val config_cmd_type = cmd.rs1(1,0) // TODO magic numbers
 
     new_entry.issued := false.B
@@ -178,10 +179,18 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     }
     .otherwise {
       assert(new_entry.is_ex)
-      printf(
-        "cycle[%d], entry[%d], accept[%d], ex[A=%x, B=%x, D=%x, C=%x]\n",
-        debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+      when (funct_is_compute_preload) {
+        printf(
+          "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, B=%x, D=%x, C=%x]\n",
+          debug_cycle, new_entry_id, cmd_id.value, 
+          cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+      }
+      .otherwise {
+        printf(
+          "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, B=%x, D=%x, C=%x]\n",
+          debug_cycle, new_entry_id, cmd_id.value, 
+          cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+      }
     }
 
     //======================================================================

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# SIMPLE 1st pass
+# SIMPLE 1st pass: ASSUME WEIGHT-STATIONARY!!!
 
 import re
 import sys
@@ -8,25 +8,38 @@ import os
 from textwrap import dedent as dd
 import argparse
 
-
+#=============================================================================
+# constants/defaults
+#=============================================================================
+NUM_ENTRIES=16
+DIM=32
+ELEM_SIZE_B=1
+ACC_SIZE_B=4
 
 #=============================================================================
 # subroutines
 #=============================================================================
 def print_usage():
-	print("""
+  print(f"""
   gemmini_trace_munge <in_log> [options]
   --------------------------------------
   Reads a log file from a gemmini RTL simulator (vcs, verilator, firesim),
-  and does a variety of actions on it, including verification of dependencies,
-  and generating various waveforms (wavedrom json, vcd, excel, ascii).
+  and does a variety of actions on it. First, if parses the log file into
+  command objects in each of the entry slots. Then, it verifies accept, issuing
+  and finalizing of each command with respect to queue ordering and 
+  RAW, WAR, and WAW dependencies. Finally, you can output a waveform of the
+  commands in various forms (wavedrom json, vcd, excel, ascii).
 
   options
   -------
+  -dim <count>            --> systolic-array dimension (defualt is {DIM})
+  -elem_size <bytes>      --> size of input elements (default is {ELEM_SIZE_B})
+  -acc_size <bytes>       --> size of output elements (default is {ACC_SIZE_B})
+  -entries <count>        --> number of ROB entries, (default is {NUM_ENTRIES})
   -wavedrom_out <json>    --> generate a json for wavedrom consumption
   -h|-help                --> print this help
-	"""))
-	exit(1)
+  """))
+  exit(1)
 
 #=============================================================================
 # parse args
@@ -47,6 +60,123 @@ class Addr(abc):
   def __init__
 
 class DramAddr
+
+# 
+GARBAGE_ADDR = 0xffffffff
+
+class ParamType(Enum)
+  SpadReadStartAddr   = 0
+  SpadWriteStartAddr  = 1
+  DramReadStartAddr   = 10
+  DramWriteStartAddr  = 11
+  DramReadStride      = 20
+  DramWriteStride     = 21
+
+  MatmulRshift    = 100
+  AccumRshift     = 101
+  Relu6Lshift     = 102
+
+class ParamArgs(NamedTuple):
+  name: str
+  value: int
+
+#==============================================================================
+# WEIGHT-STATIONARY RULES FOR ANY SCHEDULING ALGORITHM
+#==============================================================================
+# event consistency rules
+# - no accept allowed in an entry slot that is occupied
+# - no issue allowed in a slot that is not accepted
+# - no issue allowed in a slot that is already issued
+# - an issue must happen >=1 cycles afer an accept
+# - no finalize allowed in a slot that is not issued
+# - an issue on a slot must be consistent with the accept params
+# - a finalize on a slot must be consistent with the issue params
+# - a finalize must happen >=0 cycles after an issue
+
+# queue ordering rules
+# - commands in the same queue must have the same accept, issue, and final ordering
+
+# addressing rules
+# - all ex     cmds must have A != 0xffffffff
+# - all ex.pre cmds must have B != 0xffffffff
+# - all ex.acc cmds must have B == 0xffffffff
+# - all ex     cmds must have D == 0xffffffff
+# - all ex     cmds must have C != 0xffffffff
+# - an ex.acc must not be the first ex cmd in the sub-sequence
+# - all scratchpad addr must be in increments of DIM
+# - all mvin to non-accumulator must have alignment and stride 
+#   multiple of DIM*ELEM_SIZE (>0)
+# - all mvin to accumulator must have alignment and stride 
+#   multiple of DIM*ACC_SIZE (>=0)
+# - NO DRAM writes in a subsequence shall have address ranges that overlap
+
+# configuration rules
+# - a config_ex cannot be issued until all previous cmds are finalized
+#   A SUBSEQUENCE STARTS WITH THE config_ex COMMAND
+# - config_ex accept cannot occur more than 1x in a row
+# - config_mvin accept cannot occur more than 1x in a row
+# - config_mvout accept cannot occur more than 1x in a row
+# - a mvin_config must come AT SOME POINT before any mvin cmd in a subsequence
+# - a mvout_config must come AT SOME POINT before any mvout cmd in a subsequence
+
+# data dependency rules (within a sequence)
+# - all ex     must be issued after most recent mvin(A) finalized to same A addr
+# - all ex.pre must be issued after most recent mvin(B) finalized to same B addr
+# - all ex     must be issued after most recent mvin(D) finalized to same C addr
+#              (ignoring C[30] and D[30] bits during comparison)
+# - all mvout  must be issued after most recent ex(C) finalized to same spad addr
+#              (ignoring C[30] and D[30] bits during comparison)
+
+class Param(abc):
+  def __init__(self, name, value, is_data, is_spad, is_read)
+  pass
+
+class DataParam
+  def __init__(self, name, value, is_spad, is_read, stride, item_size_b)
+    self.name        = name
+    self.value       = value
+    self.is_spad     = is_spad
+    self.is_read     = is_read
+    self.item_size_b = item_size_b
+    self.stride      = None
+    self.tiles       = None
+    # spad/dram addrs
+    self.spad_start  = self.value  & 0xCFFFFFFF
+    self.spad_end    = self_spad_start + DIM
+    self.dram_start  = self.value
+    self.dram_end    = self_dram_start + (DIM * self.item_size_b)
+
+    if self.is_spad & self.is_read:
+      # TODO: fixme
+      # do not read from accumulator in scratchpad
+      assert(self.value & 0x4000000 == 0)
+
+  def depends_on_data_from(self, other):
+    """
+    'other' belongs to a previous or current command. returns true if
+    this param's data param depends on another command's data param. only
+    concerned with RAW, WAW, and WAR dependencies
+    """
+    assert(isinstance(other, DataParam))
+
+    both_spad        = self.is_spad and other.is_spad
+    both_dram        = (not self.is_spad) and (not other.is_spad)
+    both_not_read    = other.is_write or self.is_write
+    # possible spad addrs
+    other_spad_start = other.value & 0xCFFFFFFF
+    other_spad_end   = other_spad_start + DIM
+    # possible dram addrs
+    other_dram_start = other.value
+    other_dram_end   = other_dram_start + (DIM * other.item_size_b)
+
+    if both_spad and both_not_read:
+      return (self_spad_start < other_spad_end) and \
+             (self_spad_end > other_spad_start)
+    elif both_dram and both_not_read:
+      return (self_dram_start < other_dram_end) and \
+             (self_dram_end > other_dram_start)
+    else:
+      return False
 
 
 
@@ -191,49 +321,49 @@ class ExCommand(GemminiCommand):
 
 #=============================================================================
 if __name__ == "__main__":
-	if len(sys.argv) < 1:
-		print_usage()
+  if len(sys.argv) < 1:
+    print_usage()
 
-	# parse inputs
-	in_file = sys.argv[1]
-	out_file = sys.argv[2]
-	trigger = re.compile(".*`ifdef PRINTF_COND.*")
-	targets = []
-	for idx in range(3, len(sys.argv)):
-		targets.append(re.compile(sys.argv[idx]))
+  # parse inputs
+  in_file = sys.argv[1]
+  out_file = sys.argv[2]
+  trigger = re.compile(".*`ifdef PRINTF_COND.*")
+  targets = []
+  for idx in range(3, len(sys.argv)):
+    targets.append(re.compile(sys.argv[idx]))
 
-	# read input lines
-	in_lines = []
-	with open(in_file, "r") as f:
-		in_lines = f.readlines()
+  # read input lines
+  in_lines = []
+  with open(in_file, "r") as f:
+    in_lines = f.readlines()
 
-	# enable PRINTF_COND lines around points of interest
-	enables = 0
-	out_lines = []
-	idx = 0
-	idx_end = len(in_lines)
-	while(idx < idx_end):
-		if trigger.match(in_lines[idx]):
-			matches_target = False
-			for target in targets:
-				if target.match(in_lines[idx+4]):
-					matches_target = True
-					break
-			if matches_target:
-				enables += 1
-				out_lines += in_lines[idx+3:idx+6]
-			else:
-				out_lines += in_lines[idx:idx+9]
-			idx += 9
-		else:
-			out_lines.append(in_lines[idx])
-			idx += 1
+  # enable PRINTF_COND lines around points of interest
+  enables = 0
+  out_lines = []
+  idx = 0
+  idx_end = len(in_lines)
+  while(idx < idx_end):
+    if trigger.match(in_lines[idx]):
+      matches_target = False
+      for target in targets:
+        if target.match(in_lines[idx+4]):
+          matches_target = True
+          break
+      if matches_target:
+        enables += 1
+        out_lines += in_lines[idx+3:idx+6]
+      else:
+        out_lines += in_lines[idx:idx+9]
+      idx += 9
+    else:
+      out_lines.append(in_lines[idx])
+      idx += 1
 
-	# write to output file
-	with open(out_file, "w") as f:
-		f.writelines(out_lines)
+  # write to output file
+  with open(out_file, "w") as f:
+    f.writelines(out_lines)
 
-	print(f"INFO: enabled {enables} printfs in {out_file}")
+  print(f"INFO: enabled {enables} printfs in {out_file}")
 
 if __name__ == "__main__":
   if len(sys.argv
