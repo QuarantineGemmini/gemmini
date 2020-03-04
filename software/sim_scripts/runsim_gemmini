@@ -6,13 +6,9 @@ set -euo pipefail
 # setup notes
 #=============================================================================
 # before running anything, do the following in order:
-#  1) build the simulator with the `buildsim_gemmini` command
-#  2) build the workloads in the gemmini/software/gemmini-rocc-tests dir
-#      by running `rm -fr build && ./build.sh`
-
-# 1) which test to run (or multiple)
-# 2) use debug compile or fast compile
-# 3) use mesh-ucli, or some other ucli
+#  1) build the simulator with `buildsim_gemmini`
+#  2) rebuild the workloads with `buildworkload_gemmini`
+#=============================================================================
 
 # this builds variations of each simulator for your gemmini simulations
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
@@ -33,8 +29,8 @@ SW_DIR_IMAGENET="${SW_DIR}/build/imagenet"
 SW_DIR_MLPS="${SW_DIR}/build/mlps"
 
 # general simulator options
+CONFIG_PROJECT=example
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
-BIN_LAB3="$DIR/simv-example-${CONFIG_LAB3}"
 
 # for vcs sim only
 # UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
@@ -49,11 +45,14 @@ TEST_6=resnet50
 #=============================================================================
 # defaults
 #=============================================================================
-BIN="$BIN_LAB3"
+CONFIG="lab3"
+CONFIG_FULL="$CONFIG_LAB3"
 
 IS_NOISY=0
 IS_VERBOSE=0
+IS_DEBUG=0
 IS_DEBUGGER=0
+
 VCD_TYPE="none"
 SIM_TYPE="spike"
 WORKLOAD_TYPE="baremetal"
@@ -95,12 +94,14 @@ display_usage() {
   -verilator    --> run the verilator-generated simulator
   -firesim      --> run the firesim-generated simulator
 
-  -noisy        --> print to stdout as well as the logfile
-  -no_noisy     --> opposite of above (default)
-  -verbose      --> verbose rtl-printf logging (if simulator supports it)
-  -no_verbose   --> opposite of above (default)
-  -debugger     --> enter into the debugger mode (if supported)
-  -no_debugger  --> opposite of above (default)
+  -no_noisy     --> only print simulator output to logfile (default)
+  -noisy        --> print to stdout and the logfile
+  -no_verbose   --> only print the selective RTL printf()s (default)
+  -verbose      --> verbose rtl-printf logging
+  -no_debug     --> don't use the debug-build of the simulator (default)
+  -debug        --> use the debug-build of the simulator
+  -no_debugger  --> don't open the interactive debugger (default)
+  -debugger     --> enter into the debugger mode
   -vcd_none     --> no vcd generated (default)
   -vcd_mesh     --> generates a vcd of just the mesh signals
   -h|help       --> display this help
@@ -122,9 +123,11 @@ runsim() {
   local workload_name="$2"
   local workload_binary="${workload_dir}/${workload_name}-${WORKLOAD_TYPE}"
   local binary_name="$(basename "$workload_binary")"
-  local ts="$(date "+%Y-%M-%d_%H:%M:%S")"
+  local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
   local testname="${ts}_${binary_name}"
   local starttime=$SECONDS
+  local extra_opts=""
+  local debugger_opts=""
 
   info "$testname started"
   #------------------------
@@ -141,11 +144,15 @@ runsim() {
         extra_opts="$extra_opts -l"
       fi
       if [ "$IS_DEBUGGER" -eq 1 ] ; then
-        extra_opts="$extra_opts -d"
+        debugger_opts="$debugger_opts -d"
       fi
       ;;
     vcs)
-      local extra_opts=""
+      BIN="$VCS_DIR/simv-${CONFIG_PROJECT}-${CONFIG_FULL}"
+      if [ "$IS_DEBUG" -eq 1 ] ; then 
+        BIN="${BIN}-debug"; 
+      fi
+
       local logdir="$VCS_DIR/logs"
       local logfile="${logdir}/${testname}.log"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
@@ -159,7 +166,7 @@ runsim() {
         extra_opts="$extra_opts +permissive +verbose +permissive-off"
       fi
       if [ "$IS_DEBUGGER" -eq 1 ] ; then
-        extra_opts="$extra_opts -gui"
+        debugger_opts="$debugger_opts +permissive -gui +permissive-off"
       fi
       ;;
     verilator)
@@ -173,7 +180,11 @@ runsim() {
       ;;
   esac
   #------------------------
-  if [ "$IS_NOISY" -eq 1 ] ; then
+  if [ "$IS_DEBUGGER" -eq 1 ] ; then
+    info "interactive debug -- no logfile for $testname will be produced!"
+    $BIN $debugger_opts $extra_opts "$workload_binary"
+    stty echo
+  elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
     $BIN $extra_opts "$workload_binary" |& tee "$logfile"
     stty echo
@@ -201,7 +212,6 @@ while [ $# -ne 0 ] ; do
     -lab3)
       CONFIG="lab3"
       CONFIG_FULL="$CONFIG_LAB3"
-      BIN="$BIN_LAB3"
       ;;
     -spike) 
       SIM_TYPE="spike"
@@ -219,14 +229,16 @@ while [ $# -ne 0 ] ; do
     -no_noisy)    IS_NOISY=0 ;;
     -verbose)     IS_VERBOSE=1 ;;
     -no_verbose)  IS_VERBOSE=0 ;;
+    -debug)       IS_DEBUG=1 ;;
+    -no_debug)    IS_DEBUG=0 ;;
     -debugger)    IS_DEBUGGER=1 ;;
     -no_debugger) IS_DEBUGGER=0 ;;
     -bare)        WORKLOAD_TYPE="baremetal" ;;
     -linux)       WORKLOAD_TYPE="linux" ;;
     -vcd_none)    
       err "vcd-generation not supported yet"
-			VCD_TYPE="none" 
-			;;
+      VCD_TYPE="none" 
+      ;;
     -vcd_mesh)    
       err "vcd-generation not supported yet"
       VCD_TYPE="mesh" 

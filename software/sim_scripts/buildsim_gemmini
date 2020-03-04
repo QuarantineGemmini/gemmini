@@ -22,6 +22,9 @@ CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 #=============================================================================
 # defaults
 #=============================================================================
+IS_NOISY=0
+IS_DEBUG=0
+IS_FORCE=0
 SIM_TYPE="spike"
 
 # for selective verbose printfs, used by simulator Makefiles
@@ -40,17 +43,26 @@ display_usage() {
   --------------------------------------------------------
   Utility to build simulators for various gemmini configurations. By default
   it assumes the spike simulator (nothing to be done). Output simulators
-  will be placed in the respective directories. Available configurations are:
+  will be placed in the respective directories. 
+  Available configurations are:
     lab3: $CONFIG_LAB3
     
   options
   -------
   -spike        --> build all following configs from spike compiler (no-op)
   -vcs          --> build all following configs from vcs compiler
-  -vl8          --> build all following configs from verilator compiler
-  -fsim         --> build all following configs from firesim (on manager node)
+  -verilator    --> build all following configs from verilator compiler
+  -firesim      --> build all following configs from firesim (on manager node)
+
+  -no_force      --> let make/simulator determine if out of date (default)
+  -force        --> force remove simulator output files (not firrtl though)
+  -no_noisy     --> only print to logfile (default)
+  -noisy        --> print to stdout as well as the logfile
+  -no_debug     --> don't compile a debug-simulator (default)
+  -debug        --> compile a debug-mode simulator
   -printf <pat> --> python regex pattern for printf() strings to selectively 
-                    set to verbose mode in the simulator (no-op for spike)
+                    set to verbose mode in the simulator (no-op for spike).
+                    default is: '$ENABLE_PRINTF_PATTERN'
   -h|help       --> display this help
 
 EOF
@@ -62,22 +74,41 @@ EOF
 #=============================================================================
 buildsim() {
   local config_name="$1"
-  local ts="$(date "+%Y-%M-%d_%H:%M:%S")"
+  local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
   local compile_name="${ts}_compile_${SIM_TYPE}_${config_name}"
   local starttime=$SECONDS
+  local cmdline=""
 
   info "$compile_name started"
   #------------------------
   case $SIM_TYPE in
     spike)
-      err "spike not supported yet"
+      info "spike is a no-op!"
       ;;
     vcs)
       local logdir="$VCS_DIR/logs"
       local logfile="${logdir}/${compile_name}.log"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
       cd "$VCS_DIR"
-      make CONFIG="$config_name" |& tee "$logfile"
+
+      if [ "$IS_FORCE" -eq 1 ]; then
+        for f in simv-*-$config_name* *.daidir/.vcs.timestamp \
+						generated-src/*.$config_name/*.printf*.v ; do
+          info "force removing $f"
+          rm -fr $f
+        done
+      fi
+      cmdline="make CONFIG=$config_name"
+      if [ "$IS_DEBUG" -eq 1 ]; then 
+        cmdline="$cmdline debug"
+      fi
+      if [ "$IS_NOISY" -eq 1 ]; then 
+        set -x
+        $cmdline |& tee "$logfile"
+        set +x
+      else 
+        $cmdline &> "$logfile"
+      fi
       ;;
     verilator)
       err "verilator not supported yet"
@@ -104,30 +135,22 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
-    -spike)
-      SIM_TYPE="spike"
-      ;;
-    -vcs)
-      SIM_TYPE="vcs"
-      ;;
-    -verilator)
-      SIM_TYPE="verilator"
-      ;;
-    -firesim)
-      SIM_TYPE="firesim"
-      ;;
+    -spike)     SIM_TYPE="spike" ;;
+    -vcs)       SIM_TYPE="vcs" ;;
+    -verilator) SIM_TYPE="verilator" ;;
+    -firesim)   SIM_TYPE="firesim" ;;
+    -force)     IS_FORCE=1 ;;
+    -no_force)  IS_FORCE=0 ;;
+    -noisy)     IS_NOISY=1 ;;
+    -no_noisy)  IS_NOISY=0 ;;
+    -debug)     IS_DEBUG=1 ;;
+    -no_debug)  IS_DEBUG=0 ;;
     -printf)
       if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
       export ENABLE_PRINTF_PATTERN="$1"
       ;;
-    -h|-help) 
-      display_usage 
-      ;;
-    lab3) 
-      buildsim "$CONFIG_LAB3"
-      ;;
-    *) 
-      err "invalid option; $1" 
-      ;;
+    -h|-help) display_usage ;;
+    lab3) buildsim "$CONFIG_LAB3" ;;
+    *) err "invalid option: $arg" ;;
   esac
 done

@@ -33,8 +33,8 @@ WORKLOAD_TYPE="bare"
 
 FORCE_MODE="no_force"
 
-TILER_MODE="new_tiler"
-TILER_CFLAGS="-DUSE_CUSTOM_TILER"
+TILER_MODE="fsm_tiler"
+TILER_CFLAGS="-DUSE_FSM_TILER"
 
 DEBUG_MODE="no_debug"
 DEBUG_CFLAGS="-DNODEBUG"
@@ -62,7 +62,7 @@ display_usage() {
   -force      --> force rebuild by deleting build/ dir first
   -no_debug   --> disable verbose software debugging (default)
   -debug      --> enable verbose software debugging
-  -new_tiler  --> use new original tiler algorithm (default)
+  -fsm_tiler  --> use FSM-based tiler algorithm (default)
   -old_tiler  --> use the original tiler algorithm
   -h|help     --> display this help
 
@@ -75,7 +75,7 @@ EOF
 #=============================================================================
 buildworkload() {
   local workload_type="$1"
-  local ts="$(date "+%Y-%M-%d_%H:%M:%S")"
+  local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
   local flags="${FORCE_MODE}_${TILER_MODE}_${DEBUG_MODE}"
   local run_name="${ts}_${workload_type}_${flags}"
   local logfile="$LOGDIR/${run_name}.log"
@@ -130,9 +130,9 @@ while [ $# -ne 0 ] ; do
       DEBUG_MODE="debug"
       DEBUG_CFLAGS=""
       ;;
-    -new_tiler)
-      TILER_MODE="new_tiler"
-      TILER_CFLAGS="-DUSE_CUSTOM_TILER"
+    -fsm_tiler)
+      TILER_MODE="fsm_tiler"
+      TILER_CFLAGS="-DUSE_FSM_TILER"
       ;;
     -old_tiler)
       TILER_MODE="old_tiler"
