@@ -93,39 +93,6 @@ class ParamArgs(NamedTuple):
 # - a finalize on a slot must be consistent with the issue params
 # - a finalize must happen >=0 cycles after an issue
 
-# queue ordering rules
-# - commands in the same queue must have the same accept, issue, and final ordering
-
-# addressing rules
-# - all ex     cmds must have A != 0xffffffff
-# - all ex.pre cmds must have B != 0xffffffff
-# - all ex.acc cmds must have B == 0xffffffff
-# - all ex     cmds must have D == 0xffffffff
-# - all ex     cmds must have C != 0xffffffff
-# - an ex.acc must not be the first ex cmd in the sub-sequence
-# - all scratchpad addr must be in increments of DIM
-# - all mvin to non-accumulator must have alignment and stride 
-#   multiple of DIM*ELEM_SIZE (>0)
-# - all mvin to accumulator must have alignment and stride 
-#   multiple of DIM*ACC_SIZE (>=0)
-# - NO DRAM writes in a subsequence shall have address ranges that overlap
-
-# configuration rules
-# - a config_ex cannot be issued until all previous cmds are finalized
-#   A SUBSEQUENCE STARTS WITH THE config_ex COMMAND
-# - config_ex accept cannot occur more than 1x in a row
-# - config_mvin accept cannot occur more than 1x in a row
-# - config_mvout accept cannot occur more than 1x in a row
-# - a mvin_config must come AT SOME POINT before any mvin cmd in a subsequence
-# - a mvout_config must come AT SOME POINT before any mvout cmd in a subsequence
-
-# data dependency rules (within a sequence)
-# - all ex     must be issued after most recent mvin(A) finalized to same A addr
-# - all ex.pre must be issued after most recent mvin(B) finalized to same B addr
-# - all ex     must be issued after most recent mvin(D) finalized to same C addr
-#              (ignoring C[30] and D[30] bits during comparison)
-# - all mvout  must be issued after most recent ex(C) finalized to same spad addr
-#              (ignoring C[30] and D[30] bits during comparison)
 
 class Param(abc):
   def __init__(self, name, value, is_data, is_spad, is_read)
@@ -177,6 +144,231 @@ class DataParam
              (self_dram_end > other_dram_start)
     else:
       return False
+
+class NoNewAcceptInOccupiedEntrySlotRule(GemminiRule):
+  def __init__(self, cycle, ...):
+    pass
+
+GARBAGE_ADDR = 0xffffffff
+
+def check_trace(trace, vs) -> None:
+  """
+  trace violation checks
+  ---------------------------------------
+  - a trace must have >0 subsequences
+  - a subsequence must have >1 commands
+  - a subsequence must not overlap with any other subsequence
+  - all commands must be in a subsequence
+  """
+  vs.catetory("trace")
+  (subseqs, cmds) = trace.get_subsequences()
+  
+  for cmd in cmds:
+    vs.check()
+    vs.append(TraceViolation(trace, f"cmd not in subseq: {cmd}"))
+
+  vs.check()
+  if len(subseqs) == 0:
+    vs.append(TraceViolation(trace, f"no subseqs found!"))
+
+  for idx1 in range(len(subseqs)):
+    s1 = subseqs[idx1]
+
+    vs.check()
+    if len(s1.cmds()) == 1:
+      vs.append(SubseqViolation(s1, f"has 1 command"))
+
+    for idx2 in range(idx1+1, len(subseqs)):
+      s2 = subseqs[idx2]
+      vs.check()
+      if s1.last_cycle >= s2.first_cycle:
+        vs.append(SubseqViolation(s1, f"overlaps with subseq {s2}"))
+
+  # now do all subseq children checks
+  for subseq in subseqs:
+    check_ordering_rules(subseq, vs)
+    check_data_addressing_rules(subseq, vs)
+    check_data_dependency_rules(subseq, vs)
+
+
+def check_ordering_rules(subseq, vs) -> None
+  """
+  cmd ordering rules
+  ------------------
+  - the first cmd in a subseq must be a config_ex
+  - an ex.pre must not the first ex cmd in the sub-sequence
+  - configs must be followed by 1+ actions before another config. config
+    is config_(ex/mvin/mvout) and the corresponding action is ex/mvin/mvout
+  - first ex/mvin/mvout must come after first config_(ex/mvin/mvout)
+  - cmds in same queue must have consistent accept, issue, and final ordering
+  """
+  vs.category(f"{subseq} command ordering")
+
+  #--------------------------------------------------------------------------
+  # config_ex rules
+  first_cmd = subseq.cmd(0)
+  vs.check()
+  if first_cmd.type != CONFIG_EX:
+    vs.append(CmdViolation(first_cmd, f"first cmd must be config_ex"))
+
+  #--------------------------------------------------------------------------
+  # an ex.pre must be the first ex cmd in the sub-sequence
+  ex_cmds = subseq.cmds(EX)
+  vs.check()
+  if (len(ex_cmds) == 0) or (ex_cmds[0].is_acc):
+    vs.append(SubseqViolation(subseq, f"ex.pre must be the first ex cmd"))
+
+  def check_config_and_action(type, action_type, config_type)
+    #--------------------------------------------------------------------------
+    # configs must be followed by 1+ actions before another config
+    for cmd in subseq.cmds(config_type)
+      config_after = subseq.first_accept_after(cmd.accept_cycle, config_type)
+      action_after = subseq.first_accept_after(cmd.accept_cycle, action_type)
+      vs.check()
+      if action_after is None:
+        vs.append(CmdViolation(cmd, f"no following {type} action found!"))
+      else:
+        vs.check()
+        if (config_after is not None) and \
+            (config_after.accept_cycle < action_after.accept_cycle):
+          vs.append(CmdViolation(cmd, 
+            f"followed by another config {config_after}"))
+
+    #------------------------------------------------------------------------
+    # first ex/mvin/mvout must come after first config_(ex/mvin/mvout)
+    first_action = subseq.first_cmd(action_type)
+    first_config = subseq.first_cmd(config_type)
+    vs.check()
+    if first_config is None:
+      vs.append(SubseqViolation(subseq, f"no {type} config commands found!"))
+    vs.check()
+    if first_action is None:
+      vs.append(SubseqViolation(subseq, f"no {type} commands found!"))
+    vs.check()
+    if first_action.accept_cycle < first_config.accept_cycle:
+      vs.append(CmdViolation(first_action, f"occurs before {first_config}"))
+
+    #------------------------------------------------------------------------
+    # cmds in same queue must have consistent accept, issue, and final ordering
+    all_cmds  = subseq.cmds(config_type) + subseq.cmds(action_type)
+    by_accept = sorted(all_cmds, key=lambda cmd: cmd.accept_cycle)
+    by_issue  = sorted(all_cmds, key=lambda cmd: cmd.issue_cycle)
+    by_final  = sorted(all_cmds, key=lambda cmd: cmd.final_cycle)
+    for idx in range(len(all_cmds)):
+      (a,i,f) = (by_accept[idx], by_issue[idx], by_final=[idx])
+      vs.check()
+      if a != i:
+        vs.append(CmdViolation(a, f"accepted before, but issued after {i}"))
+      vs.check()
+      if a != f:
+        vs.append(CmdViolation(a, f"accepted before, but finalized after {i}"))
+
+  # do the checks for each of the three types of commands
+  check_config_and_action("mvin",  MVIN,  CONFIG_MVIN)
+  check_config_and_action("mvout", MVOUT, CONFIG_MVOUT)
+  check_config_and_action("ex",    EX,    CONFIG_EX)
+
+def check_ordering_rules(subseq, vs) -> None
+  """
+  data dependency rules
+  ---------------------
+  - all ex     must issue after most recent mvin(A) finalized to same A addr
+  - all ex.pre must issue after most recent mvin(B) finalized to same B addr
+  - all ex     must issue after most recent mvin(D) finalized to same C addr
+              (ignoring C[30] and D[30] bits during comparison)
+  - all mvout  must issue after most recent ex(C) finalized to same spad addr
+              (ignoring C[30] and D[30] bits during comparison)
+  """
+  vs.category(f"{subseq} data dependencies")
+
+  TODO FIXME
+
+
+def check_ordering_rules(subseq, vs) -> None
+  """
+  addressing rules
+    ex cmds
+      - all ex     cmds must have A != 0xffffffff
+      - all ex.pre cmds must have B != 0xffffffff
+      - all ex.acc cmds must have B == 0xffffffff
+      - all ex     cmds must have D == 0xffffffff
+      - all ex     cmds must have C != 0xffffffff
+      - all scratchpad addr must be in increments of DIM
+    mvin_config cmds
+      - all mvin to non-accumulator must have alignment and stride 
+        multiple of DIM*ELEM_SIZE (>0)
+      - all mvin to accumulator must have alignment and stride 
+        multiple of DIM*ACC_SIZE (>=0)
+    mvin cmds
+      - all scratchpad addr must be in increments of DIM
+    mvout_config cmds
+  - NO DRAM writes in a subsequence shall have address ranges that overlap
+  """
+  vs.category(f"{subseq} data addressing")
+
+  TODO FIXME
+
+  def aligned_to_DIM(value):
+    return (value % DIM) == 0
+
+  #---------------------------------------------------------------------------
+  for cmd in trace.ex_commands():
+    if cmd.A.is_garbage:
+      vs.append(GemminiViolation(cmd, f"A must not equal {GARBAGE_ADDR}"))
+    elif (cmd.A.value % DIM) != 0:
+      vs.append(GemminiViolation(cmd, f"A must be aligned to DIM: {DIM}"))
+
+    if cmd.is_preloaded:
+      if cmd.B.is_garbage:
+        vs.append(GemminiViolation(cmd, f"B must not equal {GARBAGE_ADDR}"))
+      elif (cmd.B.value % DIM) != 0:
+        vs.append(GemminiViolation(cmd, f"B must be aligned to DIM: {DIM}"))
+    else:
+      if not cmd.B.is_garbage:
+        vs.append(GemminiViolation(cmd, f"B must equal {GARBAGE_ADDR}"))
+
+    if not cmd.D.is_garbage:
+      vs.append(GemminiViolation(cmd, f"D must equal {GARBAGE_ADDR}"))
+
+    if cmd.C.is_garbage:
+      vs.append(GemminiViolation(cmd, f"C must not equal {GARBAGE_ADDR}"))
+    elif (cmd.C.value % DIM) != 0:
+      vs.append(GemminiViolation(cmd, f"C must be aligned to DIM: {DIM}"))
+
+  #---------------------------------------------------------------------------
+  for cmd in trace.config_mvin_commands():
+    if cmd.dst_is_accumulator:
+      if (cmd.stride.value % (DIM*ACC_BYTES)) != 0:
+        vs.append(GemminiViolation(cmd, 
+          f"stride not aligned to DIM*ACC_BYTES: {DIM*ACC_BYTES}"))
+    else:
+      if (cmd.stride.value == 0):
+        vs.append(GemminiViolation(cmd, 
+          f"when dst is not accumulator, stride must be >0"))
+      elif (cmd.stride.value % (DIM*ELEM_BYTES)) != 0:
+        vs.append(GemminiViolation(cmd, 
+          f"stride not aligned to DIM*ELEM_BYTES: {DIM*ELEM_BYTES}"))
+
+  for cmd in trace.config_mvout_commands():
+    if (cmd.stride.value == 0):
+      vs.append(GemminiViolation(cmd, 
+        f"stride must not be 0, stride must be >0"))
+    elif (cmd.dst.stride % (DIM*ELEM_BYTES)) != 0:
+      vs.append(GemminiViolation(cmd, 
+        f"stride not aligned to DIM*ELEM_BYTES: {DIM*ELEM_BYTES}"))
+
+
+  for cmd in trace.mvin_commands():
+    if cmd.dst_is_accumulator:
+      if (cmd.dst.value % (DIM*ELEM_BYTES)) != 0:
+        vs.append(GemminiViolation(cmd, 
+          f"dst not aligned to DIM*ELEM_BYTES {DIM*ELEM_BYTES}"))
+    if (cmd.dst.value == 0):
+      vs.append(GemminiViolation(cmd, f"dst must be > 0"))
+    elif (cmd.dst.value % (DIM*ELEM_BYTES)) != 0:
+      vs.append(GemminiViolation(cmd, 
+        f"dst not aligned to DIM*ELEM_BYTES {DIM*ELEM_BYTES}"))
+
 
 
 
