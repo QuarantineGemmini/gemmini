@@ -9,7 +9,7 @@ set -euo pipefail
 
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
-source "$CY_DIR/sourceme.sh"
+#source "$CY_DIR/sourceme.sh"
 
 # set simulator dirs
 VCS_DIR="$CY_DIR/sims/vcs"
