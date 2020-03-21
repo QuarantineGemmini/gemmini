@@ -82,6 +82,7 @@ buildworkload() {
   local workload_type="$1"
   local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
   local flags="${FORCE_MODE}__${MODE}__${DEBUG_MODE}"
+  local dst_dir="build_${MODE}"
   local run_name="${ts}__${workload_type}__${flags}"
   local logfile="$LOGDIR/${run_name}.log"
   local starttime=$SECONDS
@@ -98,6 +99,10 @@ buildworkload() {
         rm -fr "build/"
       fi
       ./build.sh |& tee "$logfile"
+      # now copy the build AND the parameters to the labelled dir
+      rm -fr "$dst_dir"
+      cp -r "build" "$dst_dir"
+      cp "include/gemmini_params.h" "$dst_dir/"
       ;;
     linux)
       err "linux not supported yet"
@@ -121,7 +126,7 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
-    -new_isa)
+    -hw_tiler)
       MODE="hw_tiler"
       MODE_CFLAGS="-DUSE_HW_TILER"
       ;;
