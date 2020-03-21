@@ -152,9 +152,10 @@ runsim() {
   local workload_dir="$1"
   local workload_name="$2"
   local workload_binary="${workload_dir}/${workload_name}-${SW_PLATFORM}"
+  local workload_args=""
   local binary_name="$(basename "$workload_binary")"
   local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
-  local testname="${ts}_${binary_name}"
+  local testname="${ts}__${SW_MODE}__${binary_name}"
   local starttime=$SECONDS
   local extra_opts=""
   local debugger_opts=""
@@ -212,15 +213,15 @@ runsim() {
   #------------------------
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
     info "interactive debug -- no logfile for $testname will be produced!"
-    $BIN $debugger_opts $extra_opts "$workload_binary"
+    $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
     stty echo
   elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
-    $BIN $extra_opts "$workload_binary" |& tee "$logfile"
+    $BIN $extra_opts "$workload_binary" $workload_args |& tee "$logfile"
     stty echo
     set +x
   else
-    $BIN $extra_opts "$workload_binary" &> "$logfile"
+    $BIN $extra_opts "$workload_binary" $workload_args &> "$logfile"
     stty echo
   fi
   #------------------------
