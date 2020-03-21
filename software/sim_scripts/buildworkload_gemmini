@@ -33,8 +33,9 @@ WORKLOAD_TYPE="bare"
 
 FORCE_MODE="no_force"
 
-TILER_MODE="fsm_tiler"
-TILER_CFLAGS="-DUSE_FSM_TILER"
+MODE="hw_tiler"
+MODE_CFLAGS="-DUSE_HW_TILER"
+#MODE_CFLAGS="-DUSE_FSM_TILER"
 
 DEBUG_MODE="no_debug"
 DEBUG_CFLAGS="-DNODEBUG"
@@ -56,14 +57,18 @@ display_usage() {
     bare:  build for bare-metal sims (most likely for spike, vcs, verilator)
     linux: build for linux simulation (most likely for firesim)
     
-  options
-  -------
+  mutually-excusive mode
+  ----------------------
+  -hw_tiler   --> use the new gemmini2 ISA hardware tiler (default)
+  -fsm_tiler  --> use FSM-based tiler algorithm on the old ISA
+  -orig_tiler --> use the original tiler algorithm on the old ISA
+
+  other options
+  -------------
   -no_force   --> don't force-rebuild the build/ directory (default)
   -force      --> force rebuild by deleting build/ dir first
   -no_debug   --> disable verbose software debugging (default)
   -debug      --> enable verbose software debugging
-  -fsm_tiler  --> use FSM-based tiler algorithm (default)
-  -old_tiler  --> use the original tiler algorithm
   -h|help     --> display this help
 
 EOF
@@ -76,13 +81,13 @@ EOF
 buildworkload() {
   local workload_type="$1"
   local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
-  local flags="${FORCE_MODE}_${TILER_MODE}_${DEBUG_MODE}"
-  local run_name="${ts}_${workload_type}_${flags}"
+  local flags="${FORCE_MODE}__${MODE}__${DEBUG_MODE}"
+  local run_name="${ts}__${workload_type}__${flags}"
   local logfile="$LOGDIR/${run_name}.log"
   local starttime=$SECONDS
 
   # set the CFLAGS and MAKEFLAGS 
-  export CFLAGS="$ORIG_CFLAGS $TILER_CFLAGS $DEBUG_CFLAGS"
+  export CFLAGS="$ORIG_CFLAGS $MODE_CFLAGS $DEBUG_CFLAGS"
 
   info "$run_name started"
   #------------------------
@@ -116,6 +121,18 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
+    -new_isa)
+      MODE="hw_tiler"
+      MODE_CFLAGS="-DUSE_HW_TILER"
+      ;;
+    -fsm_tiler)
+      MODE="fsm_tiler"
+      MODE_CFLAGS="-DUSE_FSM_TILER"
+      ;;
+    -orig_tiler)
+      MODE="orig_tiler"
+      MODE_CFLAGS=""
+      ;;
     -no_force)
       FORCE_MODE="no_force"
       ;;
@@ -129,14 +146,6 @@ while [ $# -ne 0 ] ; do
     -debug)
       DEBUG_MODE="debug"
       DEBUG_CFLAGS=""
-      ;;
-    -fsm_tiler)
-      TILER_MODE="fsm_tiler"
-      TILER_CFLAGS="-DUSE_FSM_TILER"
-      ;;
-    -old_tiler)
-      TILER_MODE="old_tiler"
-      TILER_CFLAGS=""
       ;;
     -h|-help) 
       display_usage 
