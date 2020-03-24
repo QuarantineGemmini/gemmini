@@ -74,6 +74,8 @@ VCD_TYPE="none"
 #=============================================================================
 err() { echo "[ERROR]: $@"; exit 1; }
 info() { echo "[INFO]: $@"; }
+ferr() { echo "[ERROR]: $1" |& tee "$2"; exit 1; }
+finfo() { echo "[INFO]: $1" |& tee "$2"; }
 
 display_usage() {
   cat <<EOF
@@ -202,9 +204,8 @@ runsim() {
       ;;
     verilator)
       BIN="$VERILATOR_DIR/simulator-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
-      if [ "$IS_DEBUG" -eq 1 ] ; then 
-        BIN="${BIN}-debug"; 
-      fi
+      if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
+      extra_opts="$extra_opts -c "
 
       local logdir="$VERILATOR_DIR/logs"
       local logfile="${logdir}/${testname}.log"
@@ -212,10 +213,10 @@ runsim() {
       cd "$VERILATOR_DIR"
 
       if [ "$IS_VERBOSE" -eq 1 ] ; then
-        extra_opts="$extra_opts +permissive +verbose +permissive-off"
+        err "verilator verbose not implemented yet"
       fi
       if [ "$IS_DEBUGGER" -eq 1 ] ; then
-        debugger_opts="$debugger_opts +permissive -gui +permissive-off"
+        err "verilator debugger not implemented yet"
       fi
       ;;
     firesim)
@@ -227,24 +228,24 @@ runsim() {
   esac
   #------------------------
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
-    info "interactive debug -- no logfile for $testname will be produced!"
-    $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
+    finfo "interactive debug -- no output to logfile" "$logfile"
+    $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
     stty echo
   elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
-    $BIN $extra_opts "$workload_binary" $workload_args |& tee "$logfile"
+    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args |& tee "$logfile"
     stty echo
     set +x
   else
-    $BIN $extra_opts "$workload_binary" $workload_args &> "$logfile"
+    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args &> "$logfile"
     stty echo
   fi
   #------------------------
   totaltime=$(( $SECONDS-$starttime ))
   if grep FAIL "$logfile" ; then 
-    err "$testname failed!"; 
+    ferr "$testname failed!" "$logfile"; 
   fi
-  info "$testname succeeded in $totaltime seconds"
+  finfo "$testname succeeded in $totaltime seconds" "$logfile"
 }
 
 sw_dir() {

@@ -18,7 +18,7 @@ SPIKE_DIR="$CY_DIR/sims/spike"
 
 # TODO: clean up multiple projects (or will they all be example?)
 # general simulator options
-#HW_CONFIG_PROJECT=example
+HW_CONFIG_PROJECT=example
 
 # for eecs290-2 lab3
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
@@ -30,6 +30,8 @@ IS_NOISY=0
 IS_DEBUG=0
 IS_FORCE=0
 SIM_TYPE="spike"
+
+VL8_CPU_HOG=0
 
 # for selective verbose printfs, used by simulator Makefiles
 export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
@@ -51,14 +53,21 @@ display_usage() {
   Available configurations are:
     lab3: $CONFIG_LAB3
     
-  options
-  -------
+  simulator
+  ---------
   -spike        --> build all following configs from spike compiler (no-op)
   -vcs          --> build all following configs from vcs compiler
   -verilator    --> build all following configs from verilator compiler
   -firesim      --> build all following configs from firesim (on manager node)
 
-  -no_force      --> let make/simulator determine if out of date (default)
+  verilator options 
+  -----------------
+  -vl8_cpu_hog  --> no threads will yield to the cpu. make sure your the only
+                    one on your machine if you do this!
+
+  other options
+  -------------
+  -no_force     --> let make/simulator determine if out of date (default)
   -force        --> force remove simulator output files (not firrtl though)
   -no_noisy     --> only print to logfile (default)
   -noisy        --> print to stdout as well as the logfile
@@ -81,7 +90,6 @@ buildsim() {
   local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
   local compile_name="${ts}_compile_${SIM_TYPE}_${config_name}"
   local starttime=$SECONDS
-  local cmdline=""
 
   info "$compile_name started"
   #------------------------
@@ -92,6 +100,7 @@ buildsim() {
     vcs)
       local logdir="$VCS_DIR/logs"
       local logfile="${logdir}/${compile_name}.log"
+      local cmdline="make CONFIG=$config_name"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
       cd "$VCS_DIR"
 
@@ -102,7 +111,6 @@ buildsim() {
           rm -fr $f
         done
       fi
-      cmdline="make CONFIG=$config_name"
       if [ "$IS_DEBUG" -eq 1 ]; then 
         cmdline="$cmdline debug"
       fi
@@ -117,17 +125,28 @@ buildsim() {
     verilator)
       local logdir="$VERILATOR_DIR/logs"
       local logfile="${logdir}/${compile_name}.log"
+      local cmdline="make CONFIG=$config_name"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
       cd "$VERILATOR_DIR"
 
-      if [ "$IS_FORCE" -eq 1 ]; then
-        for f in simulator-*-$config_name* *.daidir/.vcs.timestamp \
-						generated-src/*.$config_name/*.printf*.v ; do
+      # determine which verilator multithread version to use
+      local vl8_src_dir="$VERILATOR_DIR/verilator_install/src/verilator-4.016"
+      local vl8_dst_dir="$VERILATOR_DIR/verilator_install/install/share/verilator"
+      local vl8_mt_dst_h="${vl8_dst_dir}/include/verilated_threads.h"
+      local vl8_mt_src_h="${vl8_src_dir}/include/verilated_threads.h"
+      local vl8_mt_new_h="$VERILATOR_DIR/patch/verilated_threads.h"
+      rm -f "$vl8_mt_dst_h"
+      if [ "$VL8_CPU_HOG" -eq 1 ]; then cp "$vl8_mt_new_h" "$vl8_mt_dst_h"; 
+      else  cp "$vl8_mt_src_h" "$vl8_mt_dst_h"; fi
+
+      if [ "$IS_FORCE" -eqr1 ]; then
+        for f in simulator-${HW_CONFIG_PROJECT}-$config_name* \
+            generated-src/*.*.$config_name/*.*.$config_name \
+						generated-src/*.*.$config_name/*.printf*.v ; do
           info "force removing $f"
           rm -fr $f
         done
       fi
-      cmdline="make CONFIG=$config_name"
       if [ "$IS_DEBUG" -eq 1 ]; then 
         cmdline="$cmdline debug"
       fi
@@ -138,7 +157,6 @@ buildsim() {
       else 
         $cmdline &> "$logfile"
       fi
-
       ;;
     firesim)
       err "firesim not supported yet"
@@ -167,6 +185,8 @@ while [ $# -ne 0 ] ; do
     -vcs)       SIM_TYPE="vcs" ;;
     -verilator) SIM_TYPE="verilator" ;;
     -firesim)   SIM_TYPE="firesim" ;;
+    #------------------------------------------------------------------------
+    -vl8_cpu_hog) VL8_CPU_HOG=1 ;;
     #------------------------------------------------------------------------
     -force)     IS_FORCE=1 ;;
     -no_force)  IS_FORCE=0 ;;
