@@ -23,6 +23,11 @@ HW_CONFIG_PROJECT=example
 # for eecs290-2 lab3
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 
+# update makeflags
+#ORIG_MAKEFLAGS="${MAKEFLAGS:-}"
+#MAKEFLAGS="-j$(cat /proc/cpuinfo | grep '^processor' | wc -l)"
+#export MAKEFLAGS="$MAKEFLAGS $ORIG_MAKEFLAGS --warn-undefined-variables"
+
 #=============================================================================
 # defaults
 #=============================================================================
@@ -32,6 +37,8 @@ IS_FORCE=0
 SIM_TYPE="spike"
 
 VL8_CPU_HOG=0
+VL8_THREADS=1
+VL8_PROFILE=none
 
 # for selective verbose printfs, used by simulator Makefiles
 export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
@@ -55,13 +62,19 @@ display_usage() {
     
   simulator
   ---------
-  -spike        --> build all following configs from spike compiler (no-op)
+  -spike        --> build all following configs from spike compiler (default)
   -vcs          --> build all following configs from vcs compiler
   -verilator    --> build all following configs from verilator compiler
   -firesim      --> build all following configs from firesim (on manager node)
 
   verilator options 
   -----------------
+  -vl8_profile <all|threads>
+                --> if 'threads', the simulator will output a multi-threading
+                    efficiency report. use verilator_gantt to view it. if 'all', 
+                    make the simulator output profiling data for gprof in 
+                    addition to 'threads' profiling data.
+  -vl8_threads  --> how many threads will the simulator use [$VL8_THREADS]
   -vl8_cpu_hog  --> no threads will yield to the cpu. make sure your the only
                     one on your machine if you do this!
 
@@ -106,7 +119,7 @@ buildsim() {
 
       if [ "$IS_FORCE" -eq 1 ]; then
         for f in simv-*-$config_name* *.daidir/.vcs.timestamp \
-						generated-src/*.$config_name/*.printf*.v ; do
+            generated-src/*.$config_name/*.printf*.v ; do
           info "force removing $f"
           rm -fr $f
         done
@@ -130,19 +143,28 @@ buildsim() {
       cd "$VERILATOR_DIR"
 
       # determine which verilator multithread version to use
-      local vl8_src_dir="$VERILATOR_DIR/verilator_install/src/verilator-4.016"
+      # NOTE: vl8_mt_src_h must be unquoted when used since its a glob!
+      local vl8_src_dir="$VERILATOR_DIR/verilator_install/src/verilator-*"
       local vl8_dst_dir="$VERILATOR_DIR/verilator_install/install/share/verilator"
       local vl8_mt_dst_h="${vl8_dst_dir}/include/verilated_threads.h"
       local vl8_mt_src_h="${vl8_src_dir}/include/verilated_threads.h"
       local vl8_mt_new_h="$VERILATOR_DIR/patch/verilated_threads.h"
       rm -f "$vl8_mt_dst_h"
-      if [ "$VL8_CPU_HOG" -eq 1 ]; then cp "$vl8_mt_new_h" "$vl8_mt_dst_h"; 
-      else  cp "$vl8_mt_src_h" "$vl8_mt_dst_h"; fi
+      if [ -d "$vl8_dst_dir" ] ; then
+        if [ "$VL8_CPU_HOG" -eq 1 ]; then cp "$vl8_mt_new_h" "$vl8_mt_dst_h"; 
+        else cp $vl8_mt_src_h "$vl8_mt_dst_h"; fi
+      else 
+        info "can't fix verilator-mt yet. do a -force rebuild after this!"
+      fi
 
-      if [ "$IS_FORCE" -eqr1 ]; then
+      # set additional make configs
+      local cmdline="make CONFIG=$config_name VL8_THREADS=$VL8_THREADS"
+      local cmdline="$cmdline VL8_PROFILE=$VL8_PROFILE"
+
+      if [ "$IS_FORCE" -eq 1 ]; then
         for f in simulator-${HW_CONFIG_PROJECT}-$config_name* \
             generated-src/*.*.$config_name/*.*.$config_name \
-						generated-src/*.*.$config_name/*.printf*.v ; do
+            generated-src/*.*.$config_name/*.printf*.v ; do
           info "force removing $f"
           rm -fr $f
         done
@@ -187,6 +209,17 @@ while [ $# -ne 0 ] ; do
     -firesim)   SIM_TYPE="firesim" ;;
     #------------------------------------------------------------------------
     -vl8_cpu_hog) VL8_CPU_HOG=1 ;;
+    -vl8_threads)
+      if [ $# -eq 0 ] ; then err "-vl8_threads requires arg. see usage"; fi
+      VL8_THREADS=$1; shift
+      ;;
+    -vl8_profile)
+      if [ $# -eq 0 ] ; then err "-vl8_profile requires arg. see usage"; fi
+      case $1 in
+        all|threads) VL8_PROFILE=$1; shift;;
+        *) err "-vl8_profile got invalid arg $1. see usage" ;;
+      esac
+      ;;
     #------------------------------------------------------------------------
     -force)     IS_FORCE=1 ;;
     -no_force)  IS_FORCE=0 ;;
@@ -196,7 +229,7 @@ while [ $# -ne 0 ] ; do
     -no_debug)  IS_DEBUG=0 ;;
     -printf)
       if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
-      export ENABLE_PRINTF_PATTERN="$1"
+      export ENABLE_PRINTF_PATTERN="$1"; shift
       ;;
     -h|-help) display_usage ;;
     #------------------------------------------------------------------------

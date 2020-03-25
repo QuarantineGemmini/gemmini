@@ -66,7 +66,7 @@ IS_VERBOSE=0
 IS_DEBUG=0
 IS_DEBUGGER=0
 
-# VCD_TYPE: none, mesh
+# VCD_TYPE: none, full, mesh
 VCD_TYPE="none"
 
 #=============================================================================
@@ -132,6 +132,7 @@ display_usage() {
   -no_debugger  --> don't open the interactive debugger (default)
   -debugger     --> enter into the debugger mode
   -vcd_none     --> no vcd generated (default)
+  -vcd_full     --> capture all signals in design
   -vcd_mesh     --> generates a vcd of just the mesh signals
 
   misc options
@@ -209,14 +210,21 @@ runsim() {
 
       local logdir="$VERILATOR_DIR/logs"
       local logfile="${logdir}/${testname}.log"
+      local vcdfile="${logdir}/${testname}.vcd"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
       cd "$VERILATOR_DIR"
 
+      case $VCD_TYPE in
+        none) ;;
+        full) extra_opts="$extra_opts -v $vcdfile";;
+        *) err "verilator only supports 'full' vcd output mode!"
+      esac
+
       if [ "$IS_VERBOSE" -eq 1 ] ; then
-        err "verilator verbose not implemented yet"
+        extra_opts="$extra_opts +verbose"
       fi
       if [ "$IS_DEBUGGER" -eq 1 ] ; then
-        err "verilator debugger not implemented yet"
+        err "verilator has no integrated debugger!"
       fi
       ;;
     firesim)
@@ -286,6 +294,8 @@ while [ $# -ne 0 ] ; do
     -no_debug)    IS_DEBUG=0 ;;
     -debugger)    IS_DEBUGGER=1 ;;
     -no_debugger) IS_DEBUGGER=0 ;;
+    #------------------------------------------------------------------------
+    -vcd_full) VCD_TYPE="full" ;;
     -vcd_none)    
       err "vcd-generation not supported yet"
       VCD_TYPE="none" 
