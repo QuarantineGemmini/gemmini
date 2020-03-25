@@ -39,6 +39,7 @@ SIM_TYPE="spike"
 VL8_CPU_HOG=0
 VL8_THREADS=1
 VL8_PROFILE=none
+VL8_FST_MODE=0
 
 # for selective verbose printfs, used by simulator Makefiles
 export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
@@ -77,6 +78,7 @@ display_usage() {
   -vl8_threads  --> how many threads will the simulator use [$VL8_THREADS]
   -vl8_cpu_hog  --> no threads will yield to the cpu. make sure your the only
                     one on your machine if you do this!
+  -vl8_fst_mode --> only valid if -debug is used. generate fst instead of vcd
 
   other options
   -------------
@@ -160,6 +162,7 @@ buildsim() {
       # set additional make configs
       local cmdline="make CONFIG=$config_name VL8_THREADS=$VL8_THREADS"
       local cmdline="$cmdline VL8_PROFILE=$VL8_PROFILE"
+      local cmdline="$cmdline VL8_FST_MODE=$VL8_FST_MODE"
 
       if [ "$IS_FORCE" -eq 1 ]; then
         for f in simulator-${HW_CONFIG_PROJECT}-$config_name* \
@@ -220,6 +223,7 @@ while [ $# -ne 0 ] ; do
         *) err "-vl8_profile got invalid arg $1. see usage" ;;
       esac
       ;;
+    -vl8_fst_mode) VL8_FST_MODE=1 ;;
     #------------------------------------------------------------------------
     -force)     IS_FORCE=1 ;;
     -no_force)  IS_FORCE=0 ;;

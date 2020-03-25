@@ -121,6 +121,13 @@ display_usage() {
   -verilator    --> run the verilator-generated simulator
   -firesim      --> run the firesim-generated simulator
 
+  trace options
+  -------------
+  -vcd_none     --> no vcd generated (default)
+  -vcd_full     --> capture all signals in design
+  -vcd_mesh     --> generates a vcd of just the mesh signals
+	-fst_full			--> same as vcd_full, but generate fst instead
+
   hw sim options
   --------------
   -no_noisy     --> only print simulator output to logfile (default)
@@ -131,9 +138,6 @@ display_usage() {
   -debug        --> use the debug-build of the simulator
   -no_debugger  --> don't open the interactive debugger (default)
   -debugger     --> enter into the debugger mode
-  -vcd_none     --> no vcd generated (default)
-  -vcd_full     --> capture all signals in design
-  -vcd_mesh     --> generates a vcd of just the mesh signals
 
   misc options
   ------------
@@ -211,13 +215,16 @@ runsim() {
       local logdir="$VERILATOR_DIR/logs"
       local logfile="${logdir}/${testname}.log"
       local vcdfile="${logdir}/${testname}.vcd"
+      local fstfile="${logdir}/${testname}.fst"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
       cd "$VERILATOR_DIR"
 
       case $VCD_TYPE in
         none) ;;
         full) extra_opts="$extra_opts -v $vcdfile";;
-        *) err "verilator only supports 'full' vcd output mode!"
+        vcd_full) extra_opts="$extra_opts -v $vcdfile";;
+        fst_full) extra_opts="$extra_opts -v $fstfile";;
+        *) err "verilator does not support $VCD_TYPE tracing mode!"
       esac
 
       if [ "$IS_VERBOSE" -eq 1 ] ; then
@@ -296,6 +303,7 @@ while [ $# -ne 0 ] ; do
     -no_debugger) IS_DEBUGGER=0 ;;
     #------------------------------------------------------------------------
     -vcd_full) VCD_TYPE="full" ;;
+    -fst_full) VCD_TYPE="fst_full" ;;
     -vcd_none)    
       err "vcd-generation not supported yet"
       VCD_TYPE="none" 
