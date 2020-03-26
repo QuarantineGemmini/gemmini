@@ -35,6 +35,7 @@ HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 # for vcs sim only
 # UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
 
+TEST_0=echo
 TEST_1=template
 TEST_2=large_matmul
 TEST_3=large_matmul_without_cpu
@@ -46,7 +47,7 @@ TEST_7=resnet50
 #=============================================================================
 # defaults
 #=============================================================================
-# SW_PLATFORM: baremetal, linux
+# SW_PLATFORM: baremetal, pk, linux
 SW_PLATFORM="baremetal"
 
 # SW_MODES: hw_tiler (gemmini2), fsm_tiler (gemmini), orig_tiler (gemmini)
@@ -66,8 +67,10 @@ IS_VERBOSE=0
 IS_DEBUG=0
 IS_DEBUGGER=0
 
-# VCD_TYPE: none, full, mesh
+# VCD_TYPE: none, full, mesh, fst_full
 VCD_TYPE="none"
+
+WORKLOAD_ARGS=""
 
 #=============================================================================
 # subroutines
@@ -88,6 +91,7 @@ display_usage() {
   go in the respective chipyard/sims/<simultor>/logs directory.
 
   Available workloads:
+    0: $TEST_0 
     1: $TEST_1 
     2: $TEST_2 
     3: $TEST_3 
@@ -102,6 +106,7 @@ display_usage() {
   sw platform
   -----------
   -bare         --> use bare-metal workload (default)
+  -pk           --> run workload using pk execution environment
   -linux        --> use linux workload
  
   sw config mode
@@ -126,7 +131,7 @@ display_usage() {
   -vcd_none     --> no vcd generated (default)
   -vcd_full     --> capture all signals in design
   -vcd_mesh     --> generates a vcd of just the mesh signals
-	-fst_full			--> same as vcd_full, but generate fst instead
+  -fst_full      --> same as vcd_full, but generate fst instead
 
   hw sim options
   --------------
@@ -141,6 +146,7 @@ display_usage() {
 
   misc options
   ------------
+  -args <...>   --> args to pass to workload's argv[]
   -h|help       --> display this help
 
 EOF
@@ -158,12 +164,22 @@ EOF
 runsim() {
   local workload_dir="$1"
   local workload_name="$2"
+
+  # initialize workload, workload args
   local workload_binary="${workload_dir}/${workload_name}-${SW_PLATFORM}"
-  local workload_args=""
+  local workload_args="$WORKLOAD_ARGS"
   local binary_name="$(basename "$workload_binary")"
+  if [ "$SW_PLATFORM" == "pk" ]; then
+    workload_args="$workload_binary $workload_args"
+    workload_binary=pk
+  fi
+
+  # initialize logs, performance counter
   local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
-  local testname="${ts}__${SW_MODE}__${binary_name}"
+  local testname="${ts}__${SW_PLATFORM}__${SW_MODE}__${binary_name}"
   local starttime=$SECONDS
+
+  # initialize simulator options
   local extra_opts=""
   local debugger_opts=""
 
@@ -171,54 +187,58 @@ runsim() {
   #------------------------
   case $HW_SIM in
     spike)
-      BIN="spike"
-      local extra_opts="--extension=${SPIKE_EXT}"
+      # rundir/logging setup
+      cd "$SPIKE_DIR"
       local logdir="$SPIKE_DIR/logs"
       local logfile="${logdir}/${testname}.log"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
-      cd "$SPIKE_DIR"
 
-      if [ "$IS_VERBOSE" -eq 1 ] ; then
-        extra_opts="$extra_opts -l"
-      fi
-      if [ "$IS_DEBUGGER" -eq 1 ] ; then
-        debugger_opts="$debugger_opts -d"
-      fi
+      # simulator, simulator options
+      BIN="spike"
+      local extra_opts="--extension=${SPIKE_EXT}"
+      if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts -l"; fi
+      if [ "$IS_DEBUGGER" -eq 1 ] ; then debugger_opts="$debugger_opts -d"; fi
       ;;
     vcs)
-      BIN="$VCS_DIR/simv-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
-      if [ "$IS_DEBUG" -eq 1 ] ; then 
-        BIN="${BIN}-debug"; 
-      fi
-
+      # rundir/logging setup
+      cd "$VCS_DIR"
       local logdir="$VCS_DIR/logs"
       local logfile="${logdir}/${testname}.log"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
-      cd "$VCS_DIR"
 
-      #UCLI="-ucli -i $UCLI_MESH"
-      #if [ -n "$UCLI" ] ; then 
-      #  create_uclis "$testname"
-      #fi
+      # simulator, simulator options
+      BIN="$VCS_DIR/simv-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
+      if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
       if [ "$IS_VERBOSE" -eq 1 ] ; then
         extra_opts="$extra_opts +permissive +verbose +permissive-off"
       fi
       if [ "$IS_DEBUGGER" -eq 1 ] ; then
         debugger_opts="$debugger_opts +permissive -gui +permissive-off"
       fi
+
+      # trace configuration
+      #UCLI="-ucli -i $UCLI_MESH"
+      #if [ -n "$UCLI" ] ; then 
+      #  create_uclis "$testname"
+      #fi
       ;;
     verilator)
-      BIN="$VERILATOR_DIR/simulator-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
-      if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
-      extra_opts="$extra_opts -c "
-
+      # rundir/logging setup
+      cd "$VERILATOR_DIR"
       local logdir="$VERILATOR_DIR/logs"
       local logfile="${logdir}/${testname}.log"
       local vcdfile="${logdir}/${testname}.vcd"
       local fstfile="${logdir}/${testname}.fst"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
-      cd "$VERILATOR_DIR"
 
+      # simulator, simulator options
+      BIN="$VERILATOR_DIR/simulator-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
+      extra_opts="$extra_opts -c "
+      if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
+      if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
+      if [ "$IS_DEBUGGER" -eq 1 ] ; then err "verilator has no debugger!"; fi
+
+      # trace configuration
       case $VCD_TYPE in
         none) ;;
         full) extra_opts="$extra_opts -v $vcdfile";;
@@ -226,13 +246,6 @@ runsim() {
         fst_full) extra_opts="$extra_opts -v $fstfile";;
         *) err "verilator does not support $VCD_TYPE tracing mode!"
       esac
-
-      if [ "$IS_VERBOSE" -eq 1 ] ; then
-        extra_opts="$extra_opts +verbose"
-      fi
-      if [ "$IS_DEBUGGER" -eq 1 ] ; then
-        err "verilator has no integrated debugger!"
-      fi
       ;;
     firesim)
       err "firesim not supported yet"
@@ -277,7 +290,8 @@ while [ $# -ne 0 ] ; do
   case $arg in
     #-------------------------------------------------------------------------
     -bare)  SW_PLATFORM="baremetal" ;;
-    -linux) SW_PLATFORM="linux"     ;;
+    -pk)    SW_PLATFORM="pk" ;;
+    -linux) SW_PLATFORM="linux" ;;
     #-------------------------------------------------------------------------
     -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
     -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
@@ -313,8 +327,13 @@ while [ $# -ne 0 ] ; do
       VCD_TYPE="mesh" 
       ;;
     #------------------------------------------------------------------------
+    -args)
+      if [ $# -eq 0 ] ; then err "-args requires arg. see usage"; fi
+      WORKLOAD_ARGS=$1; shift;
+      ;;
     -h|-help) display_usage ;;
     #------------------------------------------------------------------------
+    0) runsim "$(sw_dir bareMetalC)"   "$TEST_0" ;;
     1) runsim "$(sw_dir bareMetalC)"   "$TEST_1" ;;
     2) runsim "$(sw_dir ee290)"        "$TEST_2" ;;
     3) runsim "$(sw_dir ee290)"        "$TEST_3" ;;

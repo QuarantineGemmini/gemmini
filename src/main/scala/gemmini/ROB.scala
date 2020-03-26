@@ -48,6 +48,19 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
   debug_cycle := debug_cycle + 1.U      // FOR DEBUGGING ONLY
   val cmd_id = Counter(MAX_CMD_ID)      // FOR DEBUGGING ONLY
 
+  // scratchpad range, used for tracking RAW, WAR, and WAW deps
+  class SPRange extends Bundle {
+    val valid = Bool()
+    val start = UInt(32.W) // TODO magic number
+    val len   = UInt(8.W) // TODO magic number
+
+    def begin(dummy: Int = 0) = Cat(start(31), 0.U(1), start(29,0))
+    def end(dummy: Int = 0) = begin() + len * block_rows.U
+    def overlaps(other: SPRange) = valid && other.valid && 
+                                   (begin() > other.end()) && 
+                                   (end() < other.begin())
+  }
+
   class Entry extends Bundle {
     val q = q_t.cloneType
 
@@ -58,16 +71,10 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     val is_store = Bool()    // true on config_store. FOR DEBUGGING ONLY
     val is_ex    = Bool()    // true on config_ex.    FOR DEBUGGING ONLY
 
-    val op1 = UDValid(local_addr_t.cloneType)
-    val op2 = UDValid(local_addr_t.cloneType)
-    val op3 = UDValid(local_addr_t.cloneType)
-
-    val dst = UDValid(new Bundle {
-      val start = local_addr_t.cloneType
-      val len = UInt(8.W) // TODO magic number
-
-      def end(dummy: Int = 0) = start + len * block_rows.U
-    })
+    val op1 = new SPRange()
+    val op2 = new SPRange()
+    val op3 = new SPRange()
+    val dst = new SPRange()
 
     val issued = Bool()
 
@@ -111,27 +118,28 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     new_entry.is_config := funct === CONFIG_CMD
 
     new_entry.op1.valid := funct_is_compute
-    new_entry.op1.bits := cmd.rs1.asTypeOf(local_addr_t)
+    new_entry.op1.start := cmd.rs1(31,0)
+    new_entry.op1.len   := 1.U
 
-    new_entry.op2.valid := funct_is_compute || funct === LOAD_CMD || funct === STORE_CMD
-    //new_entry.op2.bits := cmd.rs2.asTypeOf(local_addr_t)
-    new_entry.op2.bits := Cat(cmd.rs2(31), Cat(0.U(1.W), cmd.rs2(29,0))).asTypeOf(local_addr_t)
+    new_entry.op2.valid := funct_is_compute || funct === STORE_CMD
+    new_entry.op2.start := cmd.rs2(31,0)
+    new_entry.op2.len   := 1.U
 
     new_entry.op3.valid := funct_is_compute
-    new_entry.op3.bits := cmd.rs1(63, 32).asTypeOf(local_addr_t)
+    new_entry.op3.start := cmd.rs1(63,32)
+    new_entry.op3.len   := 1.U
 
     new_entry.dst.valid := funct_is_compute || funct === LOAD_CMD
-    //new_entry.dst.bits.start := Mux(funct_is_compute, cmd.rs2(63, 32), 
-    //                                cmd.rs2(31, 0)).asTypeOf(local_addr_t)
-    new_entry.dst.bits.start := Mux(funct_is_compute, 
-                                    Cat(cmd.rs2(63), Cat(0.U(1.W), cmd.rs2(61,32))),
-                                    Cat(cmd.rs2(31), Cat(0.U(1.W), cmd.rs2(29,0)))
-                                ).asTypeOf(local_addr_t)
-    new_entry.dst.bits.len := Mux(funct_is_compute, 1.U, cmd.rs2(63, spAddrBits)) // TODO magic number
+    new_entry.dst.start := Mux(funct_is_compute, cmd.rs2(63,32), cmd.rs2(31,0))
+    // TODO magic number
+    new_entry.dst.len   := Mux(funct_is_compute, 1.U, cmd.rs2(63, spAddrBits))
 
-    val is_load = (funct === LOAD_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
-    val is_store = (funct === STORE_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_STORE)
-    val is_ex = funct_is_compute || (funct === CONFIG_CMD && config_cmd_type === CONFIG_EX)
+    val is_load  = (funct === LOAD_CMD) || 
+                   (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
+    val is_store = (funct === STORE_CMD) || 
+                   (funct === CONFIG_CMD && config_cmd_type === CONFIG_STORE)
+    val is_ex    = funct_is_compute || 
+                   (funct === CONFIG_CMD && config_cmd_type === CONFIG_EX)
 
     // never allow this to wrap.FOR DEBUGGING ONLY
     assert(!cmd_id.inc())
@@ -201,66 +209,38 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
       is_ex -> exq
     ))
 
-    val raws = entries.map { e =>
-      // We search for all entries which write to an address which we read from
-      e.valid && 
-      e.bits.dst.valid && (
-        (new_entry.op1.valid && 
-         e.bits.dst.bits.start <= new_entry.op1.bits && 
-         e.bits.dst.bits.end() > new_entry.op1.bits) ||
-        (new_entry.op2.valid && 
-         e.bits.dst.bits.start <= new_entry.op2.bits && 
-         e.bits.dst.bits.end() > new_entry.op2.bits) ||
-        (new_entry.op3.valid && 
-         e.bits.dst.bits.start <= new_entry.op3.bits && 
-         e.bits.dst.bits.end() > new_entry.op3.bits))
+    // We search for all entries which write to an address which we read from
+    val raws = entries.map { e => e.valid && (
+      e.bits.dst.overlaps(new_entry.op1) ||
+      e.bits.dst.overlaps(new_entry.op2) ||
+      e.bits.dst.overlaps(new_entry.op3)
+    )}
+
+    // We search for all entries which read from an address that we write to
+    val wars = entries.map { e => e.valid && (
+      new_entry.dst.overlaps(e.bits.op1) ||
+      new_entry.dst.overlaps(e.bits.op2) ||
+      new_entry.dst.overlaps(e.bits.op3)
+    )}
+
+    // We search for all entries which write to an address that we write to
+    val waws = entries.map { e => e.valid && 
+      new_entry.dst.overlaps(e.bits.dst)
     }
 
-    val wars = entries.map { e =>
-      // We search for all entries which read from an address that we write to
-      e.valid && 
-      new_entry.dst.valid && (
-        (e.bits.op1.valid && 
-         new_entry.dst.bits.start <= e.bits.op1.bits && 
-         new_entry.dst.bits.end() > e.bits.op1.bits) ||
-        (e.bits.op2.valid && 
-         new_entry.dst.bits.start <= e.bits.op2.bits && 
-         new_entry.dst.bits.end() > e.bits.op2.bits) ||
-        (e.bits.op3.valid && 
-         new_entry.dst.bits.start <= e.bits.op3.bits && 
-         new_entry.dst.bits.end() > e.bits.op3.bits))
-    }
-
-    val waws = entries.map { e =>
-      // We search for all entries which write to an address that we write to
-      e.valid && 
-      new_entry.dst.valid && 
-      e.bits.dst.valid && (
-        (new_entry.dst.bits.start <= e.bits.dst.bits.start && 
-         new_entry.dst.bits.end() > e.bits.dst.bits.start) ||
-        (e.bits.dst.bits.start <= new_entry.dst.bits.start && 
-         e.bits.dst.bits.end() > new_entry.dst.bits.start))
-    }
-
-    val older_in_same_q = entries.map { e =>
-      e.valid && 
+    val older_in_same_q = entries.map { e => e.valid && 
       e.bits.q === new_entry.q && 
       !e.bits.issued
     }
 
     val is_st_and_must_wait_for_prior_ex_config = entries.map { e =>
-      e.valid && 
-      new_entry.q === stq && 
-      !new_entry.is_config && 
-      e.bits.q === exq && 
-      e.bits.is_config
+      (e.valid && e.bits.q === exq && e.bits.is_config) &&
+      (new_entry.q === stq && !new_entry.is_config)
     }
 
     val is_ex_config_and_must_wait_for_prior_st = entries.map { e =>
-      e.valid && 
-      new_entry.q === exq && 
-      new_entry.is_config && 
-      e.bits.q === stq && !e.bits.is_config
+      (e.valid && e.bits.q === stq && !e.bits.is_config) &&
+      (new_entry.q === exq && new_entry.is_config)
     }
 
     new_entry.deps := (Cat(raws) | 

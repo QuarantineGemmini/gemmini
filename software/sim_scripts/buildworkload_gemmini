@@ -3,68 +3,51 @@
 set -euo pipefail
 
 #=============================================================================
-# setup notes
+# initialize variables
 #=============================================================================
-# this builds different workloads with various parameters for gemmini
-
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
-#source "$CY_DIR/sourceme.sh"
-
-# set simulator dirs
-VCS_DIR="$CY_DIR/sims/vcs"
-VL8_DIR="$CY_DIR/sims/verilator"
-FSIM_DIR="$CY_DIR/sims/firesim"
-SPK_DIR="$CY_DIR/sims/spike"
+source "$DIR/.common.sh"
 
 SW_DIR="$CY_DIR/generators/gemmini/software"
 LOGDIR="$SW_DIR/logs"
 
 ORIG_CFLAGS="${CFLAGS:-}"
 
-ORIG_MAKEFLAGS="${MAKEFLAGS:-}"
-MAKEFLAGS="-j$(cat /proc/cpuinfo | grep '^processor' | wc -l)"
-export MAKEFLAGS="$MAKEFLAGS $ORIG_MAKEFLAGS --warn-undefined-variables"
+# make sure the software workloads don't have broken makefiles
+export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
 
-#=============================================================================
-# defaults
-#=============================================================================
-WORKLOAD_TYPE="bare"
+IS_NOISY=0
+IS_FORCE=0
+IS_DEBUG=0
 
-FORCE_MODE="no_force"
+CFLAGS_ORIG_TILER=""
+CFLAGS_FSM_TILER="-DUSE_FSM_TILER"
+CFLAGS_HW_TILER="-DUSE_HW_TILER"
 
-MODE="hw_tiler"
-MODE_CFLAGS="-DUSE_HW_TILER"
-#MODE_CFLAGS="-DUSE_FSM_TILER"
-
-DEBUG_MODE="no_debug"
-DEBUG_CFLAGS="-DNODEBUG"
+DEBUG_CFLAGS=""
+NODEBUG_CFLAGS="-DNODEBUG"
 
 #=============================================================================
 # subroutines
 #=============================================================================
-err() { echo "[ERROR]: $@"; exit 1; }
-info() { echo "[INFO]: $@"; }
-
 display_usage() {
   cat <<EOF
 
   buildworkload_gemmini [options] <cfg1> [options] [<cfg2> ...]
   --------------------------------------------------------
-  Utility to build parameterized workloads for gemmini simulation. By default
-  it incrementally generates bare-metal workloads for the new-tiler in 
-  non-debug mode. Available workload configurations are:
-    bare:  build for bare-metal sims (most likely for spike, vcs, verilator)
-    linux: build for linux simulation (most likely for firesim)
-    
-  mutually-excusive mode
-  ----------------------
-  -hw_tiler   --> use the new gemmini2 ISA hardware tiler (default)
-  -fsm_tiler  --> use FSM-based tiler algorithm on the old ISA
-  -orig_tiler --> use the original tiler algorithm on the old ISA
+  Utility to build parameterized workloads for gemmini simulation. It builds
+  baremetal, pk, and linux workloads for the targets. The default target is
+  orig_tiler (old gemmini ISA, and old software tiler).
+  Targets are:
+    hw_tiler:   use the new gemmini2 ISA hardware tiler (default)
+    fsm_tiler:  use FSM-based tiler algorithm on the old ISA
+    orig_tiler: use the original tiler algorithm on the old ISA
 
   other options
   -------------
+  -no_noisy   --> only print build output to logfile (default)
+  -noisy      --> print build output to stdout and the logfile
   -no_force   --> don't force-rebuild the build/ directory (default)
   -force      --> force rebuild by deleting build/ dir first
   -no_debug   --> disable verbose software debugging (default)
@@ -76,44 +59,52 @@ EOF
 }
 
 #=============================================================================
-# build 
+# subroutines
 #=============================================================================
 buildworkload() {
-  local workload_type="$1"
-  local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
-  local flags="${FORCE_MODE}__${MODE}__${DEBUG_MODE}"
-  local dst_dir="build_${MODE}"
-  local run_name="${ts}__${workload_type}__${flags}"
+  local target_name="$1"
+  local target_cflags="$2"
+
+  # init local variables
+  local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
+  local dst_dir="build_${target_name}"
+  local run_name="${ts}__${target_name}"
   local logfile="$LOGDIR/${run_name}.log"
   local starttime=$SECONDS
 
-  # set the CFLAGS and MAKEFLAGS 
-  export CFLAGS="$ORIG_CFLAGS $MODE_CFLAGS $DEBUG_CFLAGS"
+  # set the cflags
+  export CFLAGS="$ORIG_CFLAGS $target_cflags"
+  if [ "$IS_DEBUG" -eq 1 ] ; then export CFLAGS="$CFLAGS $DEBUG_CFLAGS"; 
+	else export CFLAGS="$CFLAGS $NODEBUG_CFLAGS"; fi
 
-  info "$run_name started"
-  #------------------------
-  case $workload_type in
-    bare)
-      cd "$SW_DIR/gemmini-rocc-tests"
-      if [ "$FORCE_MODE" == "force" ] ; then
-        rm -fr "build/"
-      fi
-      ./build.sh |& tee "$logfile"
-      # now copy the build AND the parameters to the labelled dir
+  finfo "$run_name started" "$logfile"
+  #-------------------------------------------------------------------------
+  cd "$SW_DIR/gemmini-rocc-tests"
+  if [ "$IS_FORCE" -eq 1 ]; then
+    finfo "force removing $PWD/build/" "$logfile"
+    rm -fr build/ |& tee -a "$logfile"
+  fi
+  #-------------------------------------------------------------------------
+  if [ "$IS_NOISY" -eq 1 ] ; then
+    set -x
+    { ./build.sh
+      stty echo
       rm -fr "$dst_dir"
       cp -r "build" "$dst_dir"
       cp "include/gemmini_params.h" "$dst_dir/"
-      ;;
-    linux)
-      err "linux not supported yet"
-      ;;
-    *)
-      err "invalid workload_type: $workload_type"
-      ;;
-  esac
-  #------------------------
+    } |& tee -a "$logfile"
+    set +x
+  else
+    { ./build.sh
+      stty echo
+      rm -fr "$dst_dir"
+      cp -r "build" "$dst_dir"
+      cp "include/gemmini_params.h" "$dst_dir/"
+    } &>> "$logfile"
+  fi
+  #-------------------------------------------------------------------------
   totaltime=$(( $SECONDS-$starttime ))
-  info "$run_name finished in $totaltime seconds"
+  finfo "$run_name finished in $totaltime seconds" "$logfile"
 }
 
 #=============================================================================
@@ -126,43 +117,20 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
-    -hw_tiler)
-      MODE="hw_tiler"
-      MODE_CFLAGS="-DUSE_HW_TILER"
-      ;;
-    -fsm_tiler)
-      MODE="fsm_tiler"
-      MODE_CFLAGS="-DUSE_FSM_TILER"
-      ;;
-    -orig_tiler)
-      MODE="orig_tiler"
-      MODE_CFLAGS=""
-      ;;
-    -no_force)
-      FORCE_MODE="no_force"
-      ;;
-    -force)
-      FORCE_MODE="force"
-      ;;
-    -no_debug)
-      DEBUG_MODE="no_debug"
-      DEBUG_CFLAGS="-DNODEBUG"
-      ;;
-    -debug)
-      DEBUG_MODE="debug"
-      DEBUG_CFLAGS=""
-      ;;
-    -h|-help) 
-      display_usage 
-      ;;
-    bare) 
-      buildworkload "bare"
-      ;;
-    linux) 
-      buildworkload "linux"
-      ;;
-    *) 
-      err "invalid option: $arg" 
-      ;;
+    #-------------------------------------------------------------------------
+    -noisy)    IS_NOISY=1 ;;
+    -no_noisy) IS_NOISY=0 ;;
+    -force)    IS_FORCE=1 ;;
+    -no_force) IS_FORCE=0 ;;
+    -debug)     IS_DEBUG=1 ;;
+    -no_debug) IS_DEBUG=0 ;;
+    #------------------------------------------------------------------------
+    -h|-help) display_usage ;;
+    #------------------------------------------------------------------------
+    orig_tiler) buildworkload $arg "$CFLAGS_ORIG_TILER" ;;
+    fsm_tiler)  buildworkload $arg "$CFLAGS_FSM_TILER" ;;
+    hw_tiler)   buildworkload $arg "$CFLAGS_HW_TILER" ;;
+    #------------------------------------------------------------------------
+    *) err "invalid option: $arg" ;;
   esac
 done
