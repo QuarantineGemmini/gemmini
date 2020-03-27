@@ -5,16 +5,14 @@ set -euo pipefail
 #=============================================================================
 # setup notes
 #=============================================================================
-# this builds variations of each simulator for your gemmini simulations
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
-#source "$CY_DIR/sourceme.sh"
+source "$DIR/.common.sh"
 
 # set simulator dirs
 VCS_DIR="$CY_DIR/sims/vcs"
 VERILATOR_DIR="$CY_DIR/sims/verilator"
 FIRESIM_DIR="$CY_DIR/sims/firesim"
-SPIKE_DIR="$CY_DIR/sims/spike"
 
 # TODO: clean up multiple projects (or will they all be example?)
 # general simulator options
@@ -23,10 +21,10 @@ HW_CONFIG_PROJECT=example
 # for eecs290-2 lab3
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 
-# update makeflags
-#ORIG_MAKEFLAGS="${MAKEFLAGS:-}"
-#MAKEFLAGS="-j$(cat /proc/cpuinfo | grep '^processor' | wc -l)"
-#export MAKEFLAGS="$MAKEFLAGS $ORIG_MAKEFLAGS --warn-undefined-variables"
+ORIG_CFLAGS="${CFLAGS:-}"
+
+# make sure the software workloads don't have broken makefiles
+export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
 
 #=============================================================================
 # defaults
@@ -34,39 +32,36 @@ CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 IS_NOISY=0
 IS_DEBUG=0
 IS_FORCE=0
-SIM_TYPE="spike"
+SIM_TYPE="verilator"
 
-VL8_CPU_HOG=0
-VL8_THREADS=1
+SIM_THREADS=1
+
 VL8_PROFILE=none
 VL8_FST_MODE=0
 
-# for selective verbose printfs, used by simulator Makefiles
-export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
+# this PRINTF pattern only prints the ROB accept/issue/final events
+#export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
+export ENABLE_PRINTF_PATTERN=''
 
 #=============================================================================
 # subroutines
 #=============================================================================
-err() { echo "[ERROR]: $@"; exit 1; }
-info() { echo "[INFO]: $@"; }
-
 display_usage() {
   cat <<EOF
 
   buildsim_gemmini [options] <cfg1> [options] [<cfg2> ...]
   --------------------------------------------------------
   Utility to build simulators for various gemmini configurations. By default
-  it assumes the spike simulator (nothing to be done). Output simulators
-  will be placed in the respective directories. 
+  it assumes the $SIM_TYPE simulator. Output simulators will be placed in 
+  their respective directories. 
   Available configurations are:
     lab3: $CONFIG_LAB3
     
   simulator
   ---------
-  -spike        --> build all following configs from spike compiler (default)
-  -vcs          --> build all following configs from vcs compiler
-  -verilator    --> build all following configs from verilator compiler
-  -firesim      --> build all following configs from firesim (on manager node)
+  -verilator    --> build configs with verilator compiler (default)
+  -vcs          --> build configs with vcs compiler 
+  -firesim      --> build configs with firesim (on manager node)
 
   verilator options 
   -----------------
@@ -75,13 +70,11 @@ display_usage() {
                     efficiency report. use verilator_gantt to view it. if 'all', 
                     make the simulator output profiling data for gprof in 
                     addition to 'threads' profiling data.
-  -vl8_threads  --> how many threads will the simulator use [$VL8_THREADS]
-  -vl8_cpu_hog  --> no threads will yield to the cpu. make sure your the only
-                    one on your machine if you do this!
   -vl8_fst_mode --> only valid if -debug is used. generate fst instead of vcd
 
   other options
   -------------
+  -threads <t>  --> how many threads will the simulator use [$SIM_THREADS]
   -no_force     --> let make/simulator determine if out of date (default)
   -force        --> force remove simulator output files (not firrtl though)
   -no_noisy     --> only print to logfile (default)
@@ -89,7 +82,7 @@ display_usage() {
   -no_debug     --> don't compile a debug-simulator (default)
   -debug        --> compile a debug-mode simulator
   -printf <pat> --> python regex pattern for printf() strings to selectively 
-                    set to verbose mode in the simulator (no-op for spike).
+                    set to verbose mode in the simulator.
                     default is: '$ENABLE_PRINTF_PATTERN'
   -h|help       --> display this help
 
@@ -98,89 +91,60 @@ EOF
 }
 
 #=============================================================================
-# build 
+# run
 #=============================================================================
 buildsim() {
   local config_name="$1"
-  local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
-  local compile_name="${ts}_compile_${SIM_TYPE}_${config_name}"
+
+  # init local variables
+  local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
+  local compile_name="${ts}__compile__${SIM_TYPE}__${config_name}"
   local starttime=$SECONDS
 
-  info "$compile_name started"
-  #------------------------
+  #-------------------------------------------------------------------------
   case $SIM_TYPE in
-    spike)
-      info "spike is a no-op!"
-      ;;
     vcs)
+      # rundir/logging setup
+      cd "$VCS_DIR"
       local logdir="$VCS_DIR/logs"
       local logfile="${logdir}/${compile_name}.log"
-      local cmdline="make CONFIG=$config_name"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
-      cd "$VCS_DIR"
 
+      # compiler options
+      local cmdline="make CONFIG=$config_name"
+      if [ "$IS_DEBUG" -eq 1 ]; then cmdline="$cmdline debug"; fi
+
+      # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
         for f in simv-*-$config_name* *.daidir/.vcs.timestamp \
             generated-src/*.$config_name/*.printf*.v ; do
-          info "force removing $f"
+          finfo "force removing $f" "$logfile"
           rm -fr $f
         done
       fi
-      if [ "$IS_DEBUG" -eq 1 ]; then 
-        cmdline="$cmdline debug"
-      fi
-      if [ "$IS_NOISY" -eq 1 ]; then 
-        set -x
-        $cmdline |& tee "$logfile"
-        set +x
-      else 
-        $cmdline &> "$logfile"
-      fi
       ;;
     verilator)
+      # rundir/logging setup
+      cd "$VERILATOR_DIR"
       local logdir="$VERILATOR_DIR/logs"
       local logfile="${logdir}/${compile_name}.log"
-      local cmdline="make CONFIG=$config_name"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
-      cd "$VERILATOR_DIR"
 
-      # determine which verilator multithread version to use
-      # NOTE: vl8_mt_src_h must be unquoted when used since its a glob!
-      local vl8_src_dir="$VERILATOR_DIR/verilator_install/src/verilator-*"
-      local vl8_dst_dir="$VERILATOR_DIR/verilator_install/install/share/verilator"
-      local vl8_mt_dst_h="${vl8_dst_dir}/include/verilated_threads.h"
-      local vl8_mt_src_h="${vl8_src_dir}/include/verilated_threads.h"
-      local vl8_mt_new_h="$VERILATOR_DIR/patch/verilated_threads.h"
-      rm -f "$vl8_mt_dst_h"
-      if [ -d "$vl8_dst_dir" ] ; then
-        if [ "$VL8_CPU_HOG" -eq 1 ]; then cp "$vl8_mt_new_h" "$vl8_mt_dst_h"; 
-        else cp $vl8_mt_src_h "$vl8_mt_dst_h"; fi
-      else 
-        info "can't fix verilator-mt yet. do a -force rebuild after this!"
-      fi
-
-      # set additional make configs
-      local cmdline="make CONFIG=$config_name VL8_THREADS=$VL8_THREADS"
+      # compiler options
+      local cmdline="make CONFIG=$config_name"
+      local cmdline="$cmdline VL8_THREADS=$SIM_THREADS"
       local cmdline="$cmdline VL8_PROFILE=$VL8_PROFILE"
       local cmdline="$cmdline VL8_FST_MODE=$VL8_FST_MODE"
+      if [ "$IS_DEBUG" -eq 1 ]; then cmdline="$cmdline debug"; fi
 
+      # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
         for f in simulator-${HW_CONFIG_PROJECT}-$config_name* \
             generated-src/*.*.$config_name/*.*.$config_name \
             generated-src/*.*.$config_name/*.printf*.v ; do
-          info "force removing $f"
-          rm -fr $f
+          finfo "force removing $f" "$logfile"
+          rm -fr "$f"
         done
-      fi
-      if [ "$IS_DEBUG" -eq 1 ]; then 
-        cmdline="$cmdline debug"
-      fi
-      if [ "$IS_NOISY" -eq 1 ]; then 
-        set -x
-        $cmdline |& tee "$logfile"
-        set +x
-      else 
-        $cmdline &> "$logfile"
       fi
       ;;
     firesim)
@@ -190,9 +154,18 @@ buildsim() {
       err "invalid SIM_TYPE: $SIM_TYPE"
       ;;
   esac
-  #------------------------
+  finfo "$compile_name started" "$logfile"
+  #-------------------------------------------------------------------------
+  if [ "$IS_NOISY" -eq 1 ]; then 
+    set -x
+    $cmdline |& tee -a "$logfile"
+    set +x
+  else 
+    $cmdline &>> "$logfile"
+  fi
+  #-------------------------------------------------------------------------
   totaltime=$(( $SECONDS-$starttime ))
-  info "$compile_name finished in $totaltime seconds"
+  finfo "$compile_name finished in $totaltime seconds" "$logfile"
 }
 
 #=============================================================================
@@ -206,16 +179,10 @@ while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
     #------------------------------------------------------------------------
-    -spike)     SIM_TYPE="spike" ;;
     -vcs)       SIM_TYPE="vcs" ;;
     -verilator) SIM_TYPE="verilator" ;;
     -firesim)   SIM_TYPE="firesim" ;;
     #------------------------------------------------------------------------
-    -vl8_cpu_hog) VL8_CPU_HOG=1 ;;
-    -vl8_threads)
-      if [ $# -eq 0 ] ; then err "-vl8_threads requires arg. see usage"; fi
-      VL8_THREADS=$1; shift
-      ;;
     -vl8_profile)
       if [ $# -eq 0 ] ; then err "-vl8_profile requires arg. see usage"; fi
       case $1 in
@@ -225,10 +192,14 @@ while [ $# -ne 0 ] ; do
       ;;
     -vl8_fst_mode) VL8_FST_MODE=1 ;;
     #------------------------------------------------------------------------
-    -force)     IS_FORCE=1 ;;
-    -no_force)  IS_FORCE=0 ;;
+    -threads)
+      if [ $# -eq 0 ] ; then err "-threads requires arg. see usage"; fi
+      SIM_THREADS=$1; shift
+      ;;
     -noisy)     IS_NOISY=1 ;;
     -no_noisy)  IS_NOISY=0 ;;
+    -force)     IS_FORCE=1 ;;
+    -no_force)  IS_FORCE=0 ;;
     -debug)     IS_DEBUG=1 ;;
     -no_debug)  IS_DEBUG=0 ;;
     -printf)

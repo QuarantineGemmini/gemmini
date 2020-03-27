@@ -4,16 +4,14 @@ set -euo pipefail
 
 #=============================================================================
 # setup notes
+# -----------
+# - before running anything, do the following in order:
+#   1) build the simulator with `buildsim_gemmini`
+#   2) rebuild the workloads with `buildworkload_gemmini`
 #=============================================================================
-# before running anything, do the following in order:
-#  1) build the simulator with `buildsim_gemmini`
-#  2) rebuild the workloads with `buildworkload_gemmini`
-#=============================================================================
-
-# this builds variations of each simulator for your gemmini simulations
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
-#source "$CY_DIR/sourceme.sh"
+source "$DIR/.common.sh"
 
 # set simulator dirs
 VCS_DIR="$CY_DIR/sims/vcs"
@@ -48,11 +46,11 @@ TEST_7=resnet50
 # defaults
 #=============================================================================
 # SW_PLATFORM: baremetal, pk, linux
-SW_PLATFORM="baremetal"
+SW_PLATFORM="pk"
 
 # SW_MODES: hw_tiler (gemmini2), fsm_tiler (gemmini), orig_tiler (gemmini)
-SW_MODE="hw_tiler"
-SPIKE_EXT="gemmini2"
+SW_MODE="orig_tiler"
+SPIKE_EXT="gemmini"
 
 # HW_CONFIG: lab3
 HW_CONFIG="lab3"
@@ -67,7 +65,7 @@ IS_VERBOSE=0
 IS_DEBUG=0
 IS_DEBUGGER=0
 
-# VCD_TYPE: none, full, mesh, fst_full
+# VCD_TYPE: none, vcd_full, vcd_mesh, fst_full
 VCD_TYPE="none"
 
 WORKLOAD_ARGS=""
@@ -75,11 +73,6 @@ WORKLOAD_ARGS=""
 #=============================================================================
 # subroutines
 #=============================================================================
-err() { echo "[ERROR]: $@"; exit 1; }
-info() { echo "[INFO]: $@"; }
-ferr() { echo "[ERROR]: $1" |& tee "$2"; exit 1; }
-finfo() { echo "[INFO]: $1" |& tee "$2"; }
-
 display_usage() {
   cat <<EOF
 
@@ -100,24 +93,22 @@ display_usage() {
     6: $TEST_6 
     7: $TEST_7
 
-  Available simulators (you must buildsim_gemmini these first):
-    lab3: $HW_CONFIG_LAB3 (default)
-    
   sw platform
   -----------
-  -bare         --> use bare-metal workload (default)
-  -pk           --> run workload using pk execution environment
+  -pk           --> run workload using pk execution environment (default)
   -linux        --> use linux workload
+  -bare         --> use bare-metal workload
  
   sw config mode
   --------------
-  -hw_tiler     --> use the new gemmini2 ISA hardware tiler (default)
+  -orig_tiler   --> use the original tiler algorithm on the old ISA (default)
   -fsm_tiler    --> use FSM-based tiler algorithm on the old ISA
-  -orig_tiler   --> use the original tiler algorithm on the old ISA
+  -hw_tiler     --> use the new gemmini2 ISA hardware tiler
 
   hw config mode
   --------------
-  -lab3         --> use the simulator with the 'lab3' config (default)
+  -lab3         --> the $HW_CONFIG_LAB3 Chisel config (default)
+											
 
   hw simulator
   ------------
@@ -131,7 +122,7 @@ display_usage() {
   -vcd_none     --> no vcd generated (default)
   -vcd_full     --> capture all signals in design
   -vcd_mesh     --> generates a vcd of just the mesh signals
-  -fst_full      --> same as vcd_full, but generate fst instead
+  -fst_full     --> same as vcd_full, but generate fst instead
 
   hw sim options
   --------------
@@ -161,6 +152,9 @@ EOF
 #EOF
 #}
 
+#=============================================================================
+# run
+#=============================================================================
 runsim() {
   local workload_dir="$1"
   local workload_name="$2"
@@ -175,7 +169,7 @@ runsim() {
   fi
 
   # initialize logs, performance counter
-  local ts="$(date "+%Y-%m-%d_%H:%M:%S")"
+  local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
   local testname="${ts}__${SW_PLATFORM}__${SW_MODE}__${binary_name}"
   local starttime=$SECONDS
 
@@ -241,8 +235,7 @@ runsim() {
       # trace configuration
       case $VCD_TYPE in
         none) ;;
-        full) extra_opts="$extra_opts -v $vcdfile";;
-        vcd_full) extra_opts="$extra_opts -v $vcdfile";;
+        vcd_full) extra_opts="$extra_opts -v $vcdfile -x 7824850";;
         fst_full) extra_opts="$extra_opts -v $fstfile";;
         *) err "verilator does not support $VCD_TYPE tracing mode!"
       esac
@@ -254,7 +247,7 @@ runsim() {
       err "invalid HW_SIM: $HW_SIM"
       ;;
   esac
-  #------------------------
+  #-------------------------------------------------------------------------
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
     finfo "interactive debug -- no output to logfile" "$logfile"
     $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
@@ -268,7 +261,7 @@ runsim() {
     $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args &> "$logfile"
     stty echo
   fi
-  #------------------------
+  #-------------------------------------------------------------------------
   totaltime=$(( $SECONDS-$starttime ))
   if grep FAIL "$logfile" ; then 
     ferr "$testname failed!" "$logfile"; 
@@ -293,9 +286,9 @@ while [ $# -ne 0 ] ; do
     -pk)    SW_PLATFORM="pk" ;;
     -linux) SW_PLATFORM="linux" ;;
     #-------------------------------------------------------------------------
-    -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
-    -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
     -orig_tiler) SW_MODE="orig_tiler"; SPIKE_EXT="gemmini"  ;;
+    -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
+    -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
     #-------------------------------------------------------------------------
     -lab3)
       HW_CONFIG="lab3"
@@ -316,14 +309,11 @@ while [ $# -ne 0 ] ; do
     -debugger)    IS_DEBUGGER=1 ;;
     -no_debugger) IS_DEBUGGER=0 ;;
     #------------------------------------------------------------------------
-    -vcd_full) VCD_TYPE="full" ;;
+    -vcd_full) VCD_TYPE="vcd_full" ;;
     -fst_full) VCD_TYPE="fst_full" ;;
-    -vcd_none)    
-      err "vcd-generation not supported yet"
-      VCD_TYPE="none" 
-      ;;
+    -vcd_none) VCD_TYPE="none" ;;
     -vcd_mesh)    
-      err "vcd-generation not supported yet"
+      err "vcd_mesh not supported yet"
       VCD_TYPE="mesh" 
       ;;
     #------------------------------------------------------------------------

@@ -51,14 +51,13 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
   // scratchpad range, used for tracking RAW, WAR, and WAW deps
   class SPRange extends Bundle {
     val valid = Bool()
-    val start = UInt(32.W) // TODO magic number
-    val len   = UInt(8.W) // TODO magic number
-
-    def begin(dummy: Int = 0) = Cat(start(31), 0.U(1), start(29,0))
-    def end(dummy: Int = 0) = begin() + len * block_rows.U
+    val is_sp = Bool()
+    val start = UInt(30.W) // TODO magic number
+    val end   = UInt(30.W) // TODO magic number
     def overlaps(other: SPRange) = valid && other.valid && 
-                                   (begin() > other.end()) && 
-                                   (end() < other.begin())
+                                   (is_sp === other.is_sp) &&
+                                   (start < other.end) && 
+                                   (end > other.start)
   }
 
   class Entry extends Bundle {
@@ -118,21 +117,25 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     new_entry.is_config := funct === CONFIG_CMD
 
     new_entry.op1.valid := funct_is_compute
-    new_entry.op1.start := cmd.rs1(31,0)
-    new_entry.op1.len   := 1.U
+    new_entry.op1.is_sp := cmd.rs1(31)
+    new_entry.op1.start := cmd.rs1(29,0)
+    new_entry.op1.end   := cmd.rs1(29,0) + block_rows.U
 
     new_entry.op2.valid := funct_is_compute || funct === STORE_CMD
-    new_entry.op2.start := cmd.rs2(31,0)
-    new_entry.op2.len   := 1.U
+    new_entry.op2.is_sp := cmd.rs2(31)
+    new_entry.op2.start := cmd.rs2(29,0)
+    new_entry.op2.end   := cmd.rs2(29,0) + block_rows.U
 
     new_entry.op3.valid := funct_is_compute
-    new_entry.op3.start := cmd.rs1(63,32)
-    new_entry.op3.len   := 1.U
+    new_entry.op3.is_sp := cmd.rs1(63)
+    new_entry.op3.start := cmd.rs1(61,32)
+    new_entry.op3.end   := cmd.rs1(61,32) + block_rows.U
 
     new_entry.dst.valid := funct_is_compute || funct === LOAD_CMD
-    new_entry.dst.start := Mux(funct_is_compute, cmd.rs2(63,32), cmd.rs2(31,0))
-    // TODO magic number
-    new_entry.dst.len   := Mux(funct_is_compute, 1.U, cmd.rs2(63, spAddrBits))
+    new_entry.dst.is_sp := Mux(funct_is_compute, cmd.rs2(63),    cmd.rs2(31))
+    new_entry.dst.start := Mux(funct_is_compute, cmd.rs2(61,32), cmd.rs2(29,0))
+    new_entry.dst.end   := new_entry.dst.start + 
+                           (Mux(funct_is_compute, 1.U, cmd.rs2(63, 32)) * block_rows.U)
 
     val is_load  = (funct === LOAD_CMD) || 
                    (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
