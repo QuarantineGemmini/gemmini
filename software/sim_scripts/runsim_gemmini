@@ -70,7 +70,7 @@ TRACE_START="0"
 # UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
 
 WORKLOAD_ARGS=""
-MAX_CYCLES=0
+MAX_CYCLES=-1
 
 #=============================================================================
 # subroutines
