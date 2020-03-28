@@ -30,9 +30,6 @@ SW_DIR_MLPS="${SW_DIR}/build/mlps"
 HW_CONFIG_PROJECT=example
 HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 
-# for vcs sim only
-# UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
-
 TEST_0=echo
 TEST_1=template
 TEST_2=large_matmul
@@ -65,10 +62,15 @@ IS_VERBOSE=0
 IS_DEBUG=0
 IS_DEBUGGER=0
 
-# VCD_TYPE: none, vcd_full, vcd_mesh, fst_full
-VCD_TYPE="none"
+# TRACE_TYPE: none, vcd_full, vcd_mesh, vpd_full, fst_full
+TRACE_TYPE="none"
+TRACE_START="0"
+
+# for vcs sim only
+# UCLI_MESH="$LOGDIR/ucli_mesh.tcl"
 
 WORKLOAD_ARGS=""
+MAX_CYCLES=0
 
 #=============================================================================
 # subroutines
@@ -108,7 +110,7 @@ display_usage() {
   hw config mode
   --------------
   -lab3         --> the $HW_CONFIG_LAB3 Chisel config (default)
-											
+                      
 
   hw simulator
   ------------
@@ -119,10 +121,13 @@ display_usage() {
 
   trace options
   -------------
-  -vcd_none     --> no vcd generated (default)
+  -trace_start <cycle>
+                --> start tracing at this time (defaults to 0)
+  -no_trace     --> no vcd generated (default)
   -vcd_full     --> capture all signals in design
   -vcd_mesh     --> generates a vcd of just the mesh signals
-  -fst_full     --> same as vcd_full, but generate fst instead
+  -vpd_full     --> same as vcd_full, but generate vpd instead (vcs only)
+  -fst_full     --> same as vcd_full, but generate fst instead (verilator only)
 
   hw sim options
   --------------
@@ -137,6 +142,8 @@ display_usage() {
 
   misc options
   ------------
+  -max_cycles <int>
+                --> terminate simulation after this many cycles
   -args <...>   --> args to pass to workload's argv[]
   -h|help       --> display this help
 
@@ -198,23 +205,34 @@ runsim() {
       cd "$VCS_DIR"
       local logdir="$VCS_DIR/logs"
       local logfile="${logdir}/${testname}.log"
+      local vcdfile="${logdir}/${testname}.vcd"
+      local vpdfile="${logdir}/${testname}.vpd"
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
       # simulator, simulator options
       BIN="$VCS_DIR/simv-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
       if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
-      if [ "$IS_VERBOSE" -eq 1 ] ; then
-        extra_opts="$extra_opts +permissive +verbose +permissive-off"
-      fi
+      if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
+      extra_opts="$extra_opts +permissive"
+      extra_opts="$extra_opts +max-cycles=$MAX_CYCLES"
+      extra_opts="$extra_opts -fgp=multisocket,single_socket_mode"
+      # use this instead if you want to control the number of vcs threads
+      #extra_opts="$extra_opts -fgp=multisocket,single_socket_mode,num_cores:$SIM_THREADS"
+
+      # trace configuration
+      case $TRACE_TYPE in
+        none) ;;
+        vcd_full) extra_opts="$extra_opts +vcdfile=$vcdfile"
+                  extra_opts="$extra_opts +dump-start=$TRACE_START" ;;
+        vpd_full) extra_opts="$extra_opts +vcdplusfile=$vpdfile"
+                  extra_opts="$extra_opts +dump-start=$TRACE_START" ;;
+        *) err "vcs does not support $TRACE_TYPE tracing mode!"
+      esac
+      extra_opts="$extra_opts +permissive-off"
+
       if [ "$IS_DEBUGGER" -eq 1 ] ; then
         debugger_opts="$debugger_opts +permissive -gui +permissive-off"
       fi
-
-      # trace configuration
-      #UCLI="-ucli -i $UCLI_MESH"
-      #if [ -n "$UCLI" ] ; then 
-      #  create_uclis "$testname"
-      #fi
       ;;
     verilator)
       # rundir/logging setup
@@ -227,18 +245,20 @@ runsim() {
 
       # simulator, simulator options
       BIN="$VERILATOR_DIR/simulator-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
-      extra_opts="$extra_opts -c "
       if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
       if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
-      if [ "$IS_DEBUGGER" -eq 1 ] ; then err "verilator has no debugger!"; fi
+      extra_opts="$extra_opts -c "
+      extra_opts="$extra_opts +max-cycles=$MAX_CYCLES"
 
       # trace configuration
-      case $VCD_TYPE in
+      case $TRACE_TYPE in
         none) ;;
-        vcd_full) extra_opts="$extra_opts -v $vcdfile -x 7824850";;
-        fst_full) extra_opts="$extra_opts -v $fstfile";;
-        *) err "verilator does not support $VCD_TYPE tracing mode!"
+        vcd_full) extra_opts="$extra_opts -v $vcdfile -x $TRACE_START";;
+        fst_full) extra_opts="$extra_opts -v $fstfile -x $TRACE_START";;
+        *) err "verilator does not support $TRACE_TYPE tracing mode!"
       esac
+			
+      if [ "$IS_DEBUGGER" -eq 1 ] ; then err "verilator has no debugger!"; fi
       ;;
     firesim)
       err "firesim not supported yet"
@@ -249,16 +269,19 @@ runsim() {
   esac
   #-------------------------------------------------------------------------
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
-    finfo "interactive debug -- no output to logfile" "$logfile"
+    info "interactive debug started, no logfile generated!"
+    stty -echo
     $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
     stty echo
   elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
-    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args |& tee "$logfile"
+    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
+      |& spike-dasm |& tee -a "$logfile"
     stty echo
     set +x
   else
-    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args &> "$logfile"
+    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
+      |& spike-dasm &>> "$logfile"
     stty echo
   fi
   #-------------------------------------------------------------------------
@@ -309,14 +332,23 @@ while [ $# -ne 0 ] ; do
     -debugger)    IS_DEBUGGER=1 ;;
     -no_debugger) IS_DEBUGGER=0 ;;
     #------------------------------------------------------------------------
-    -vcd_full) VCD_TYPE="vcd_full" ;;
-    -fst_full) VCD_TYPE="fst_full" ;;
-    -vcd_none) VCD_TYPE="none" ;;
+    -trace_start) 
+      if [ $# -eq 0 ] ; then err "-trace_start requires arg. see usage"; fi
+      TRACE_START=$1; shift;
+      ;;
+    -no_trace) TRACE_TYPE="none" ;;
+    -vcd_full) TRACE_TYPE="vcd_full" ;;
+    -vpd_full) TRACE_TYPE="vpd_full" ;;
+    -fst_full) TRACE_TYPE="fst_full" ;;
     -vcd_mesh)    
       err "vcd_mesh not supported yet"
-      VCD_TYPE="mesh" 
+      TRACE_TYPE="mesh" 
       ;;
     #------------------------------------------------------------------------
+    -max_cycles)
+      if [ $# -eq 0 ] ; then err "-max_cycles requires arg. see usage"; fi
+      MAX_CYCLES=$1; shift;
+      ;;
     -args)
       if [ $# -eq 0 ] ; then err "-args requires arg. see usage"; fi
       WORKLOAD_ARGS=$1; shift;

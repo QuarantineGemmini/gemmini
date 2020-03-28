@@ -21,8 +21,6 @@ HW_CONFIG_PROJECT=example
 # for eecs290-2 lab3
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 
-ORIG_CFLAGS="${CFLAGS:-}"
-
 # make sure the software workloads don't have broken makefiles
 export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
 
@@ -34,10 +32,12 @@ IS_DEBUG=0
 IS_FORCE=0
 SIM_TYPE="verilator"
 
-SIM_THREADS=1
-
+VL8_THREADS=1
 VL8_PROFILE=none
 VL8_FST_MODE=0
+
+VCS_THREADS="$(cat /proc/cpuinfo | grep '^processor' | wc -l)"
+VCS_PROFILE=0
 
 # this PRINTF pattern only prints the ROB accept/issue/final events
 #export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
@@ -65,6 +65,8 @@ display_usage() {
 
   verilator options 
   -----------------
+  -vl8_threads <t>  
+                --> how many threads verilated simulator use [$VL8_THREADS]
   -vl8_profile <all|threads>
                 --> if 'threads', the simulator will output a multi-threading
                     efficiency report. use verilator_gantt to view it. if 'all', 
@@ -72,9 +74,14 @@ display_usage() {
                     addition to 'threads' profiling data.
   -vl8_fst_mode --> only valid if -debug is used. generate fst instead of vcd
 
+  vcs options 
+  -----------
+  -vcs_profile  --> make the simulator output profiling data for gprof. NOTE:
+                    this is pretty useless since vcs-generated C code is 
+                    obfuscated.
+
   other options
   -------------
-  -threads <t>  --> how many threads will the simulator use [$SIM_THREADS]
   -no_force     --> let make/simulator determine if out of date (default)
   -force        --> force remove simulator output files (not firrtl though)
   -no_noisy     --> only print to logfile (default)
@@ -112,11 +119,14 @@ buildsim() {
 
       # compiler options
       local cmdline="make CONFIG=$config_name"
+      local cmdline="$cmdline VCS_THREADS=$VCS_THREADS"
+      local cmdline="$cmdline VCS_PROFILE=$VCS_PROFILE"
       if [ "$IS_DEBUG" -eq 1 ]; then cmdline="$cmdline debug"; fi
 
       # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
-        for f in simv-*-$config_name* *.daidir/.vcs.timestamp \
+        for f in simv-*-$config_name* ucli.key vc_hdrs.h \
+            simv-*.daidir/.vcs.timestamp \
             generated-src/*.$config_name/*.printf*.v ; do
           finfo "force removing $f" "$logfile"
           rm -fr $f
@@ -132,7 +142,7 @@ buildsim() {
 
       # compiler options
       local cmdline="make CONFIG=$config_name"
-      local cmdline="$cmdline VL8_THREADS=$SIM_THREADS"
+      local cmdline="$cmdline VL8_THREADS=$VL8_THREADS"
       local cmdline="$cmdline VL8_PROFILE=$VL8_PROFILE"
       local cmdline="$cmdline VL8_FST_MODE=$VL8_FST_MODE"
       if [ "$IS_DEBUG" -eq 1 ]; then cmdline="$cmdline debug"; fi
@@ -183,6 +193,10 @@ while [ $# -ne 0 ] ; do
     -verilator) SIM_TYPE="verilator" ;;
     -firesim)   SIM_TYPE="firesim" ;;
     #------------------------------------------------------------------------
+    -vl8_threads)
+      if [ $# -eq 0 ] ; then err "-vl8_threads requires arg. see usage"; fi
+      VL8_THREADS=$1; shift
+      ;;
     -vl8_profile)
       if [ $# -eq 0 ] ; then err "-vl8_profile requires arg. see usage"; fi
       case $1 in
@@ -192,10 +206,9 @@ while [ $# -ne 0 ] ; do
       ;;
     -vl8_fst_mode) VL8_FST_MODE=1 ;;
     #------------------------------------------------------------------------
-    -threads)
-      if [ $# -eq 0 ] ; then err "-threads requires arg. see usage"; fi
-      SIM_THREADS=$1; shift
-      ;;
+    -vcs_profile) VCS_PROFILE=1 ;;
+    #------------------------------------------------------------------------
+    -vl8_fst_mode) VL8_FST_MODE=1 ;;
     -noisy)     IS_NOISY=1 ;;
     -no_noisy)  IS_NOISY=0 ;;
     -force)     IS_FORCE=1 ;;
