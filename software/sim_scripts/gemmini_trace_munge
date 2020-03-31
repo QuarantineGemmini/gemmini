@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# [ssteffl] NOTE: this is not functional at the moment
+
 # SIMPLE 1st pass: ASSUME WEIGHT-STATIONARY!!!
 
 import re

@@ -109,7 +109,6 @@ run() {
   local cmdline="basicbuild $dst_dir"
 
   if [ "$IS_FIRESIM" -eq 1 ]; then
-    run_name="${run_name}_firesim"
     logfile="$LOGDIR/${run_name}_firesim.log"
     cmdline="firesimbuild $target_name $target_fsim_sw_config"
   else
