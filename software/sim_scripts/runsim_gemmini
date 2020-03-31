@@ -153,7 +153,7 @@ EOF
 # run spike, vcs, verilator
 #=============================================================================
 sw_dir() {
-  echo "${SW_DIR}/build_${SW_MODE}/$1"
+  echo "${SW_DIR}/gemmini-rocc-tests/build_${SW_MODE}/$1"
 }
 
 runsim() {
