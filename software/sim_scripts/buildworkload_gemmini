@@ -6,18 +6,21 @@ set -euo pipefail
 # initialize variables
 #=============================================================================
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
-source "$DIR/.common.sh"
-
-SW_DIR="$CY_DIR/generators/gemmini/software"
+SW_DIR="$(dirname "$DIR")"
+FCFG_SW_DIR="$SW_DIR/firesim-sw-configs"
 LOGDIR="$SW_DIR/logs"
+CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
+FSIM_SW="$CY_DIR/sims/firesim/sw/firesim-software"
+source "$DIR/.common.sh"
 
 ORIG_CFLAGS="${CFLAGS:-}"
 
 # make sure the software workloads don't have broken makefiles
-export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
+ORIG_MAKEFLAGS="${MAKEFLAGS:-}"
+export MAKEFLAGS="$ORIG_MAKEFLAGS --warn-undefined-variables"
 
 #-----------------------------------------------------------------------------
+IS_FIRESIM=0
 IS_NOISY=0
 IS_FORCE=0
 IS_DEBUG=0
@@ -25,6 +28,11 @@ IS_DEBUG=0
 CFLAGS_ORIG_TILER=""
 CFLAGS_FSM_TILER="-DUSE_FSM_TILER"
 CFLAGS_HW_TILER="-DUSE_HW_TILER"
+
+# firesim configs
+FSIM_SW_ORIG="$FCFG_SW_DIR/orig_tiler.json"
+FSIM_SW_FSM="$FCFG_SW_DIR/fsm_tiler.json"
+FSIM_SW_HW="$FCFG_SW_DIR/hw_tiler.json"
 
 DEBUG_CFLAGS=""
 NODEBUG_CFLAGS="-DNODEBUG"
@@ -38,20 +46,19 @@ display_usage() {
   buildworkload_gemmini [options] <cfg1> [options] [<cfg2> ...]
   --------------------------------------------------------
   Utility to build parameterized workloads for gemmini simulation. It builds
-  baremetal, pk, and linux workloads for the targets. The default target is
-  orig_tiler (old gemmini ISA, and old software tiler).
-  Targets are:
-    hw_tiler:   use the new gemmini2 ISA hardware tiler (default)
-    fsm_tiler:  use FSM-based tiler algorithm on the old ISA
-    orig_tiler: use the original tiler algorithm on the old ISA
+  baremetal, pk, and linux workloads for the targets. 
+
+  Software Load
+  --------------
+  orig_tiler: use the original tiler algorithm on the old ISA
+  fsm_tiler:  use FSM-based tiler algorithm on the old ISA
+  hw_tiler:   use the new gemmini2 ISA hardware tiler
 
   other options
   -------------
-  -no_noisy   --> only print build output to logfile (default)
+  -firesim    --> package the compiled workload for firesim
   -noisy      --> print build output to stdout and the logfile
-  -no_force   --> don't force-rebuild the build/ directory (default)
   -force      --> force rebuild by deleting build/ dir first
-  -no_debug   --> disable verbose software debugging (default)
   -debug      --> enable verbose software debugging
   -h|help     --> display this help
 
@@ -62,9 +69,36 @@ EOF
 #=============================================================================
 # run
 #=============================================================================
-buildworkload() {
+basicbuild() {
+  local dst_dir="$1"
+  cd "$SW_DIR/gemmini-rocc-tests"
+  ./build.sh
+  stty echo
+  rm -fr "$dst_dir"
+  cp -r "build" "$dst_dir"
+  cp "include/gemmini_params.h" "$dst_dir/"
+}
+
+firesimbuild() {
+  local name="$1"
+  local fsim_sw_config="$2"
+  buildworkload_gemmini -noisy $name
+
+  cd "$SW_DIR/gemmini-rocc-tests"
+  cp -fr build_${name}/* ../overlay/root/
+
+  cd "$FSIM_SW"
+  rm -f images/$fsim_sw_config*
+  # don't flag undefind vars in the linux Makefile
+  export MAKEFLAGS="$ORIG_MAKEFLAGS"
+  ./marshal -v --workdir $SW_DIR build $fsim_sw_config
+  ./marshal -v --workdir $SW_DIR install $fsim_sw_config
+}
+
+run() {
   local target_name="$1"
   local target_cflags="$2"
+  local target_fsim_sw_config="$3"
 
   # init local variables
   local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
@@ -72,11 +106,17 @@ buildworkload() {
   local run_name="${ts}__${target_name}"
   local logfile="$LOGDIR/${run_name}.log"
   local starttime=$SECONDS
+  local cmdline="basicbuild $dst_dir"
 
-  # set the cflags
-  export CFLAGS="$ORIG_CFLAGS $target_cflags"
-  if [ "$IS_DEBUG" -eq 1 ] ; then export CFLAGS="$CFLAGS $DEBUG_CFLAGS"; 
-	else export CFLAGS="$CFLAGS $NODEBUG_CFLAGS"; fi
+  if [ "$IS_FIRESIM" -eq 1 ]; then
+    run_name="${run_name}_firesim"
+    logfile="$LOGDIR/${run_name}_firesim.log"
+    cmdline="firesimbuild $target_name $target_fsim_sw_config"
+  else
+    export CFLAGS="$ORIG_CFLAGS $target_cflags"
+    if [ "$IS_DEBUG" -eq 1 ] ; then export CFLAGS="$CFLAGS $DEBUG_CFLAGS"; 
+    else export CFLAGS="$CFLAGS $NODEBUG_CFLAGS"; fi
+  fi
 
   finfo "$run_name started" "$logfile"
   #-------------------------------------------------------------------------
@@ -86,22 +126,12 @@ buildworkload() {
     rm -fr build/ |& tee -a "$logfile"
   fi
   #-------------------------------------------------------------------------
-  if [ "$IS_NOISY" -eq 1 ] ; then
+  if [ "$IS_NOISY" -eq 1 ]; then
     set -x
-    { ./build.sh
-      stty echo
-      rm -fr "$dst_dir"
-      cp -r "build" "$dst_dir"
-      cp "include/gemmini_params.h" "$dst_dir/"
-    } |& tee -a "$logfile"
+    $cmdline |& tee -a "$logfile"
     set +x
   else
-    { ./build.sh
-      stty echo
-      rm -fr "$dst_dir"
-      cp -r "build" "$dst_dir"
-      cp "include/gemmini_params.h" "$dst_dir/"
-    } &>> "$logfile"
+    $cmdline &>> "$logfile"
   fi
   #-------------------------------------------------------------------------
   totaltime=$(( $SECONDS-$starttime ))
@@ -119,18 +149,16 @@ while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
     #-------------------------------------------------------------------------
-    -noisy)    IS_NOISY=1 ;;
-    -no_noisy) IS_NOISY=0 ;;
-    -force)    IS_FORCE=1 ;;
-    -no_force) IS_FORCE=0 ;;
-    -debug)    IS_DEBUG=1 ;;
-    -no_debug) IS_DEBUG=0 ;;
+    -firesim) IS_FIRESIM=1 ;;
+    -noisy)   IS_NOISY=1 ;;
+    -force)   IS_FORCE=1 ;;
+    -debug)   IS_DEBUG=1 ;;
     #------------------------------------------------------------------------
     -h|-help) display_usage ;;
     #------------------------------------------------------------------------
-    orig_tiler) buildworkload $arg "$CFLAGS_ORIG_TILER" ;;
-    fsm_tiler)  buildworkload $arg "$CFLAGS_FSM_TILER" ;;
-    hw_tiler)   buildworkload $arg "$CFLAGS_HW_TILER" ;;
+    orig_tiler) run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_ORIG" ;;
+    fsm_tiler)  run $arg "$CFLAGS_FSM_TILER"  "$FSIM_SW_FSM" ;;
+    hw_tiler)   run $arg "$CFLAGS_HW_TILER"   "$FSIM_SW_HW" ;;
     #------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac

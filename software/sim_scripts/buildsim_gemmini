@@ -7,6 +7,7 @@ set -euo pipefail
 #=============================================================================
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 SW_DIR="$(dirname "$DIR")"
+FCFG_DIR="$SW_DIR/firesim-configs"
 CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
 source "$DIR/.common.sh"
 
@@ -15,16 +16,15 @@ VCS_DIR="$CY_DIR/sims/vcs"
 VERILATOR_DIR="$CY_DIR/sims/verilator"
 FIRESIM_DIR="$CY_DIR/sims/firesim"
 
-# TODO: clean up multiple projects (or will they all be example?)
 # general simulator options
 HW_CONFIG_PROJECT=example
 
-# firesim configs
-FSIM_BUILD_CONFIG="${SW_DIR}/firesim-configs/config_build.ini"
-FSIM_RECIPES_CONFIG="${SW_DIR}/firesim-configs/config_build_recipes.ini"
-
-# available hardware-configs
+# available hardware-configs (vcs,verilator)
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+
+# firesim configs
+FSIM_BUILD_CONFIG="$FCFG_DIR/config_build.ini"
+FSIM_RECIPES_CONFIG="$FCFG_DIR/config_build_recipes.ini"
 
 # make sure the software workloads don't have broken makefiles
 export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
@@ -35,7 +35,6 @@ export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
 IS_NOISY=0
 IS_DEBUG=0
 IS_FORCE=0
-sim_type="verilator"
 
 VL8_THREADS=1
 VL8_PROFILE=none
@@ -48,7 +47,7 @@ VCS_PROFILE=0
 #export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
 export ENABLE_PRINTF_PATTERN=''
 
-# default hardware config
+# default hardware config (vcs,verilator)
 HW_CONFIG=$CONFIG_LAB3
 
 #=============================================================================
@@ -70,9 +69,9 @@ display_usage() {
              you update the config_build.ini and config_build_recipes.ini
              files before building!
 
-  hardware configs (vcs/verilator)
+  hardware configs (vcs, verilator)
   --------------------------------
-  -hw_lab3:     --> build $CONFIG_LAB3
+  -hw_lab3      --> build $CONFIG_LAB3
   
   verilator options 
   -----------------
@@ -80,8 +79,8 @@ display_usage() {
                 --> how many threads verilated simulator use [$VL8_THREADS]
   -vl8_profile <all|threads>
                 --> if 'threads', the simulator will output a multi-threading
-                    efficiency report. use verilator_gantt to view it. if 'all', 
-                    make the simulator output profiling data for gprof in 
+                    efficiency report. use verilator_gantt to view it. 'all'
+                    makes the simulator output profiling data for gprof in 
                     addition to 'threads' profiling data.
   -vl8_fst_mode --> only valid if -debug is used. generate fst instead of vcd
 
@@ -93,16 +92,19 @@ display_usage() {
 
   other options
   -------------
-  -no_force     --> let make/simulator determine if out of date (default)
   -force        --> force remove simulator output files (not firrtl though)
-  -no_noisy     --> only print to logfile (default)
   -noisy        --> print to stdout as well as the logfile
-  -no_debug     --> don't compile a debug-simulator (default)
   -debug        --> compile a debug-mode simulator
   -printf <pat> --> python regex pattern for printf() strings to selectively 
                     set to verbose mode in the simulator.
                     default is: '$ENABLE_PRINTF_PATTERN'
   -h|help       --> display this help
+
+  examples
+  --------
+  buildsim_gemmini -hw_lab3 verilator
+  buildsim_gemmini -noisy -force -debug vcs
+  buildsim_gemmini -noisy firesim
 
 EOF
   exit 1
@@ -230,13 +232,9 @@ while [ $# -ne 0 ] ; do
     #------------------------------------------------------------------------
     -vcs_profile) VCS_PROFILE=1 ;;
     #------------------------------------------------------------------------
-    -vl8_fst_mode) VL8_FST_MODE=1 ;;
     -noisy)     IS_NOISY=1 ;;
-    -no_noisy)  IS_NOISY=0 ;;
     -force)     IS_FORCE=1 ;;
-    -no_force)  IS_FORCE=0 ;;
     -debug)     IS_DEBUG=1 ;;
-    -no_debug)  IS_DEBUG=0 ;;
     -printf)
       if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
       export ENABLE_PRINTF_PATTERN="$1"; shift
