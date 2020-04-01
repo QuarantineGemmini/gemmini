@@ -128,7 +128,7 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     new_entry.op2.start := cmd.rs2(29,0)
     new_entry.op2.end   := cmd.rs2(29,0) + (block_rows.U *
                            Mux(funct === PRELOAD_CMD, 1.U, 
-                            (cmd.rs2(48, 32) + block_cols.U - 1) / block_cols.U))
+                            (cmd.rs2(48, 32) + block_cols.U - 1.U) / block_cols.U))
 
     val is_load  = (funct === LOAD_CMD) || 
                    (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
@@ -149,54 +149,54 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     //======================================================================
     //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
     //  new_entry.bits.cmd.rs2))
-    when(new_entry.is_config) {
-      when (new_entry.is_load) {
-        printf(
-          "cycle[%d], entry[%d], accept[%d], config_mvin[stride=%x]\n", 
-          debug_cycle, new_entry_id, cmd_id.value, 
-          new_entry.cmd.rs2)
-      }
-      .elsewhen (new_entry.is_store) {
-        printf(
-          "cycle[%d], entry[%d], accept[%d], config_mvout[stride=%x]\n", 
-          debug_cycle, new_entry_id, cmd_id.value, 
-          new_entry.cmd.rs2)
-      }
-      .otherwise {
-        assert(new_entry.is_ex)
-        printf(
-          "cycle[%d], entry[%d], accept[%d], config_ex[matmul_rshift=%x, acc_rshift=%x, relu6_lshift=%x]\n", 
-          debug_cycle, new_entry_id, cmd_id.value, 
-          cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
-      }
-    }
-    .elsewhen (new_entry.is_load) {
-      printf(
-        "cycle[%d], entry[%d], accept[%d], mvin[dram=%x, spad=%x, tiles=%x]\n",
-        debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,32))
-    }
-    .elsewhen (new_entry.is_store) {
-      printf(
-        "cycle[%d], entry[%d], accept[%d], mvout[dram=%x, spad=%x, tiles=%x]\n",
-        debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,32))
-    }
-    .otherwise {
-      assert(new_entry.is_ex)
-      when (funct_is_compute_preload) {
-        printf(
-          "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, B=%x, D=%x, C=%x]\n",
-          debug_cycle, new_entry_id, cmd_id.value, 
-          cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
-      }
-      .otherwise {
-        printf(
-          "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, B=%x, D=%x, C=%x]\n",
-          debug_cycle, new_entry_id, cmd_id.value, 
-          cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
-      }
-    }
+   // when(new_entry.is_config) {
+   //   when (new_entry.is_load) {
+   //     printf(
+   //       "cycle[%d], entry[%d], accept[%d], config_mvin[stride=%x]\n", 
+   //       debug_cycle, new_entry_id, cmd_id.value, 
+   //       new_entry.cmd.rs2)
+   //   }
+   //   .elsewhen (new_entry.is_store) {
+   //     printf(
+   //       "cycle[%d], entry[%d], accept[%d], config_mvout[stride=%x]\n", 
+   //       debug_cycle, new_entry_id, cmd_id.value, 
+   //       new_entry.cmd.rs2)
+   //   }
+   //   .otherwise {
+   //     assert(new_entry.is_ex)
+   //     printf(
+   //       "cycle[%d], entry[%d], accept[%d], config_ex[matmul_rshift=%x, acc_rshift=%x, relu6_lshift=%x]\n", 
+   //       debug_cycle, new_entry_id, cmd_id.value, 
+   //       cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+   //   }
+   // }
+   // .elsewhen (new_entry.is_load) {
+   //   printf(
+   //     "cycle[%d], entry[%d], accept[%d], mvin[dram=%x, spad=%x, tiles=%x]\n",
+   //     debug_cycle, new_entry_id, cmd_id.value, 
+   //     cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,32))
+   // }
+   // .elsewhen (new_entry.is_store) {
+   //   printf(
+   //     "cycle[%d], entry[%d], accept[%d], mvout[dram=%x, spad=%x, tiles=%x]\n",
+   //     debug_cycle, new_entry_id, cmd_id.value, 
+   //     cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,32))
+   // }
+   // .otherwise {
+   //   assert(new_entry.is_ex)
+   //   when (funct_is_compute_preload) {
+   //     printf(
+   //       "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, B=%x, D=%x, C=%x]\n",
+   //       debug_cycle, new_entry_id, cmd_id.value, 
+   //       cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+   //   }
+   //   .otherwise {
+   //     printf(
+   //       "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, B=%x, D=%x, C=%x]\n",
+   //       debug_cycle, new_entry_id, cmd_id.value, 
+   //       cmd.rs1(31,0), cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
+   //   }
+   // }
 
     //======================================================================
     new_entry.q := Mux1H(Seq(
@@ -214,8 +214,7 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     // We search for all entries which read from an address that we write to
     val wars = entries.map { e => e.valid && (
       new_entry.dst.overlaps(e.bits.op1) ||
-      new_entry.dst.overlaps(e.bits.op2) ||
-      new_entry.dst.overlaps(e.bits.op3)
+      new_entry.dst.overlaps(e.bits.op2)
     )}
 
     // We search for all entries which write to an address that we write to
@@ -270,46 +269,46 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
       //======================================================================
       // debug
       //======================================================================
-      when(entries(issue_id).bits.is_config) {
-        when (entries(issue_id).bits.is_load) {
-          printf(
-            "cycle[%d], entry[%d],  issue[%d], config_mvin\n",
-            debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-          printf(
-            "cycle[%d], entry[%d],  final[%d], config_mvin\n", 
-            debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-        }
-        .elsewhen (entries(issue_id).bits.is_store) {
-          printf(
-            "cycle[%d], entry[%d],  issue[%d], config_mvout\n",
-            debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-          printf(
-            "cycle[%d], entry[%d],  final[%d], config_mvout\n", 
-            debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-        }
-        .otherwise {
-          assert(entries(issue_id).bits.is_ex)
-          printf(
-            "cycle[%d], entry[%d],  issue[%d], config_ex\n",
-            debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-        }
-      }
-      .elsewhen (entries(issue_id).bits.is_load) {
-        printf(
-          "cycle[%d], entry[%d],  issue[%d], mvin\n",
-          debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-      }
-      .elsewhen (entries(issue_id).bits.is_store) {
-        printf(
-          "cycle[%d], entry[%d],  issue[%d], mvout\n",
-          debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-      }
-      .otherwise {
-        assert(entries(issue_id).bits.is_ex)
-        printf(
-          "cycle[%d], entry[%d],  issue[%d], ex\n",
-          debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
-      }
+      //when(entries(issue_id).bits.is_config) {
+      //  when (entries(issue_id).bits.is_load) {
+      //    printf(
+      //      "cycle[%d], entry[%d],  issue[%d], config_mvin\n",
+      //      debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //    printf(
+      //      "cycle[%d], entry[%d],  final[%d], config_mvin\n", 
+      //      debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //  }
+      //  .elsewhen (entries(issue_id).bits.is_store) {
+      //    printf(
+      //      "cycle[%d], entry[%d],  issue[%d], config_mvout\n",
+      //      debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //    printf(
+      //      "cycle[%d], entry[%d],  final[%d], config_mvout\n", 
+      //      debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //  }
+      //  .otherwise {
+      //    assert(entries(issue_id).bits.is_ex)
+      //    printf(
+      //      "cycle[%d], entry[%d],  issue[%d], config_ex\n",
+      //      debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //  }
+      //}
+      //.elsewhen (entries(issue_id).bits.is_load) {
+      //  printf(
+      //    "cycle[%d], entry[%d],  issue[%d], mvin\n",
+      //    debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //}
+      //.elsewhen (entries(issue_id).bits.is_store) {
+      //  printf(
+      //    "cycle[%d], entry[%d],  issue[%d], mvout\n",
+      //    debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //}
+      //.otherwise {
+      //  assert(entries(issue_id).bits.is_ex)
+      //  printf(
+      //    "cycle[%d], entry[%d],  issue[%d], ex\n",
+      //    debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      //}
       //======================================================================
 
       entries(issue_id).bits.issued := true.B
@@ -336,28 +335,28 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     //======================================================================
     //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
     //  entries(io.completed.bits).bits.cmd.rs2))
-    when (entries(io.completed.bits).bits.is_config) {
-      assert(entries(io.completed.bits).bits.is_ex)
-      printf(
-        "cycle[%d], entry[%d],  final[%d], config_ex\n",
-        debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
-    }
-    .elsewhen (entries(io.completed.bits).bits.is_load) {
-      printf(
-        "cycle[%d], entry[%d],  final[%d], mvin\n",
-        debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
-    }
-    .elsewhen (entries(io.completed.bits).bits.is_store) {
-      printf(
-        "cycle[%d], entry[%d],  final[%d], mvout\n",
-        debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
-    }
-    .otherwise {
-      assert(entries(io.completed.bits).bits.is_ex)
-      printf(
-        "cycle[%d], entry[%d],  final[%d], ex\n",
-        debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
-    }
+    //when (entries(io.completed.bits).bits.is_config) {
+    //  assert(entries(io.completed.bits).bits.is_ex)
+    //  printf(
+    //    "cycle[%d], entry[%d],  final[%d], config_ex\n",
+    //    debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
+    //}
+    //.elsewhen (entries(io.completed.bits).bits.is_load) {
+    //  printf(
+    //    "cycle[%d], entry[%d],  final[%d], mvin\n",
+    //    debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
+    //}
+    //.elsewhen (entries(io.completed.bits).bits.is_store) {
+    //  printf(
+    //    "cycle[%d], entry[%d],  final[%d], mvout\n",
+    //    debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
+    //}
+    //.otherwise {
+    //  assert(entries(io.completed.bits).bits.is_ex)
+    //  printf(
+    //    "cycle[%d], entry[%d],  final[%d], ex\n",
+    //    debug_cycle, io.completed.bits, entries(io.completed.bits).bits.cmd_id)
+    //}
     //======================================================================
 
     entries.foreach(_.bits.deps(io.completed.bits) := false.B)

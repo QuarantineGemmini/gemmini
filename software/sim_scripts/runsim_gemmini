@@ -31,13 +31,15 @@ HW_CONFIG_PROJECT=example
 HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 
 TEST_0=echo
-TEST_1=template
-TEST_2=large_matmul
-TEST_3=large_matmul_without_cpu
-TEST_4=very_large_matmul
-TEST_5=cifar_quant
-TEST_6=mobilenet
-TEST_7=resnet50
+TEST_1=padded
+TEST_2=tiled_matmul_ws
+TEST_3=template
+TEST_4=large_matmul
+TEST_5=large_matmul_without_cpu
+TEST_6=very_large_matmul
+TEST_7=cifar_quant
+TEST_8=mobilenet
+TEST_9=resnet50
 
 #=============================================================================
 # defaults
@@ -85,15 +87,18 @@ display_usage() {
   default it will run in quiet mode on the spike simulator. All logs will
   go in the respective chipyard/sims/<simultor>/logs directory.
 
-  Available workloads:
-    0: $TEST_0 
-    1: $TEST_1 
-    2: $TEST_2 
-    3: $TEST_3 
-    4: $TEST_4 
-    5: $TEST_5 
-    6: $TEST_6 
-    7: $TEST_7
+  Available workloads
+  -------------------
+  0: $TEST_0 
+  1: $TEST_1 
+  2: $TEST_2 
+  3: $TEST_3 
+  4: $TEST_4 
+  5: $TEST_5 
+  6: $TEST_6 
+  7: $TEST_7
+  8: $TEST_8
+  9: $TEST_9
 
   sw platform
   -----------
@@ -357,12 +362,14 @@ while [ $# -ne 0 ] ; do
     #------------------------------------------------------------------------
     0) runsim "$(sw_dir bareMetalC)"   "$TEST_0" ;;
     1) runsim "$(sw_dir bareMetalC)"   "$TEST_1" ;;
-    2) runsim "$(sw_dir ee290)"        "$TEST_2" ;;
-    3) runsim "$(sw_dir ee290)"        "$TEST_3" ;;
+    2) runsim "$(sw_dir bareMetalC)"   "$TEST_2" ;;
+    3) runsim "$(sw_dir bareMetalC)"   "$TEST_3" ;;
     4) runsim "$(sw_dir ee290)"        "$TEST_4" ;;
     5) runsim "$(sw_dir ee290)"        "$TEST_5" ;;
-    6) runsim "$(sw_dir imagenet)"     "$TEST_6" ;;
-    7) runsim "$(sw_dir imagenet)"     "$TEST_7" ;;
+    6) runsim "$(sw_dir ee290)"        "$TEST_6" ;;
+    7) runsim "$(sw_dir ee290)"        "$TEST_7" ;;
+    8) runsim "$(sw_dir imagenet)"     "$TEST_8" ;;
+    9) runsim "$(sw_dir imagenet)"     "$TEST_9" ;;
     #------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac
