@@ -10,7 +10,6 @@ import Util._
 
 import midas.targetutils
 
-
 // TODO unify this class with GemminiCmdWithDeps
 class ROBIssue[T <: Data](cmd_t: T, nEntries: Int) extends Bundle {
   val valid = Output(Bool())
@@ -23,8 +22,7 @@ class ROBIssue[T <: Data](cmd_t: T, nEntries: Int) extends Bundle {
   override def cloneType: this.type = new ROBIssue(cmd_t, nEntries).asInstanceOf[this.type]
 }
 
-// class ROB[T <: RoCCCommand](cmd_t: T, nEntries: Int, sprows: Int, block_rows: Int) extends Module {
-class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows: Int) extends Module {
+class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows: Int, block_cols: Int) extends Module {
   val io = IO(new Bundle {
     val alloc = Flipped(Decoupled(cmd_t.cloneType))
 
@@ -72,7 +70,6 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
     val op1 = new SPRange()
     val op2 = new SPRange()
-    val op3 = new SPRange()
     val dst = new SPRange()
 
     val issued = Bool()
@@ -116,7 +113,7 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
     new_entry.is_config := funct === CONFIG_CMD
 
-    new_entry.op1.valid := funct_is_compute
+    new_entry.op1.valid := funct === PRELOAD_CMD || funct_is_compute
     new_entry.op1.is_sp := cmd.rs1(31)
     new_entry.op1.start := cmd.rs1(29,0)
     new_entry.op1.end   := cmd.rs1(29,0) + block_rows.U
@@ -126,22 +123,19 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     new_entry.op2.start := cmd.rs2(29,0)
     new_entry.op2.end   := cmd.rs2(29,0) + block_rows.U
 
-    new_entry.op3.valid := funct_is_compute
-    new_entry.op3.is_sp := cmd.rs1(63)
-    new_entry.op3.start := cmd.rs1(61,32)
-    new_entry.op3.end   := cmd.rs1(61,32) + block_rows.U
-
-    new_entry.dst.valid := funct_is_compute || funct === LOAD_CMD
-    new_entry.dst.is_sp := Mux(funct_is_compute, cmd.rs2(63),    cmd.rs2(31))
-    new_entry.dst.start := Mux(funct_is_compute, cmd.rs2(61,32), cmd.rs2(29,0))
-    new_entry.dst.end   := new_entry.dst.start + 
-                           (Mux(funct_is_compute, 1.U, cmd.rs2(63, 32)) * block_rows.U)
+    new_entry.dst.valid := funct === PRELOAD_CMD || funct === LOAD_CMD
+    new_entry.op2.is_sp := cmd.rs2(31)
+    new_entry.op2.start := cmd.rs2(29,0)
+    new_entry.op2.end   := cmd.rs2(29,0) + (block_rows.U *
+                           Mux(funct === PRELOAD_CMD, 1.U, 
+                            (cmd.rs2(48, 32) + block_cols.U - 1) / block_cols.U))
 
     val is_load  = (funct === LOAD_CMD) || 
                    (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
     val is_store = (funct === STORE_CMD) || 
                    (funct === CONFIG_CMD && config_cmd_type === CONFIG_STORE)
-    val is_ex    = funct_is_compute || 
+    val is_ex    = funct === PRELOAD_CMD ||
+                   funct_is_compute || 
                    (funct === CONFIG_CMD && config_cmd_type === CONFIG_EX)
 
     // never allow this to wrap.FOR DEBUGGING ONLY
@@ -205,7 +199,6 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     }
 
     //======================================================================
-
     new_entry.q := Mux1H(Seq(
       is_load -> ldq,
       is_store -> stq,
@@ -215,8 +208,7 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     // We search for all entries which write to an address which we read from
     val raws = entries.map { e => e.valid && (
       e.bits.dst.overlaps(new_entry.op1) ||
-      e.bits.dst.overlaps(new_entry.op2) ||
-      e.bits.dst.overlaps(new_entry.op3)
+      e.bits.dst.overlaps(new_entry.op2)
     )}
 
     // We search for all entries which read from an address that we write to
