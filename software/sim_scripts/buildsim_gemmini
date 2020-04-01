@@ -6,6 +6,8 @@ set -euo pipefail
 # setup notes
 #=============================================================================
 DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+SW_DIR="$(dirname "$DIR")"
+FCFG_DIR="$SW_DIR/firesim-configs"
 CY_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$DIR")")")")"
 source "$DIR/.common.sh"
 
@@ -14,12 +16,15 @@ VCS_DIR="$CY_DIR/sims/vcs"
 VERILATOR_DIR="$CY_DIR/sims/verilator"
 FIRESIM_DIR="$CY_DIR/sims/firesim"
 
-# TODO: clean up multiple projects (or will they all be example?)
 # general simulator options
 HW_CONFIG_PROJECT=example
 
-# for eecs290-2 lab3
+# available hardware-configs (vcs,verilator)
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+
+# firesim configs
+FSIM_BUILD_CONFIG="$FCFG_DIR/config_build.ini"
+FSIM_RECIPES_CONFIG="$FCFG_DIR/config_build_recipes.ini"
 
 # make sure the software workloads don't have broken makefiles
 export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
@@ -30,7 +35,6 @@ export MAKEFLAGS="${MAKEFLAGS:-} --warn-undefined-variables"
 IS_NOISY=0
 IS_DEBUG=0
 IS_FORCE=0
-SIM_TYPE="verilator"
 
 VL8_THREADS=1
 VL8_PROFILE=none
@@ -43,34 +47,40 @@ VCS_PROFILE=0
 #export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
 export ENABLE_PRINTF_PATTERN=''
 
+# default hardware config (vcs,verilator)
+HW_CONFIG=$CONFIG_LAB3
+
 #=============================================================================
 # subroutines
 #=============================================================================
 display_usage() {
   cat <<EOF
 
-  buildsim_gemmini [options] <cfg1> [options] [<cfg2> ...]
+  buildsim_gemmini [options] <simulator> [[options] <simluator> ...]
   --------------------------------------------------------
-  Utility to build simulators for various gemmini configurations. By default
-  it assumes the $SIM_TYPE simulator. Output simulators will be placed in 
-  their respective directories. 
-  Available configurations are:
-    lab3: $CONFIG_LAB3
-    
-  simulator
-  ---------
-  -verilator    --> build configs with verilator compiler (default)
-  -vcs          --> build configs with vcs compiler 
-  -firesim      --> build configs with firesim (on manager node)
+  Utility to build simulators for various gemmini configurations. Output 
+  simulators will be placed in their respective directories. 
 
+  Available simulators
+  --------------------
+  verilator: build configs with verilator compiler (default)
+  vcs:       build configs with vcs compiler 
+  firesim:   build configs with firesim (on manager node). make sure
+             you update the config_build.ini and config_build_recipes.ini
+             files before building!
+
+  hardware configs (vcs, verilator)
+  --------------------------------
+  -hw_lab3      --> build $CONFIG_LAB3
+  
   verilator options 
   -----------------
   -vl8_threads <t>  
                 --> how many threads verilated simulator use [$VL8_THREADS]
   -vl8_profile <all|threads>
                 --> if 'threads', the simulator will output a multi-threading
-                    efficiency report. use verilator_gantt to view it. if 'all', 
-                    make the simulator output profiling data for gprof in 
+                    efficiency report. use verilator_gantt to view it. 'all'
+                    makes the simulator output profiling data for gprof in 
                     addition to 'threads' profiling data.
   -vl8_fst_mode --> only valid if -debug is used. generate fst instead of vcd
 
@@ -82,16 +92,19 @@ display_usage() {
 
   other options
   -------------
-  -no_force     --> let make/simulator determine if out of date (default)
   -force        --> force remove simulator output files (not firrtl though)
-  -no_noisy     --> only print to logfile (default)
   -noisy        --> print to stdout as well as the logfile
-  -no_debug     --> don't compile a debug-simulator (default)
   -debug        --> compile a debug-mode simulator
   -printf <pat> --> python regex pattern for printf() strings to selectively 
                     set to verbose mode in the simulator.
                     default is: '$ENABLE_PRINTF_PATTERN'
   -h|help       --> display this help
+
+  examples
+  --------
+  buildsim_gemmini -hw_lab3 verilator
+  buildsim_gemmini -noisy -force -debug vcs
+  buildsim_gemmini -noisy firesim
 
 EOF
   exit 1
@@ -101,15 +114,15 @@ EOF
 # run
 #=============================================================================
 buildsim() {
-  local config_name="$1"
+  local sim_type="$1"
 
   # init local variables
   local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
-  local compile_name="${ts}__compile__${SIM_TYPE}__${config_name}"
+  local compile_name="${ts}__compile__${sim_type}__${HW_CONFIG}"
   local starttime=$SECONDS
 
   #-------------------------------------------------------------------------
-  case $SIM_TYPE in
+  case $sim_type in
     vcs)
       # rundir/logging setup
       cd "$VCS_DIR"
@@ -118,16 +131,16 @@ buildsim() {
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
       # compiler options
-      local cmdline="make CONFIG=$config_name"
+      local cmdline="make CONFIG=$HW_CONFIG"
       local cmdline="$cmdline VCS_THREADS=$VCS_THREADS"
       local cmdline="$cmdline VCS_PROFILE=$VCS_PROFILE"
       if [ "$IS_DEBUG" -eq 1 ]; then cmdline="$cmdline debug"; fi
 
       # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
-        for f in simv-*-$config_name* ucli.key vc_hdrs.h \
+        for f in simv-*-$HW_CONFIG* ucli.key vc_hdrs.h \
             simv-*.daidir/.vcs.timestamp \
-            generated-src/*.$config_name/*.printf*.v ; do
+            generated-src/*.$HW_CONFIG/*.printf*.v ; do
           finfo "force removing $f" "$logfile"
           rm -fr $f
         done
@@ -141,7 +154,7 @@ buildsim() {
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
       # compiler options
-      local cmdline="make CONFIG=$config_name"
+      local cmdline="make CONFIG=$HW_CONFIG"
       local cmdline="$cmdline VL8_THREADS=$VL8_THREADS"
       local cmdline="$cmdline VL8_PROFILE=$VL8_PROFILE"
       local cmdline="$cmdline VL8_FST_MODE=$VL8_FST_MODE"
@@ -149,19 +162,32 @@ buildsim() {
 
       # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
-        for f in simulator-${HW_CONFIG_PROJECT}-$config_name* \
-            generated-src/*.*.$config_name/*.*.$config_name \
-            generated-src/*.*.$config_name/*.printf*.v ; do
+        for f in simulator-${HW_CONFIG_PROJECT}-$HW_CONFIG* \
+            generated-src/*.*.$HW_CONFIG/*.*.$HW_CONFIG \
+            generated-src/*.*.$HW_CONFIG/*.printf*.v ; do
           finfo "force removing $f" "$logfile"
           rm -fr "$f"
         done
       fi
       ;;
     firesim)
-      err "firesim not supported yet"
+      # rundir/logging setup
+      cd "$FIRESIM_DIR"
+      local logdir="$FIRESIM_DIR/logs"
+      local logfile="${logdir}/${compile_name}.log"
+      if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
+
+      # compiler options
+      local cmdline="firesim buildafi"
+      local cmdline="$cmdline -b $FSIM_BUILD_CONFIG -r $FSIM_RECIPES_CONFIG"
+
+      # clean up files if force-rebuild
+      if [ "$IS_FORCE" -eq 1 ]; then
+        finfo "force option is a no-op for firesim!" "$logfile"
+      fi
       ;;
     *)
-      err "invalid SIM_TYPE: $SIM_TYPE"
+      err "invalid sim_type: $sim_type"
       ;;
   esac
   finfo "$compile_name started" "$logfile"
@@ -189,9 +215,7 @@ while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
     #------------------------------------------------------------------------
-    -vcs)       SIM_TYPE="vcs" ;;
-    -verilator) SIM_TYPE="verilator" ;;
-    -firesim)   SIM_TYPE="firesim" ;;
+    -hw_lab3) HW_CONFIG="$CONFIG_LAB3" ;;
     #------------------------------------------------------------------------
     -vl8_threads)
       if [ $# -eq 0 ] ; then err "-vl8_threads requires arg. see usage"; fi
@@ -208,20 +232,18 @@ while [ $# -ne 0 ] ; do
     #------------------------------------------------------------------------
     -vcs_profile) VCS_PROFILE=1 ;;
     #------------------------------------------------------------------------
-    -vl8_fst_mode) VL8_FST_MODE=1 ;;
     -noisy)     IS_NOISY=1 ;;
-    -no_noisy)  IS_NOISY=0 ;;
     -force)     IS_FORCE=1 ;;
-    -no_force)  IS_FORCE=0 ;;
     -debug)     IS_DEBUG=1 ;;
-    -no_debug)  IS_DEBUG=0 ;;
     -printf)
       if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
       export ENABLE_PRINTF_PATTERN="$1"; shift
       ;;
     -h|-help) display_usage ;;
     #------------------------------------------------------------------------
-    lab3) buildsim "$CONFIG_LAB3" ;;
+    vcs)       buildsim "vcs" ;;
+    verilator) buildsim "verilator" ;;
+    firesim)   buildsim "firesim" ;;
     #------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac
