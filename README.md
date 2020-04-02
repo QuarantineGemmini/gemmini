@@ -84,54 +84,51 @@ Then, add `my_test` to the `tests` list at the top of `bareMetalC/Makefile`. Aft
 
 This section describes Gemmini's assembly-level ISA which is made up of custom RISC-V instructions.
 
-## Data Movement
-### `mvin` Move Data From L2/DRAM to Scratchpad
-**Format:** `mvin rs1, rs2`
-- `rs1` = virtual DRAM address (byte addressed) to load into scratchpad
-- `rs2` = local scratchpad address (systolic array single-axis addressed; i.e. `tileColumns x meshColumns x inputType.getWidth` bytes of data are captured in 1 address)
-- `funct` = 2
-
-**Action:** Scratchpad[rs2] <= DRAM[Translate[rs1]]
-- Loads a fixed amount of data (`tileColumns x meshColumns x tileRows x meshRows x dataBytes` bytes) into the scratchpad
-- Load is sequential from the rs1/rs2 base addresses. Stride must be set by the `config_mvin` command
-
-### `mvout` Move Data from Scratchpad to L2/DRAM
-**Format:** `mvout rs1, rs2`
-- `rs1` = virtual DRAM address (byte addressed) to write to from scratchpad
-- `rs2` = local scratchpad address (systolic array single-axis addressed; i.e. `tileColumns x meshColumns x dataBytes` bytes of data are captured in 1 address)
-    - if the 32nd bit is 1, `rs2` refers the accumulator memory space. In this case, the bitwidth of the elements is the accumulated result bitwidth
-- `funct` = 3
-
-**Action:** DRAM[Translate[rs2]] <= Scratchpad[rs1]
-- Stores a fixed amount of data (`tileColumns x meshColumns x tileRows x meshRows x dataBytes` bytes) from the scratchpad to L2/DRAM
-- Store is sequential from the rs1/rs2 base addresses. Stride must be set by the `config_mvout` command
-
 ## Configuration
+
 ### `config_ex` configures the Execute pipeline
 **Format:** `config_ex rs1 rs2`
-- `rs1` = `rs1[0:1]` must be `00`. `rs1[2]` will determine if output (0) or weight (1) stationary. `rs1[4:3]` will determine the activation function: either relu (1), relu6 (2), or no activation function (0).
-- `rs[63:32]` is the number of bits by which the accumulated result of a matmul is right-shifted when leaving the accumulator
+- `rs1` = `rs1[0:1]` must be `00`
+- `rs1[2]` will determine if output (0) or weight (1) stationary
+- `rs1[4:3]` will determine the activation function: either relu (1), relu6 (2), or no activation function (0).
+- `rs1[63:32]` is the number of bits by which the accumulated result of a matmul is right-shifted when leaving the accumulator
 - `rs2[31:0]` = the number of bits by which the accumulated result of a matmul is right-shifted when leaving the systolic array
 - `rs2[63:32]` = the number of bits by which 6 should be left-shifted before applying relu6
 - `funct` = 0
 
 **Action:** mode <= rs1(2); shift <= rs2
 
-### `config_mvin` configures the Load pipeline
-**Format:** `config_mvin rs1 rs2`
-- `rs1` = `rs1[0:1]` must be `01`
-- `rs2` = the stride in bytes
-- `funct` = 0
+### `config_addr_AB` configure addresses for `A` and `B` matrices 
+**Format:** `config_addr_AB rs1 rs2`
+- `rs1` = virtual address of matrix A
+- `rs2` = virtual address of matrix B
+- For `B`, replacing the address with all high bits will input a zero-valued matrix instead
 
-**Action:** stride <= rs2
+### `config_addr_CD` configure addresses for `C` and `D` matrices 
+**Format:** `config_addr_CD rs1 rs2`
+- `rs1` = virtual address of matrix C
+- `rs2` = virtual address of matrix D
+- For `D`, replacing the address with all high bits will input a zero-valued matrix instead
 
-### `config_mvout` configures the Store pipeline
-**Format:** `config_mvout rs1 rs2`
-- `rs1` = `rs1[0:1]` must be `10`
-- `rs2` = the stride in bytes
-- `funct` = 0
+### `config_size0` configure matrix sizes
+**Format:** `config_size0 rs1 rs2`
+- `rs1` = `M`, the number of rows of matrix `A`, in *elements* 
+- `rs2` = `N`, the number of rows of matrix `B`, in *elements* 
 
-**Action:** stride <= rs2
+### `config_size1` configure matrix sizes
+**Format:** `config_size1 rs1`
+- `rs1` = `K`, the number of columns of matrices `A*B`, `C`, and `D`, in *elements* 
+- `rs2` is ignored 
+
+Both `config_size` instructions use the notation that, for `C=A*B+D`, 
+- `A` is `M*N`
+- `B` is `N*K`
+- `A*B`, `C`, and `D` are `M*K`
+
+### `config_reset` reset all loaded configuration 
+**Format:** `config_reset`
+- Invalidate all past configuration via `config_size`, `config_addr`, and `config_ex`.
+- `rs1` and `rs2` are ignored
 
 ### `flush` flushes the TLB
 **Format:** `flush rs1`
@@ -141,7 +138,28 @@ This section describes Gemmini's assembly-level ISA which is made up of custom R
 
 - This instruction executes _as soon as it is received_ without waiting for other instructions which may be queued up. It is the programmer's responsibility to insert fences if necessary.
 
+## Execution 
+### `compute` perform computation `A*B+D`
+**Format:** `compute`
+- `rs1` is ignored 
+- `rs2` is ignored 
+- Results of `A*B+D` are written to virtual memory address `C`
+
+## ISA Open Issues
+
+* [X] Should matrix sizing be in *matrix elements* or in *bytes*? 
+* [X] More generally, how portable can Gemmini be across *datatypes*? 
+* [ ] Existing Gemmini ISA notes striding in matrix memory. Do we want/need to retain this?
+* [ ] Add `repeating_bias`  
+* [X] Are the bit-shift values of `config_ex.rs2` runtime or HW parameters?
+* [ ] How are error conditions conveyed back from Gemmini? 
+* [ ] Gemmini parameter discovery 
+* [ ] Swap matrix-size `k,n` notation, here and/or in related software 
+
 ## Core Matmul Sequences
+
+FIXME: this section invalidated by ISA change
+
 Every single matrix multiply operation is a combination of `matmul.preload` and `matmul.compute` (due to the length of a single instruction it was split into two instructions). `matmul.preload` should precede the `matmul.compute`.
 
 Example:
