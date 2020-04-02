@@ -159,7 +159,7 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
   // We want to output C when we're output-stationary, but B when we're weight-stationary
   // TODO these would actually overlap when we switch from output-stationary to weight-stationary
   // TODO should we use io.m, or the mode output of the mesh?
-  io.out.bits := shifted(Mux(io.pe_control.dataflow === Dataflow.OS.id.U, mesh.io.out_b, mesh.io.out_c), outBanks, true)
+  io.out.bits := shifted(Mux(io.pe_control.dataflow === Dataflow.WS.id.U, mesh.io.out_b, mesh.io.out_c), outBanks, true)
 
   io.out.valid := shifted(mesh.io.out_valid, outBanks, reverse = true)(0)(0)
 

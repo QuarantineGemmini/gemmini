@@ -14,7 +14,6 @@ import chisel3.experimental._
   * @param meshRows
   * @param meshColumns
   */
-/*
 class Mesh[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T,
                                    df: Dataflow.Value, pe_latency: Int,
                                    val tileRows: Int, val tileColumns: Int,
@@ -24,6 +23,7 @@ class Mesh[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T,
     val in_b   = Input(Vec(meshColumns, Vec(tileColumns, inputType)))
     val in_d   = Input(Vec(meshColumns, Vec(tileColumns, inputType)))
     val in_control   = Input(Vec(meshColumns, Vec(tileColumns, new PEControl(accType))))
+    val out_b  = Output(Vec(meshColumns, Vec(tileColumns, outputType)))
     val out_c  = Output(Vec(meshColumns, Vec(tileColumns, outputType)))
     val in_valid = Input(Vec(meshColumns, Vec(tileColumns, Bool())))
     val out_valid = Output(Vec(meshColumns, Vec(tileColumns, Bool())))
@@ -86,4 +86,3 @@ class Mesh[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T,
     v := RegNext(tile.io.out_valid)
   }
 }
-*/
