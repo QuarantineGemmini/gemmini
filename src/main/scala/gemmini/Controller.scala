@@ -11,11 +11,73 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 
 
+object DataType extends Enumeration {
+  val I32, F64 = Value
+}
+
+class CmdTilerInterface extends Bundle {
+  // Config Data
+  val a_addr = Output(UInt(64.W)) // FIXME: is width a param somewhere?
+  val b_addr = Output(UInt(64.W))
+  val c_addr = Output(UInt(64.W))
+  val d_addr = Output(UInt(64.W))
+
+  val m = Output(UInt(64.W))
+  val k = Output(UInt(64.W))
+  val n = Output(UInt(64.W))
+
+  val dtype = Output(UInt(64.W)) // FIXME: becomes an enum
+  val dataflow = Output(UInt(64.W)) // FIXME: becomes an enum
+  val activation = Output(UInt(64.W)) // FIXME: becomes an enum
+  
+  val matmul_rshift = Output(UInt(32.W))
+  val acc_rshift = Output(UInt(32.W))
+  val relu6_lshift = Output(UInt(32.W))
+
+  // Async Handshake Interface
+  val start = Output(Bool())
+  val done  = Input(Bool())
+}
+
 class GemminiCmdWithDeps(rob_entries: Int)(implicit p: Parameters) extends Bundle {
   val cmd = new RoCCCommand
   val rob_id = UInt(log2Up(rob_entries).W)
 
   override def cloneType: this.type = (new GemminiCmdWithDeps(rob_entries)).asInstanceOf[this.type]
+}
+
+object CmdFsmState extends Enumeration {
+  val LISTENING, EXECUTING, ERROR = Value
+}
+
+class CmdFsm extends Module {
+  val io = IO(new Bundle {
+    //val cmd = TBD!; 
+    val tiler = new CmdTilerInterface
+  });
+  io.tiler.start := false.B;
+
+  // FSM Behavior:
+  // * For each CONFIG command,
+  //   * Check validity of params
+  //   * If valid, mark as such & update config-reg
+  //   * In invalid, go to ERROR state
+  // * For each COMPUTE command, 
+  //   * Check all config-regs are valid 
+  //   * If all valid, signal `start` to Tiler, and wait in EXECUTING state
+  //   * On Tiler `done` signal, report to CPU, go back to LISTENING
+  // * When in ERROR state
+  //   * RESET command clears all reg-validity, and returns to LISTENING state
+
+}
+
+class TilerFsm extends Module {
+  // IO-Prototype for Tiler FSM
+  val io = IO(new Bundle {
+    val cmd = Flipped(new CmdTilerInterface)
+    //val rob = TBD!;
+  });
+  io.cmd.done := false.B;
 }
 
 class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_entries: Int) extends Bundle {
@@ -99,6 +161,12 @@ class GemminiModule[T <: Data: Arithmetic]
   import outer.spad
 
   val tagWidth = 32
+
+  // Command & Tiler FSMs
+  // FIXME: only hooked up to each other thus far 
+  val cmd_fsm = Module(new CmdFsm)
+  val tiler_fsm = Module(new TilerFsm)
+  cmd_fsm.io.tiler <> tiler_fsm.io.cmd;
 
   // TLB
   implicit val edge = outer.tlNode.edges.out.head
