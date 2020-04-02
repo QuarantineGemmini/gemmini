@@ -75,3 +75,15 @@ class GemminiEE290Lab3SmallSPConfig extends Config((site, here, up) => {
   )
   case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
 })
+
+//===========Gemmini2 Project Config=========
+class Gemmini2Config extends Config((site, here, up) => {
+  case BuildRoCC => Seq(
+      (p: Parameters) => {
+        implicit val q = p
+        implicit val v = implicitly[ValName]
+        LazyModule(new Gemmini(OpcodeSet.custom3, GemminiEE290Configs.Lab3Config)) // FIXME! piping down to new content ends here
+    }
+  )
+  case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
+})

@@ -24,6 +24,7 @@ SPIKE_DIR="$CY_DIR/sims/spike"
 # general simulator options (vcs, verilator)
 HW_CONFIG_PROJECT=example
 HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+HW_CONFIG_G2=Gemmini2RocketConfig
 
 # workloads (vcs, verilator)
 TEST_0=echo
@@ -348,6 +349,11 @@ while [ $# -ne 0 ] ; do
     -orig_tiler) SW_MODE="orig_tiler"; SPIKE_EXT="gemmini"  ;;
     -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
     -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
+    #-------------------------------------------------------------------------
+    -g2)
+      HW_CONFIG="g2"
+      HW_CONFIG_FULL="$HW_CONFIG_G2"
+      ;;
     #-------------------------------------------------------------------------
     -lab3)
       HW_CONFIG="lab3"
