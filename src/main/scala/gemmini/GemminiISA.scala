@@ -35,7 +35,7 @@ object GemminiISA {
   //==========================================================================
   // dataflow configuration
   //==========================================================================
-  val GARBAGE_ADDR      = -1.S(32)
+  val GARBAGE_ADDR      = 0xffffffff.U(32)
   val OUTPUT_STATIONARY =  0.U
   val WEIGHT_STATIONARY =  1.U
 
