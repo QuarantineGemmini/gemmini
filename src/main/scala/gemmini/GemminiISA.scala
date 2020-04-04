@@ -13,6 +13,14 @@ object GemminiISA {
   val FLUSH_CMD = 7.U
   val LOOP_WS = 8.U
 
+  // Gemmini2 Opcodes
+  val ADDR_AB  = 10.U
+  val ADDR_CD  = 11.U
+  val SIZE0    = 12.U
+  val SIZE1    = 13.U
+  val RPT_BIAS = 14.U
+  val RESET    = 15.U
+
   // rs1[1:0] values
   val CONFIG_LOAD = 1.U
   val CONFIG_STORE = 2.U
