@@ -58,44 +58,73 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   val mvout_rows_bits = log2Up(meshRows * tileRows + 1)
 
   //==========================================================================
-  // gemmini2 hardware-specific global constants
+  // gemmini2 hardware-specific compile-time global constants
   //==========================================================================
   require(tileRows === tileCols, "tileRows != tileCols!")
-  val DIM       = tileRows;
-  val LOG2DIM   = log2up(tileRows);
-  val BANK_NUM  = sp_banks;
-  val BANK_ROWS = sp_bank_entries;
-  val ACC_ROWS  = acc_bank_entries;
 
-  val I_TILE_BYTE_WIDTH = DIM * inputType.getWidth;
-  val O_TILE_BYTE_WIDTH = DIM * accType.getWidth;
+  val ITYPE_BITS       = inputType.getWidth
+  val LOG2_ITYPE_BITS  = log2Up(ITYPE_BITS)
+  val ITYPE_BYTES      = (inputType.getWidth+7) / 8
+  val LOG2_ITYPE_BYTES = log2Up(ITYPE_BYTES)
 
-  val GBL_B_SP_ROW_ADDR_1 = (BANK_NUM * BANK_ROWS) - 2*DIM;
-  val GBL_B_SP_ROW_ADDR_2 = (BANK_NUM * BANK_ROWS) - 1*DIM;
+  val OTYPE_BITS       = accType.getWidth
+  val LOG2_OTYPE_BITS  = log2Up(OTYPE_BITS)
+  val OTYPE_BYTES      = (accType.getWidth+7) / 8
+  val LOG2_OTYPE_BYTES = log2Up(OTYPE_BYTES)
 
-  val TILE_ROWS_PER_GROUP_TMP = (BANK_NUM * BANK_ROWS / DIM) - 2;
-  val TILE_COLS_PER_GROUP_TMP = (ACC_ROWS / DIM) / TILE_ROWS_PER_GROUP;
+  val DIM             = tileRows
+  val LOG2_DIM        = log2up(tileRows)
+  val LOG2_DIM_COUNT  = log2up(tileRows) + 1
+
+  val SP_BANKS        = sp_banks
+  val SP_BANK_ROWS    = sp_bank_entries
+  val SP_ROWS         = SP_BANKS * SP_BANK_ROWS
+  val LOG2_SP_ROWS    = log2up(SP_ROWS)
+
+  val ACC_BANKS       = acc_banks
+  val ACC_BANK_ROWS   = acc_bank_entries
+  val ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
+  val LOG2_ACC_ROWS   = log2up(ACC_ROWS)
+
+  val MNK_BYTES              = 0xffffffff // max M,N,K size in bytes
+  val LOG2_MNK_BYTES         = log2up(MNK_BYTES)
+  val MNK_BYTES_PER_ROW      = MNK_BYTES * DIM
+  val LOG2_MNK_BYTES_PER_ROW = log2up(MNK_BYTES_PER_ROW)
+  val TILE_IDX               = MNK_BYTES / (DIM / 8)
+  val LOG2_TILE_IDX          = log2up(TILE_IDX)
+
+  //--------------------------------------------------------------------------
+  val I_TILE_BYTE_WIDTH = DIM * inputType.getWidth
+  val O_TILE_BYTE_WIDTH = DIM * accType.getWidth
+
+  val GBL_B_SP_ROW_ADDR_1 = (BANKS * BANK_ROWS) - 2*DIM
+  val GBL_B_SP_ROW_ADDR_2 = (BANKS * BANK_ROWS) - 1*DIM
+
+  val TILE_ROWS_PER_GROUP_TMP = (BANKS * BANK_ROWS / DIM) - 2
+  val TILE_COLS_PER_GROUP_TMP = (ACC_ROWS / DIM) / TILE_ROWS_PER_GROUP
 
   if(TILE_COLS_PER_GROUP_TMP == 0) {
     // NOTE: this happens if accumulator size < scratchpad size. Don't do 
     //       this! your accumulator should be much larger than scratchpad!
-    val TILE_ROWS_PER_GROUP = 4;
-    val TILE_COLS_PER_GROUP = (ACC_ROWS / DIM) / TILE_ROWS_PER_GROUP;
+    val TILE_ROWS_PER_GROUP = 4
+    val TILE_COLS_PER_GROUP = (ACC_ROWS / DIM) / TILE_ROWS_PER_GROUP
   } else {
-    val TILE_ROWS_PER_GROUP = TILE_ROWS_PER_GROUP_TMP;
-    val TILE_COLS_PER_GROUP = TILE_COLS_PER_GROUP_TMP;
-
+    val TILE_ROWS_PER_GROUP = TILE_ROWS_PER_GROUP_TMP
+    val TILE_COLS_PER_GROUP = TILE_COLS_PER_GROUP_TMP
   }
+  val TILE_ROWS_PER_GROUP_M1 = TILE_ROWS_PER_GROUP - 1
+  val TILE_COLS_PER_GROUP_M1 = TILE_COLS_PER_GROUP - 1
   require(TILE_ROWS_PER_GROUP > 0, 
-    f"TILE_ROWS_PER_GROUP = $TILE_ROWS_PER_GROUP");
+    f"TILE_ROWS_PER_GROUP = $TILE_ROWS_PER_GROUP")
   require(TILE_COLS_PER_GROUP > 0, 
-    f"TILE_COLS_PER_GROUP = $TILE_COLS_PER_GROUP");
+    f"TILE_COLS_PER_GROUP = $TILE_COLS_PER_GROUP")
 
-  val BYTE_ROWS_PER_TILE    = DIM;
-  val I_BYTE_COLS_PER_GROUP = TILE_COLS_PER_GROUP * I_TILE_BYTE_WIDTH;
-  val O_BYTE_COLS_PER_GROUP = TILE_COLS_PER_GROUP * O_TILE_BYTE_WIDTH;
-  val I_TILE_BYTE_WIDTH     = I_TILE_BYTE_WIDTH;
-  val O_TILE_BYTE_WIDTH     = O_TILE_BYTE_WIDTH;
+
+  val BYTE_ROWS_PER_TILE    = DIM
+  val I_BYTE_COLS_PER_GROUP = TILE_COLS_PER_GROUP * I_TILE_BYTE_WIDTH
+  val O_BYTE_COLS_PER_GROUP = TILE_COLS_PER_GROUP * O_TILE_BYTE_WIDTH
+  val I_TILE_BYTE_WIDTH     = I_TILE_BYTE_WIDTH
+  val O_TILE_BYTE_WIDTH     = O_TILE_BYTE_WIDTH
 
   //==========================================================================
   // other stuff
