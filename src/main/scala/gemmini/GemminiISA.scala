@@ -28,16 +28,16 @@ object GemminiISA {
   //==========================================================================
   // config-opcode parameters (rs1[1:0] values))))
   //==========================================================================
-  val CONFIG_LOAD   = 1.U
-  val CONFIG_STORE  = 2.U
-  val CONFIG_EX     = 0.U
+  val CONFIG_LOAD   = 1.U(2)
+  val CONFIG_STORE  = 2.U(2)
+  val CONFIG_EX     = 0.U(2)
 
   //==========================================================================
   // dataflow configuration
   //==========================================================================
   val GARBAGE_ADDR      = 0xffffffff.U(32)
-  val OUTPUT_STATIONARY =  0.U
-  val WEIGHT_STATIONARY =  1.U
+  val OUTPUT_STATIONARY =  0.U(1)
+  val WEIGHT_STATIONARY =  1.U(1)
 
   //==========================================================================
   // activation opcodes

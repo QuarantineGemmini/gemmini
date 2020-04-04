@@ -86,12 +86,12 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   val ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   val LOG2_ACC_ROWS   = log2up(ACC_ROWS)
 
-  val MNK_BYTES              = 0xffffffff // max M,N,K size in bytes
-  val LOG2_MNK_BYTES         = log2up(MNK_BYTES)
-  val MNK_BYTES_PER_ROW      = MNK_BYTES * DIM
-  val LOG2_MNK_BYTES_PER_ROW = log2up(MNK_BYTES_PER_ROW)
-  val TILE_IDX               = MNK_BYTES / (DIM / 8)
-  val LOG2_TILE_IDX          = log2up(TILE_IDX)
+  val MNK_BYTES                   = 0xffffffff // max M,N,K size in bytes
+  val LOG2_MNK_BYTES              = log2up(MNK_BYTES)
+  val MNK_BYTES_PER_TILE_ROW      = MNK_BYTES * DIM
+  val LOG2_MNK_BYTES_PER_TILE_ROW = log2up(MNK_BYTES_PER_ROW)
+  val TILE_IDX                    = MNK_BYTES / (DIM / 8)
+  val LOG2_TILE_IDX               = log2up(TILE_IDX)
 
   //--------------------------------------------------------------------------
   val I_TILE_BYTE_WIDTH = DIM * inputType.getWidth
