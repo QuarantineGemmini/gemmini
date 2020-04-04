@@ -141,7 +141,7 @@ class GemminiModule[T <: Data: Arithmetic]
   // Controllers
   val load_controller = Module(new LoadController(outer.config, coreMaxAddrBits, local_addr_t))
   val store_controller = Module(new StoreController(outer.config, coreMaxAddrBits, local_addr_t))
-  val ex_controller = Module(new ExecuteController(xLen, tagWidth, outer.config))
+  val ex_controller = Module(new ExecuteController(outer.config))
 
   load_controller.io.cmd.valid := rob.io.issue.ld.valid
   rob.io.issue.ld.ready := load_controller.io.cmd.ready

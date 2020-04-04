@@ -647,3 +647,4 @@ class TilerFSM(config: GemminiArrayConfig[T])(implicit p: Parameters)
 object TilerFSM {
   def apply(config: GemminiArrayConfig[T])(implicit p: Parameters) :TilerFSM 
     = Module(new TilerFSM(config))
+}

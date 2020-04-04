@@ -57,6 +57,9 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   val mvout_len_bits = log2Up(meshColumns * tileColumns + 1)
   val mvout_rows_bits = log2Up(meshRows * tileRows + 1)
 
+  // TODO: move this. was originally in Controller.scala
+  val tagWidth = 32
+
   //==========================================================================
   // gemmini2 hardware-specific compile-time global constants
   //==========================================================================

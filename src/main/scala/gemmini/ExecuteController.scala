@@ -8,10 +8,14 @@ import freechips.rocketchip.config.Parameters
 
 // TODO handle reads from the same bank
 // TODO don't flush all 4 time steps when shorter flushes will work
-// TODO do we still need to flush when the dataflow is weight stationary? Won't the result just keep travelling through on its own?
-// TODO allow the matmul result to not be DIM-by-DIM, similar to how the matmul inputs can be padded if they aren't DIM-by-DIM
-class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArrayConfig[T])
-                                  (implicit p: Parameters, ev: Arithmetic[T]) extends Module {
+// TODO do we still need to flush when the dataflow is weight stationary? 
+//      Won't the result just keep travelling through on its own?
+// TODO allow the matmul result to not be DIM-by-DIM, similar to how the 
+//      matmul inputs can be padded if they aren't DIM-by-DIM
+class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
+  (implicit p: Parameters, ev: Arithmetic[T]) 
+  extends Module with HasCoreparameters
+{
   import config._
   import ev._
 
@@ -701,4 +705,10 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     // pending_completed_rob_id.valid := false.B
     pending_completed_rob_ids.foreach(_.valid := false.B)
   }
+}
+
+object ExecuteController {
+  def apply(config: GemminiArrayConfig[T])
+           (implicit p: Parameters, ev: Arithmetic[T])
+    = Module(new ExecuteController(config))
 }

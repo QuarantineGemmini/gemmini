@@ -8,8 +8,9 @@ import freechips.rocketchip.config.Parameters
 
 
 // TODO deal with errors when reading scratchpad responses
-class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: Int, local_addr_t: LocalAddr)
-                               (implicit p: Parameters) extends Module {
+class LoadController[T <: Data](config: GemminiArrayConfig[T])
+  (implicit p: Parameters) extends Module with HasCoreParameters  
+{
   import config._
 
   val io = IO(new Bundle {
@@ -121,4 +122,9 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
       }
     }
   }
+}
+
+object LoadController {
+  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters)
+    = Module(new LoadController(config))
 }

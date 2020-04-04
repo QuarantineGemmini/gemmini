@@ -7,10 +7,12 @@ import Util._
 import freechips.rocketchip.config.Parameters
 
 
-// TODO this is almost a complete copy of LoadController. We should combine them into one class
+// TODO this is almost a complete copy of LoadController. 
+//      We should combine them into one class
 // TODO deal with errors when reading scratchpad responses
-class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], coreMaxAddrBits: Int, local_addr_t: LocalAddr)
-                     (implicit p: Parameters) extends Module {
+class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T])
+  (implicit p: Parameters) extends Module with HasCoreParameters  
+{
   import config._
 
   val io = IO(new Bundle {
@@ -115,4 +117,9 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
       }
     }
   }
+}
+
+object StoreController {
+  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters)
+    = Module(new StoreController(config))
 }
