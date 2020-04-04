@@ -27,13 +27,15 @@ class WithMultiRoCC extends Config((site, here, up) => {
   case BuildRoCC => site(MultiRoCCKey).getOrElse(site(TileKey).hartId, Nil)
 })
 
+case object GemminiKey[T <: Data: Arithmetic] 
+  extends Field[GemminiArrayConfig[T]]
 
 // -----------------------
 // Component Mixin Configs
 // -----------------------
 
 object GemminiConfigs {
-  val defaultConfig = GemminiArrayConfig(
+  val defaultSIntConfig = GemminiArrayConfig(
     tileRows = 1,
     tileColumns = 1,
     meshRows = 8,
@@ -64,14 +66,27 @@ object GemminiConfigs {
    Also sets the system bus width to 128 bits (instead of the deafult 64 bits) to
    allow for the default 16x16 8-bit systolic array to be attached.
  */
+//class DefaultGemminiConfig extends Config((site, here, up) => {
+//  case BuildRoCC => Seq(
+//      (p: Parameters) => {
+//        implicit val q = p
+//        implicit val v = implicitly[ValName]
+//        LazyModule(new Gemmini(OpcodeSet.custom3, GemminiConfigs.defaultConfig))
+//    }
+//  )
+//  case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
+//})
+
+//============================================================================
+// enable use of GemminiKey by all modules
+//============================================================================
 class DefaultGemminiConfig extends Config((site, here, up) => {
-  case BuildRoCC => Seq(
-      (p: Parameters) => {
-        implicit val q = p
-        implicit val v = implicitly[ValName]
-        LazyModule(new Gemmini(OpcodeSet.custom3, GemminiConfigs.defaultConfig))
-    }
-  )
+  case BuildRoCC => Seq((p: Parameters) => {
+    implicit val q = p
+    implicit val v = implicitly[ValName]
+    LazyModule(new Gemmini2(OpcodeSet.custom3, p(GemminiKey[SInt])))
+  })
+  case GemminiKey[SInt] => GemminiConfigs.defaultConfig
   case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
 })
 

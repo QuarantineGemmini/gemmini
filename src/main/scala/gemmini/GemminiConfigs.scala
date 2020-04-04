@@ -2,10 +2,18 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.tile.{HasCoreParameters}
 
 sealed abstract trait GemminiMemCapacity
 case class CapacityInKilobytes(kilobytes: Int) extends GemminiMemCapacity
 case class CapacityInMatrices(matrices: Int) extends GemminiMemCapacity
+
+trait HasGemminiConfigs extends HasCoreParameters {
+  implicit val p: Parameters
+  // TODO: chain getOrElse with GemminiFloatKey, GemminiFixedKey, ...
+  def gemminiParams : GemminiArrayConfig = p(GemminiSIntKey)
+  import gemminiParams._
+}
 
 case class GemminiArrayConfig[T <: Data : Arithmetic](
   tileRows: Int,
@@ -59,6 +67,12 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
 
   // TODO: move this. was originally in Controller.scala
   val tagWidth = 32
+
+  //==========================================================================
+  // gemmini2 miscellaneous constants (some redundant with above)
+  //==========================================================================
+  val ROB_ENTRIES      = rob_entries
+  val LOG2_ROB_ENTRIES = log2Up(rob_entries)
 
   //==========================================================================
   // gemmini2 hardware-specific compile-time global constants

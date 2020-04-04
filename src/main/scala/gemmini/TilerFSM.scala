@@ -1,16 +1,13 @@
+//===========================================================================
+// TilerController's Internal FSM implementation
+//===========================================================================
 package gemmini
 
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 
-//===========================================================================
-// TilerController's Internal FSM implementation
-//===========================================================================
-class TilerFSM(config: GemminiArrayConfig[T])(implicit p: Parameters)
-  extends Module with HasCoreParameters
-{
-  import config._
+class TilerFSM(implicit p: Parameters) extends HasGemminiConfigs {
   //=========================================================================
   // interface
   //=========================================================================
@@ -626,8 +623,8 @@ class TilerFSM(config: GemminiArrayConfig[T])(implicit p: Parameters)
                                                 g_C_BYTES_PER_TILE_ROW)
           loop1_D_mem_addr_n := Mux(!g_HAS_BIAS, 0.U,
                                   Mux(g_REPEATING_BIAS, g_D_MEM_ADDR,
-                                    (g_D_MEM_ADDR + (loop1_tile_row_start_n *
-                                                     g_D_BYTES_PER_TILE_ROW))))
+                                   (g_D_MEM_ADDR + (loop1_tile_row_start_n *
+                                                    g_D_BYTES_PER_TILE_ROW))))
         }
         .elsewhen (l_did_col_incr) {
           loop1_A_mem_addr_n := loop1_A_mem_addr + 0.U
@@ -645,6 +642,5 @@ class TilerFSM(config: GemminiArrayConfig[T])(implicit p: Parameters)
 }
 
 object TilerFSM {
-  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters) :TilerFSM 
-    = Module(new TilerFSM(config))
+  def apply(implicit p: Parameters) = Module(new TilerFSM)
 }

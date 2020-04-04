@@ -131,9 +131,15 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
 }
 
 // TODO find a more elegant way to move data into accumulator
-// TODO replace the SRAM types with Vec[Vec[inputType]], rather than just simple UInts
+// TODO replace the SRAM types with Vec[Vec[inputType]], rather than just 
+//      simple UInts
 // TODO support unaligned accesses, for both multiple and single matrix loads
-// TODO scratchpad is currently broken when one row is larger than dataBits. The requests arrive out-of-order, meaning that half of one row might arrive after the first have of another row. Some kind of re-ordering buffer may be needed
+// TODO scratchpad is currently broken when one row is larger than dataBits. 
+//      The requests arrive out-of-order, meaning that half of one row might 
+//      arrive after the first have of another row. Some kind of re-ordering 
+//      buffer may be needed
+class Scratchpad(implicit p: Parameters) 
+  LazyModule with HasGemminiConfigs {
 class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
     (implicit p: Parameters) extends LazyModule {
 

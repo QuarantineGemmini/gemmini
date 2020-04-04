@@ -1,3 +1,6 @@
+//===========================================================================
+// TilerController's Internal Scheduler implementation
+//===========================================================================
 package gemmini
 
 import chisel3._
@@ -8,49 +11,32 @@ import freechips.rocketchip.tile.RoCCCommand
 import GemminiISA._
 import Util._
 
-import midas.targetutils
-
 // TODO unify this class with GemminiCmdWithDeps
-class ROBIssue[T <: Data](cmd_t: T, nEntries: Int) extends Bundle {
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val cmd = Output(cmd_t.cloneType)
+class ROBIssue(nEntries: Int) extends Bundle {
+  val cmd    = Output(new RoCCCommand)
   val rob_id = Output(UInt(log2Up(nEntries).W))
-
-  def fire(dummy: Int=0) = valid && ready
-
-  override def cloneType: this.type = new ROBIssue(cmd_t, nEntries).asInstanceOf[this.type]
 }
 
-//===========================================================================
-// TilerController's Internal Scheduler implementation
-//===========================================================================
-class TilerScheduler(config: GemminiArrayConfig[T])(implicit p: Parameters)
-  extends Module with HasCoreParameters
-{
-  import config._
+class TilerScheduler(implicit p: Parameters) extends HasGemminiConfigs {
   //=========================================================================
   // interface
   //=========================================================================
   val io = IO(new Bundle {
-    val dispatch = Flipped(Decoupled(new RoCCCommand))
-
+    val cmd_in = Flipped(Decoupled(new RoCCCommand))
     val issue = new Bundle {
-      val load  = new ROBIssue(cmd_t, rob_entries)
-      val store = new ROBIssue(cmd_t, rob_entries)
-      val exec  = new ROBIssue(cmd_t, rob_entries)
-      val flush = new ROBIssue(cmd_t, rob_entries)
+      val exec  = Decoupled(new ROBIssue(ROB_ENTRIES))
+      val load  = Decoupled(new ROBIssue(ROB_ENTRIES))
+      val store = Decoupled(new ROBIssue(ROB_ENTRIES))
+      val flush = Decoupled(new ROBIssue(ROB_ENTRIES))
     }
     val completed = new Bundle {
-      val exec  = Flipped(Valid(UInt(log2Up(rob_entries).W)))
-      val load  = Flipped(Decoupled(UInt(log2Up(rob_entries).W)))
-      val store = Flipped(Decoupled(UInt(log2Up(rob_entries).W)))
-      // TODO: handle flush at CmdParser???
-      //val flush = Flipped(Decoupled(UInt(log2Up(rob_entries).W)))
+      val exec  = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
+      val load  = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
+      val store = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
+      val flush = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
     }
     val busy = Output(Bool())
-
-    val eventbus =
+    //val eventbus = ...
   }
 
     val alloc = Flipped(Decoupled(cmd_t.cloneType))
@@ -470,6 +456,5 @@ class TilerScheduler(config: GemminiArrayConfig[T])(implicit p: Parameters)
 }
 
 object TilerScheduler {
-  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters) 
-    : TilerScheduler = Module(new TilerScheduler(config))
+  def apply(implicit p: Parameters) = Module(new TilerScheduler)
 }

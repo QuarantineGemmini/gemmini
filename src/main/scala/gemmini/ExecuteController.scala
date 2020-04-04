@@ -14,7 +14,7 @@ import freechips.rocketchip.config.Parameters
 //      matmul inputs can be padded if they aren't DIM-by-DIM
 class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   (implicit p: Parameters, ev: Arithmetic[T]) 
-  extends Module with HasCoreparameters
+  extends Module with HasCoreParameters
 {
   import config._
   import ev._

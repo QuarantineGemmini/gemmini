@@ -16,18 +16,31 @@ import GemminiISA._
 class Gemmini2[T <: Data : Arithmetic]
   (opcodes: OpcodeSet, val config: GemminiArrayConfig[T])
   (implicit p: Parameters)
-  extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1) 
+  extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1)
 {
+  def this(tileParams: TileParams, crossing: ClockCrossingType, lookup: LookupByHartIdImpl, p: Parameter
+) = {
+    this(crossing, p.alterMap(Map(
+      TileKey -> tileParams,
+      TileVisibilityNodeKey -> TLEphemeralNode()(ValName("tile_master")),
+      LookupByHartId -> lookup
+    )))
+  }
+
+
+
+
+
   val spad = LazyModule(new Scratchpad(config))
   override lazy val module = new GemminiModule2(this)
   override val tlNode = spad.id_node
 }
 
 class GemminiModule2[T <: Data: Arithmetic](outer: Gemmini2[T])
-  extends LazyRoCCModuleImp(outer) with HasCoreParameters 
+  extends LazyRoCCModuleImp(outer) with HasCoreParameters
 {
   import outer.config._
-  import outer.spad
+  //import outer.spad
 
   //=========================================================================
   // OoO Issuing
@@ -89,7 +102,7 @@ class GemminiModule2[T <: Data: Arithmetic](outer: Gemmini2[T])
   //=========================================================================
   // Busy Signal (used by RocketCore during fence insn)
   //=========================================================================
-  io.busy := raw_cmd.valid || cmd_parser.io.busy || tiler.io.busy || 
+  io.busy := raw_cmd.valid || cmd_parser.io.busy || tiler.io.busy ||
              spad.module.io.busy ||
              load.io.busy || store.io.busy || exec.io.busy || flush.io.busy
 }
