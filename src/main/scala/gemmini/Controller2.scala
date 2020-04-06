@@ -14,33 +14,24 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 
 class Gemmini2[T <: Data : Arithmetic]
-  (opcodes: OpcodeSet, val config: GemminiArrayConfig[T])
+  (opcodes: OpcodeSet, config: GemminiArrayConfig[T])
   (implicit p: Parameters)
-  extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1)
-{
-  def this(tileParams: TileParams, crossing: ClockCrossingType, lookup: LookupByHartIdImpl, p: Parameter
-) = {
-    this(crossing, p.alterMap(Map(
-      TileKey -> tileParams,
-      TileVisibilityNodeKey -> TLEphemeralNode()(ValName("tile_master")),
-      LookupByHartId -> lookup
-    )))
-  }
+  extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1) {
 
+  Files.write(Paths.get(config.headerFilePath),
+              config.generateHeader().getBytes(StandardCharsets.UTF_8))
 
+  override lazy val module = new GemminiModule2(this, config)
 
-
-
+  // diplomatic scratchpad
   val spad = LazyModule(new Scratchpad(config))
-  override lazy val module = new GemminiModule2(this)
   override val tlNode = spad.id_node
 }
 
-class GemminiModule2[T <: Data: Arithmetic](outer: Gemmini2[T])
-  extends LazyRoCCModuleImp(outer) with HasCoreParameters
-{
+class GemminiModule2[T <: Data: Arithmetic]
+  (outer: Gemmini2[T], config: GemminiArrayConfig[T])(implicit p: Parameters)
+  extends LazyRoCCModuleImp(outer) with HasCoreParameters {
   import outer.config._
-  //import outer.spad
 
   //=========================================================================
   // OoO Issuing

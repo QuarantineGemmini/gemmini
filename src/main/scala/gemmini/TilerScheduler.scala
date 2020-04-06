@@ -5,29 +5,25 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
-
-import freechips.rocketchip.tile.RoCCCommand
-
+import freechips.rocketchip.tile._
 import GemminiISA._
 import Util._
 
-// TODO unify this class with GemminiCmdWithDeps
-class ROBIssue(nEntries: Int) extends Bundle {
-  val cmd    = Output(new RoCCCommand)
-  val rob_id = Output(UInt(log2Up(nEntries).W))
-}
+class TilerScheduler[T <: Data: Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit p: Parameters) 
+  extends Module with HasCoreParameters {
+  import config._
 
-class TilerScheduler(implicit p: Parameters) extends HasGemminiConfigs {
   //=========================================================================
   // interface
   //=========================================================================
   val io = IO(new Bundle {
     val cmd_in = Flipped(Decoupled(new RoCCCommand))
     val issue = new Bundle {
-      val exec  = Decoupled(new ROBIssue(ROB_ENTRIES))
-      val load  = Decoupled(new ROBIssue(ROB_ENTRIES))
-      val store = Decoupled(new ROBIssue(ROB_ENTRIES))
-      val flush = Decoupled(new ROBIssue(ROB_ENTRIES))
+      val exec  = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val load  = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val store = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val flush = Decoupled(new GemminiCmd(ROB_ENTRIES))
     }
     val completed = new Bundle {
       val exec  = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
@@ -38,19 +34,6 @@ class TilerScheduler(implicit p: Parameters) extends HasGemminiConfigs {
     val busy = Output(Bool())
     //val eventbus = ...
   }
-
-    val alloc = Flipped(Decoupled(cmd_t.cloneType))
-
-    val completed = Flipped(Valid(UInt(log2Up(nEntries).W)))
-
-    val issue = new Bundle {
-      val ld = new ROBIssue(cmd_t, nEntries)
-      val st = new ROBIssue(cmd_t, nEntries)
-      val ex = new ROBIssue(cmd_t, nEntries)
-    }
-
-    val busy = Output(Bool())
-  })
 
   val ldq :: stq :: exq :: Nil = Enum(3)
   val q_t = ldq.cloneType
@@ -456,5 +439,7 @@ class TilerScheduler(implicit p: Parameters) extends HasGemminiConfigs {
 }
 
 object TilerScheduler {
-  def apply(implicit p: Parameters) = Module(new TilerScheduler)
+  def apply[T <: Data: Arithmetic]
+    (config: GemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new TilerScheduler(config))
 }

@@ -708,7 +708,6 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
 }
 
 object ExecuteController {
-  def apply(config: GemminiArrayConfig[T])
-           (implicit p: Parameters, ev: Arithmetic[T])
+  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters)
     = Module(new ExecuteController(config))
 }

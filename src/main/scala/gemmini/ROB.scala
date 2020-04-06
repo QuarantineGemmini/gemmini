@@ -19,7 +19,8 @@ class ROBIssue[T <: Data](cmd_t: T, nEntries: Int) extends Bundle {
 
   def fire(dummy: Int=0) = valid && ready
 
-  override def cloneType: this.type = new ROBIssue(cmd_t, nEntries).asInstanceOf[this.type]
+  override def cloneType: this.type 
+    = new ROBIssue(cmd_t, nEntries).asInstanceOf[this.type]
 }
 
 class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows: Int, block_cols: Int) extends Module {

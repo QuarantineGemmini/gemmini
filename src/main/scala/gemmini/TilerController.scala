@@ -6,19 +6,23 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
+import freechips.rocketchip.tile._
 
-class TilerController[T <: Data: Arithmetic](implicit p: Parameters) 
-  extends HasGemminiConfigs[T] {
+class TilerController[T <: Data: Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit p: Parameters) 
+  extends Module with HasCoreParameters {
+  import config._
+
   //=========================================================================
   // Interface
   //=========================================================================
   val io = IO(new Bundle {
     val cmd_in = Flipped(Decoupled(new TilerCmd))
     val issue = new Bundle {
-      val exec  = new ROBIssue(ROB_ENTRIES)
-      val load  = new ROBIssue(ROB_ENTRIES)
-      val store = new ROBIssue(ROB_ENTRIES)
-      val flush = new ROBIssue(ROB_ENTRIES)
+      val exec  = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val load  = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val store = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val flush = Decoupled(new GemminiCmd(ROB_ENTRIES))
     }
     val completed = new Bundle {
       val exec  = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
@@ -33,10 +37,10 @@ class TilerController[T <: Data: Arithmetic](implicit p: Parameters)
   //=========================================================================
   // dispatch incoming commands
   //=========================================================================
-  var fsm = TilerFSM()
+  val fsm = new TilerFSM(config)
   fsm.io.cmd_in <> io.cmd_in
 
-  var sched = TilerScheduler()
+  val sched = TilerScheduler(config)
   sched.io.cmd_in <> fsm.io.sched_out
   io.issue.exec   <> sched.io.issue.exec
   io.issue.load   <> sched.io.issue.load
@@ -61,5 +65,7 @@ class TilerController[T <: Data: Arithmetic](implicit p: Parameters)
 }
 
 object TilerController {
-  def apply(implicit p: Parameters) = Module(new TilerController)
+  def apply[T <: Data: Arithmetic]
+    (config: GemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new TilerController(config))
 }

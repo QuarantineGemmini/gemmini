@@ -132,17 +132,6 @@ class FrontendTLB(nClients: Int, entries: Int, maxSize: Int, edge: TLEdgeOut)
 
 object FrontendTLB {
   def apply(nClients: Int, entries: Int, maxSize: Int, edge: TLEdgeOut)
-           (p: Parameters)
+    (p: Parameters)
     = Module(new FrontendTLB(nClients, entries, maxSize))
 }
-
-/*class TLBArb (nClients: Int, lgMaxSize: Int)(implicit p: Parameters) extends CoreModule {
-  val io = IO(new Bundle {
-    val in_req = Vec(nClients, Flipped(Decoupled(new TLBReq(lgMaxSize))))
-    val in_resp = Vec(nClients, Flipped(Valid(new TLBResp)))
-    val out_req = Decoupled(new TLBReq(lgMaxSize))
-    val out_resp = Valid(new TLBResp)
-  })
-
-  val priority = Reg(UInt(log2Up(nClients).W))
-}*/

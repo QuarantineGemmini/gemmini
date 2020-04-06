@@ -8,14 +8,13 @@ import chisel3.util._
 import chisel3.experimental._
 
 class FlushController(config: GemminiArrayConfig[T])(implicit p: Parameters)
-  extends Module with HasCoreParameters
-{
+  extends Module with HasCoreParameters {
   import config._
 
   // interface
   val io = IO(new Bundle {
-    val cmd         = Flipped(Decoupled(new GemminiCmd(rob_entries)))
-    val completed   = Decoupled(UInt(log2Up(rob_entries).W))
+    val cmd         = Flipped(Decoupled(new GemminiCmd(ROB_ENTRIES)))
+    val completed   = Decoupled(UInt(log2Up(ROB_ENTRIES).W))
     val flush_retry = Output(Bool())
     val flush_skip  = Output(Bool())
     val busy        = Output(Bool())

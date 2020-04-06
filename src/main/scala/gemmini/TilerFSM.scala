@@ -6,8 +6,13 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
+import freechips.rocketchip.tile._
 
-class TilerFSM(implicit p: Parameters) extends HasGemminiConfigs {
+class TilerFSM[T <: Data : Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit p: Parameters) 
+  extends Module with HasCoreParameters {
+  import config._
+
   //=========================================================================
   // interface
   //=========================================================================
@@ -16,9 +21,10 @@ class TilerFSM(implicit p: Parameters) extends HasGemminiConfigs {
     val sched_out = Decoupled(new RoCCCommand)
     val busy = Output(Bool())
   }
-  val cmd = io.cmd_in
+
   // hardcode 8 entries with up to 2 pushes per cycle
   val (sched, _) = MultiTailedQueue(io.sched_out, 8, 2);
+  val cmd = io.cmd_in
   val busy = io.busy
 
   //=========================================================================
@@ -642,5 +648,7 @@ class TilerFSM(implicit p: Parameters) extends HasGemminiConfigs {
 }
 
 object TilerFSM {
-  def apply(implicit p: Parameters) = Module(new TilerFSM)
+  def apply[T <: Data: Arithmetic]
+    (config: GemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new TilerFSM(config))
 }
