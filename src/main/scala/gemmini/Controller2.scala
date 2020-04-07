@@ -65,24 +65,11 @@ class CmdFsm (implicit p: Parameters) extends Module {
   // Ready logic: if we're not actively executing, take new commands
   val ready = RegInit(true.B) 
   io.cmd.ready := ready
+  val valid_to_tiler = RegInit(false.B) 
+  io.tiler.valid := valid_to_tiler
+  val tiler = RegInit(0.U.asTypeOf(new CmdTilerInterface))
+  io.tiler.bits <> tiler
   
-  // Initialization
-  io.tiler.valid := false.B
-  io.tiler.bits.dtype := 0.U
-  io.tiler.bits.addr_a := 0.U 
-  io.tiler.bits.addr_b := 0.U 
-  io.tiler.bits.addr_c := 0.U 
-  io.tiler.bits.addr_d := 0.U 
-  io.tiler.bits.m := 0.U 
-  io.tiler.bits.n := 0.U 
-  io.tiler.bits.k := 0.U 
-  io.tiler.bits.repeating_bias := false.B 
-  io.tiler.bits.dataflow := false.B 
-  io.tiler.bits.activation := 0.U 
-  io.tiler.bits.acc_rshift := 0.U 
-  io.tiler.bits.matmul_rshift := 0.U
-  io.tiler.bits.relu6_lshift := 0.U
-
   def reset_and_listen(): Unit = {
     // Reset all data-validity
     addr_ab_valid := false.B
@@ -99,15 +86,17 @@ class CmdFsm (implicit p: Parameters) extends Module {
   when (state === CmdFsmState.EXECUTING) {
     // Pending EXECUTION ongoing 
     ready := false.B 
-    io.tiler.valid := false.B 
+    valid_to_tiler := false.B 
     // Wait for tiling/ execution to complete, let any further commands queue up 
     when (io.tiler.fire()) {
+        printf("CmdFsm EXECUTION_FINISHED\n") 
       ready := true.B 
       state := CmdFsmState.LISTENING
     }
   }.elsewhen (state === CmdFsmState.ERROR) {
+        printf("CmdFsm IN ERROR STATE\n") 
     // In ERROR state - only update based on RESET commands 
-    io.tiler.valid := false.B
+    valid_to_tiler := false.B
     when (io.cmd.fire()) {
       val cmd = io.cmd.bits
       val funct = cmd.inst.funct
@@ -123,45 +112,68 @@ class CmdFsm (implicit p: Parameters) extends Module {
       val rs2 = cmd.rs2 
       // Execute command
       when (funct === COMPUTE_AND_FLIP_CMD) { 
+        printf("CmdFsm COMPUTE\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
         // Signal to the Tiler, and move to our EXEC state 
         // FIXME: check all valid 
+      printf(
+        "CmdFsm STATE: a[%d], b[%d], c[%d], d[%d], m[%d], n[%d], k[%d]\n", 
+          tiler.addr_a, tiler.addr_b, tiler.addr_c, tiler.addr_d,
+          tiler.m, tiler.n, tiler.k
+        ) 
         state := CmdFsmState.EXECUTING
-        io.tiler.valid := true.B
+        valid_to_tiler := true.B
       }
       .elsewhen (funct === CONFIG_CMD) {
+        printf("CmdFsm CONFIG\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
         // FIXME: check validity of all these settings 
-        io.tiler.bits.dataflow := rs1(2).asBool
-        io.tiler.bits.activation := rs1(4,3)
-        io.tiler.bits.acc_rshift := rs1(63,32)  // FIXME: triple check we dont swap these two shifts
-        io.tiler.bits.matmul_rshift := rs2(31,0) 
-        io.tiler.bits.relu6_lshift := rs2(63,32)
+        tiler.dataflow := rs1(2).asBool
+        tiler.activation := rs1(4,3)
+        tiler.acc_rshift := rs1(63,32)  // FIXME: triple check we dont swap these two shifts
+        tiler.matmul_rshift := rs2(31,0) 
+        tiler.relu6_lshift := rs2(63,32)
         config_ex_valid := true.B
       } 
       .elsewhen (funct === ADDR_AB) {
-        io.tiler.bits.addr_a := rs1
-        io.tiler.bits.addr_b := rs2
+        printf("CmdFsm ADDR_AB\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
+        tiler.addr_a := rs1
+        tiler.addr_b := rs2
         addr_ab_valid := true.B
       } 
       .elsewhen (funct === ADDR_CD) {
-        io.tiler.bits.addr_c := rs1
-        io.tiler.bits.addr_d := rs2
+        printf("CmdFsm ADDR_CD\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
+        tiler.addr_c := rs1
+        tiler.addr_d := rs2
         addr_cd_valid := true.B
       } 
       .elsewhen (funct === SIZE0) {
-        io.tiler.bits.m := rs1
-        io.tiler.bits.n := rs2
+        printf("CmdFsm ADDR_SIZE0\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
+        tiler.m := rs1
+        tiler.n := rs2
         size0_valid := true.B
       } 
       .elsewhen (funct === SIZE1) {
-        io.tiler.bits.k := rs1
+        printf("CmdFsm ADDR_SIZE1\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
+        tiler.k := rs1
         size1_valid := true.B
       } 
       .elsewhen (funct === RPT_BIAS) {
-        io.tiler.bits.repeating_bias := rs1(0).asBool
+        printf("CmdFsm RPT_BIAS\n") 
+        printf("CmdFsm rs1[%d] rs2[%d]\n", rs1, rs2) 
+        tiler.repeating_bias := rs1(0).asBool
         bias_valid := true.B
       } 
       .elsewhen (funct === RESET) {
+        printf("CmdFsm RESET\n") 
         reset_and_listen()
+      } 
+      .elsewhen (funct === FLUSH_CMD) {
+        printf("CmdFsm FLUSH_CMD will be ignored\n") 
       } 
       .otherwise {
         // Invalid command type 
@@ -178,7 +190,17 @@ class TilerFsm extends Module {
     val cmd = Flipped(Decoupled(new CmdTilerInterface))
     //val rob = TBD!;
   });
-  io.cmd.ready := false.B;
+  val ready = RegInit(false.B)
+  io.cmd.ready := ready 
+  
+  when (io.cmd.fire()) {
+      printf(
+        "CmdFsm TILER_EXECUTING: a[%d], b[%d], c[%d], d[%d], m[%d], n[%d], k[%d]\n", 
+          io.cmd.bits.addr_a, io.cmd.bits.addr_b, io.cmd.bits.addr_c, io.cmd.bits.addr_d,
+          io.cmd.bits.m, io.cmd.bits.n, io.cmd.bits.k
+      )
+    ready := true.B
+  }
 }
 
 
