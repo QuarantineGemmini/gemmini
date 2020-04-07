@@ -60,8 +60,6 @@ class TilerFSM[T <: Data : Arithmetic]
       Nil) = Enum(16)
 
   val state = RegInit(s_IDLE)
-  val state_n = WireDefault(state)
-  state_n := state
 
   //=========================================================================
   // Internal State
@@ -197,7 +195,7 @@ class TilerFSM[T <: Data : Arithmetic]
   //=========================================================================
   // FSM core
   //=========================================================================
-  switch(state) {
+  switch (state) {
     is (s_IDLE) {
       val l_HAS_BIAS      = (cmd.addr_d =/= 0.U)
       val l_A_BYTE_WIDTH  = WireDefault(cmd.k << LOG2_ITYPE_BYTES.U)
@@ -255,7 +253,7 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(1).rs2        := g_C_BYTES_PER_ROW
 
         // update next state
-        state_n := s_RESET_OUTPUT_GROUP
+        state := s_RESET_OUTPUT_GROUP
       }
       .otherwise {
         // if we are sitting in idle state, we are not busy!
@@ -290,7 +288,7 @@ class TilerFSM[T <: Data : Arithmetic]
       loop1_D_mem_addr := g_D_MEM_ADDR
 
       // update next state
-      state_n := s_RESET_A_TILE_SUBCOL
+      state := s_RESET_A_TILE_SUBCOL
     }
     //=======================================================================
     is (s_RESET_A_TILE_SUBCOL) {
@@ -306,7 +304,7 @@ class TilerFSM[T <: Data : Arithmetic]
       loop2_D_mem_addr := loop1_D_mem_addr
 
       // update next state
-      state_n := s_MOVE_FIRST_B_TILE_INTO_SP
+      state := s_MOVE_FIRST_B_TILE_INTO_SP
     }
     //=======================================================================
     is (s_MOVE_FIRST_B_TILE_INTO_SP) {
@@ -332,7 +330,7 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
-        state_n := s_RESET_B_TILE_SUBCOL_IN_SUBROW
+        state := s_RESET_B_TILE_SUBCOL_IN_SUBROW
       }
     }
     //=======================================================================
@@ -343,7 +341,7 @@ class TilerFSM[T <: Data : Arithmetic]
       loop3_D_mem_addr := loop2_D_mem_addr
 
       // update next state
-      state_n := s_MAYBE_MOVE_NEXT_B_TILE_INTO_SP
+      state := s_MAYBE_MOVE_NEXT_B_TILE_INTO_SP
     }
     //=======================================================================
     is (s_MAYBE_MOVE_NEXT_B_TILE_INTO_SP) {
@@ -361,7 +359,7 @@ class TilerFSM[T <: Data : Arithmetic]
 
       // can't load next B-tile if we are already on the last one
       when (gbl_tile_col === loop1_tile_col_end) {
-        state_n := s_RESET_A_TILE_SUBROW_IN_SUBCOL
+        state := s_RESET_A_TILE_SUBROW_IN_SUBCOL
       }
       .elsewhen (sched.ready >= 2.U) {
         sched.push          := 2.U
@@ -373,7 +371,7 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
-        state_n := s_RESET_A_TILE_SUBROW_IN_SUBCOL
+        state := s_RESET_A_TILE_SUBROW_IN_SUBCOL
       }
     }
     //=======================================================================
@@ -388,7 +386,7 @@ class TilerFSM[T <: Data : Arithmetic]
       loop4_A_sp_row_addr_n := 0.U
 
       // update next state
-      state_n := s_MAYBE_MOVE_A_TILE_INTO_SP
+      state := s_MAYBE_MOVE_A_TILE_INTO_SP
     }
     //=======================================================================
     is (s_MAYBE_MOVE_A_TILE_INTO_SP) {
@@ -405,7 +403,7 @@ class TilerFSM[T <: Data : Arithmetic]
 
       // only move A-tiles in during first column of tiles in the og
       when (gbl_tile_col =/= loop1_tile_col_start) {
-        state_n := s_MAYBE_MOVE_D_TILE_INTO_ACC
+        state := s_MAYBE_MOVE_D_TILE_INTO_ACC
       }
       .elsewhen (sched.ready >= 2.U) {
         sched.push          := 2.U
@@ -417,7 +415,7 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
-        state_n := s_MAYBE_MOVE_D_TILE_INTO_ACC
+        state := s_MAYBE_MOVE_D_TILE_INTO_ACC
       }
     }
     //=======================================================================
@@ -435,7 +433,7 @@ class TilerFSM[T <: Data : Arithmetic]
 
       // only move D-tiles in during first partial-sum in an output-group
       when((loop2_k_tile_col =/= 0.U) || !g_HAS_BIAS) {
-        state_n := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
+        state := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
       }
       .elsewhen (sched.ready >= 2.U) {
         sched.push          := 2.U
@@ -447,7 +445,7 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
-        state_n := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
+        state := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
       }
     }
     //=======================================================================
@@ -482,7 +480,7 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(0).inst.funct := PRELOAD_CMD
 
         // update next state
-        state_n := s_DO_MATMUL
+        state := s_DO_MATMUL
       }
     }
     //=======================================================================
@@ -514,7 +512,7 @@ class TilerFSM[T <: Data : Arithmetic]
           sched.bits(0).inst.funct := COMPUTE_AND_STAY_CMD
         }
         // update next state
-        state_n := s_MAYBE_MOVE_C_TILE_INTO_MEM
+        state := s_MAYBE_MOVE_C_TILE_INTO_MEM
       }
     }
     //=======================================================================
@@ -530,7 +528,7 @@ class TilerFSM[T <: Data : Arithmetic]
       C_item_cols    := gbl_item_cols
 
       when(loop2_k_tile_col =/= g_K_TILE_COL_END) {
-        state_n := s_NEXT_A_TILE_SUBROW_IN_SUBCOL
+        state := s_NEXT_A_TILE_SUBROW_IN_SUBCOL
       }
       .elsewhen (sched.ready >= 1.U) {
         sched.push          := 1.U
@@ -539,14 +537,14 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(0).inst.funct := STORE_CMD
 
         // update next state
-        state_n := s_NEXT_A_TILE_SUBROW_IN_SUBCOL
+        state := s_NEXT_A_TILE_SUBROW_IN_SUBCOL
       }
     }
     //=======================================================================
     is (s_NEXT_A_TILE_SUBROW_IN_SUBCOL) {
       when (gbl_tile_row === loop1_tile_row_end) {
         // just finished the final row of tiles in the 4th loop
-        state_n := s_NEXT_B_TILE_SUBCOL_IN_SUBROW
+        state := s_NEXT_B_TILE_SUBCOL_IN_SUBROW
       }
       .otherwise {
         // modify global state
@@ -565,14 +563,14 @@ class TilerFSM[T <: Data : Arithmetic]
         loop4_A_sp_row_addr_n := loop4_A_sp_row_addr + BYTE_ROWS_PER_TILE.U
 
         // update next state
-        state_n := s_MAYBE_MOVE_A_TILE_INTO_SP
+        state := s_MAYBE_MOVE_A_TILE_INTO_SP
       }
     }
     //=======================================================================
     is (s_NEXT_B_TILE_SUBCOL_IN_SUBROW) {
       when (gbl_tile_col === loop1_tile_col_end) {
         // we have already done the last column in the output-group
-        state_n := s_NEXT_A_TILE_SUBCOL
+        state := s_NEXT_A_TILE_SUBCOL
       }
       .otherwise {
         // modify global state
@@ -591,13 +589,13 @@ class TilerFSM[T <: Data : Arithmetic]
         loop3_D_mem_addr := loop3_D_mem_addr + O_TILE_BYTE_WIDTH.U
 
         // update next state
-        state_n := s_MAYBE_MOVE_NEXT_B_TILE_INTO_SP
+        state := s_MAYBE_MOVE_NEXT_B_TILE_INTO_SP
       }
     }
     //=======================================================================
     is (s_NEXT_A_TILE_SUBCOL) {
       when (loop2_k_tile_col === g_K_TILE_COL_END) {
-        state_n := s_NEXT_OUTPUT_GROUP
+        state := s_NEXT_OUTPUT_GROUP
       }
       .otherwise {
         loop2_k_tile_col_n    := loop2_k_tile_col + 1.U
@@ -616,7 +614,7 @@ class TilerFSM[T <: Data : Arithmetic]
         gbl_B_alt_sp_row_addr_n := gbl_B_cur_sp_row_addr
 
         // update next state
-        state_n := s_MOVE_FIRST_B_TILE_INTO_SP
+        state := s_MOVE_FIRST_B_TILE_INTO_SP
       }
     }
     //=======================================================================
@@ -627,7 +625,7 @@ class TilerFSM[T <: Data : Arithmetic]
       when (gbl_tile_col === g_TILE_COL_END && 
             gbl_tile_row === g_TILE_ROW_END) {
         // update next state
-        state_n := s_IDLE
+        state := s_IDLE
       }
       .otherwise {
         when (gbl_tile_col === g_TILE_COL_END) {
@@ -675,7 +673,7 @@ class TilerFSM[T <: Data : Arithmetic]
         }
 
         // update next state
-        state_n := s_RESET_A_TILE_SUBCOL
+        state := s_RESET_A_TILE_SUBCOL
       }
     }
   }
