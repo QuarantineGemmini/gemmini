@@ -23,11 +23,20 @@ class TilerFSM[T <: Data : Arithmetic]
     val sched_out = Decoupled(new RoCCCommand)
     val busy      = Output(Bool())
   })
-
   // hardcode 8 entries with up to 2 pushes per cycle
-  val (sched, _) = MultiTailedQueue(io.sched_out, 8, 2);
-  val cmd = io.cmd_in.bits
-  val busy = io.busy
+  val schedq = Module(new MultiTailedQueue(new RoCCCommand, 8, 2))
+  io.sched_out <> schedq.io.deq
+
+  val sched = schedq.io.enq
+  val cmd   = io.cmd_in.bits
+  val busy  = io.busy
+
+  // initialize ports/pins
+  sched.bits(0) := DontCare
+  sched.bits(1) := DontCare
+  sched.push := 0.U
+  io.cmd_in.ready := false.B
+  busy := true.B
 
   //=========================================================================
   // FSM states (see diagram for what each state does)
@@ -188,10 +197,6 @@ class TilerFSM[T <: Data : Arithmetic]
   //=========================================================================
   // FSM core
   //=========================================================================
-  io.cmd_in.ready := false.B
-  sched.push := 0.U
-  busy := true.B
-
   switch(state) {
     is (s_IDLE) {
       val l_HAS_BIAS      = (cmd.addr_d =/= 0.U)
@@ -233,7 +238,7 @@ class TilerFSM[T <: Data : Arithmetic]
 
       // update interface signals. we are only ready when an input cmd is
       // ready AND the output queue has 2 slots available to write to
-      io.cmd_in.ready := sched.ready(1) && sched.ready(0)
+      io.cmd_in.ready := (sched.ready >= 2.U)
 
       // issue gemmini commands
       when(io.cmd_in.fire()) {
@@ -308,19 +313,23 @@ class TilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters
       val B_mem_addr    = loop2_B_mem_addr
       val B_mem_stride  = g_B_BYTES_PER_ROW
-      val B_sp_row_addr = gbl_B_cur_sp_row_addr(31,0)
-      val B_item_rows   = loop2_k_item_dims(15,0)
-      val B_item_cols   = gbl_item_cols(15,0)
+
+      val B_sp_row_addr = Wire(UInt(32.W))
+      val B_item_rows   = Wire(UInt(16.W))
+      val B_item_cols   = Wire(UInt(16.W))
+      B_sp_row_addr := gbl_B_cur_sp_row_addr
+      B_item_rows   := loop2_k_item_dims
+      B_item_cols   := gbl_item_cols
 
       // issue gemmini commands
-      when(sched.ready(1) && sched.ready(0)) {
-        sched.push               := 2.U
+      when(sched.ready >= 2.U) {
+        sched.push          := 2.U
+        sched.bits(0).rs1   := CONFIG_LOAD
+        sched.bits(0).rs2   := B_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(0).rs1        := CONFIG_LOAD
-        sched.bits(0).rs2        := B_mem_stride
+        sched.bits(1).rs1   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
+        sched.bits(1).rs2   := B_mem_addr
         sched.bits(1).inst.funct := LOAD_CMD
-        sched.bits(1).rs1        := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
-        sched.bits(1).rs2        := B_mem_addr
 
         // update next state
         state_n := s_RESET_B_TILE_SUBCOL_IN_SUBROW
@@ -341,23 +350,27 @@ class TilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters
       val B_mem_addr    = loop3_B_mem_addr + I_TILE_BYTE_WIDTH.U
       val B_mem_stride  = g_B_BYTES_PER_ROW
-      val B_sp_row_addr = gbl_B_alt_sp_row_addr(31,0)
-      val B_item_rows   = loop2_k_item_dims(15,0)
-      val B_item_cols   = Mux(gbl_tile_col === g_TILE_COL_END-1.U,
-                              g_LAST_N_ITEMS(15,0), DIM.U(15,0))
+
+      val B_sp_row_addr = Wire(UInt(32.W))
+      val B_item_rows   = Wire(UInt(16.W))
+      val B_item_cols   = Wire(UInt(16.W))
+      B_sp_row_addr := gbl_B_alt_sp_row_addr
+      B_item_rows   := loop2_k_item_dims
+      B_item_cols   := Mux(gbl_tile_col === g_TILE_COL_END-1.U,
+                           g_LAST_N_ITEMS, DIM.U)
 
       // can't load next B-tile if we are already on the last one
       when (gbl_tile_col === loop1_tile_col_end) {
         state_n := s_RESET_A_TILE_SUBROW_IN_SUBCOL
       }
-      .elsewhen (sched.ready(1) && sched.ready(0)) {
-        sched.push               := 2.U
+      .elsewhen (sched.ready >= 2.U) {
+        sched.push          := 2.U
+        sched.bits(0).rs1   := CONFIG_LOAD
+        sched.bits(0).rs2   := B_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(0).rs1        := CONFIG_LOAD
-        sched.bits(0).rs2        := B_mem_stride
+        sched.bits(1).rs1   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
+        sched.bits(1).rs2   := B_mem_addr
         sched.bits(1).inst.funct := LOAD_CMD
-        sched.bits(1).rs1        := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
-        sched.bits(1).rs2        := B_mem_addr
 
         // update next state
         state_n := s_RESET_A_TILE_SUBROW_IN_SUBCOL
@@ -382,22 +395,26 @@ class TilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters
       val A_mem_addr    = loop4_A_mem_addr
       val A_mem_stride  = g_A_BYTES_PER_ROW
-      val A_sp_row_addr = loop4_A_sp_row_addr(31,0)
-      val A_item_rows   = gbl_item_rows(15,0)
-      val A_item_cols   = loop2_k_item_dims(15,0)
+
+      val A_sp_row_addr = Wire(UInt(32.W))
+      val A_item_rows   = Wire(UInt(16.W))
+      val A_item_cols   = Wire(UInt(16.W))
+      A_sp_row_addr := loop4_A_sp_row_addr
+      A_item_rows   := gbl_item_rows
+      A_item_cols   := loop2_k_item_dims
 
       // only move A-tiles in during first column of tiles in the og
       when (gbl_tile_col =/= loop1_tile_col_start) {
         state_n := s_MAYBE_MOVE_D_TILE_INTO_ACC
       }
-      .elsewhen (sched.ready(1) && sched.ready(0)) {
-        sched.push               := 2.U
+      .elsewhen (sched.ready >= 2.U) {
+        sched.push          := 2.U
+        sched.bits(0).rs1   := CONFIG_LOAD
+        sched.bits(0).rs2   := A_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(0).rs1        := CONFIG_LOAD
-        sched.bits(0).rs2        := A_mem_stride
+        sched.bits(1).rs1   := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
+        sched.bits(1).rs2   := A_mem_addr
         sched.bits(1).inst.funct := LOAD_CMD
-        sched.bits(1).rs1        := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
-        sched.bits(1).rs2        := A_mem_addr
 
         // update next state
         state_n := s_MAYBE_MOVE_D_TILE_INTO_ACC
@@ -408,22 +425,26 @@ class TilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters (NOTE: we know D is valid at this point)
       val D_mem_addr     = loop4_D_mem_addr
       val D_mem_stride   = Mux(g_REPEATING_BIAS, 0.U, g_D_BYTES_PER_ROW)
-      val D_acc_row_addr = Cat(2.U(2), gbl_CD_acc_row_addr)
-      val D_item_rows    = gbl_item_rows(15,0)
-      val D_item_cols    = gbl_item_cols(15,0)
+
+      val D_acc_row_addr = Wire(UInt(32.W))
+      val D_item_rows    = Wire(UInt(16.W))
+      val D_item_cols    = Wire(UInt(16.W))
+      D_acc_row_addr := "h80000000".U | gbl_CD_acc_row_addr
+      D_item_rows    := gbl_item_rows
+      D_item_cols    := gbl_item_cols
 
       // only move D-tiles in during first partial-sum in an output-group
       when((loop2_k_tile_col =/= 0.U) || !g_HAS_BIAS) {
         state_n := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
       }
-      .elsewhen (sched.ready(1) && sched.ready(0)) {
-        sched.push               := 2.U
+      .elsewhen (sched.ready >= 2.U) {
+        sched.push          := 2.U
+        sched.bits(0).rs1   := CONFIG_LOAD
+        sched.bits(0).rs2   := D_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(0).rs1        := CONFIG_LOAD
-        sched.bits(0).rs2        := D_mem_stride
+        sched.bits(1).rs1   := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
+        sched.bits(1).rs2   := D_mem_addr
         sched.bits(1).inst.funct := LOAD_CMD
-        sched.bits(1).rs1        := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
-        sched.bits(1).rs2        := D_mem_addr
 
         // update next state
         state_n := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
@@ -433,26 +454,32 @@ class TilerFSM[T <: Data : Arithmetic]
     is (s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC) {
       // on first tile in 4th loop: preload this B-tile
       // else:                      preload garbage B-tile (no spad load)
-      val B_sp_row_addr = Mux(gbl_tile_row === loop1_tile_row_start,
-                              gbl_B_cur_sp_row_addr(31,0),
-                              GARBAGE_ADDR(31,0))
-      val B_item_rows   = loop2_k_item_dims(15,0)
-      val B_item_cols   = gbl_item_cols(15,0)
+      val B_sp_row_addr = Wire(UInt(32.W))
+      val B_item_rows   = Wire(UInt(16.W))
+      val B_item_cols   = Wire(UInt(16.W))
+      B_sp_row_addr := Mux(gbl_tile_row === loop1_tile_row_start,
+                           gbl_B_cur_sp_row_addr,
+                           GARBAGE_ADDR)
+      B_item_rows   := loop2_k_item_dims
+      B_item_cols   := gbl_item_cols
 
       // if has D-bias already loaded: accumulate c in accumulator
       // elif first k-col in 2nd loop: overwrite c in accumulator
       // else:                         accumulate c in accumulator
-      val C_acc_row_addr = Mux(g_HAS_BIAS || (loop2_k_tile_col>0.U),
-                             Cat(3.U(2), gbl_CD_acc_row_addr(29,0)),
-                             Cat(2.U(2), gbl_CD_acc_row_addr(29,0)))
-      val C_item_rows    = gbl_item_rows(15,0)
-      val C_item_cols    = gbl_item_cols(15,0)
+      val C_acc_row_addr = Wire(UInt(32.W))
+      val C_item_rows    = Wire(UInt(16.W))
+      val C_item_cols    = Wire(UInt(16.W))
+      C_acc_row_addr := Mux(g_HAS_BIAS || (loop2_k_tile_col > 0.U),
+                            "hC0000000".U | gbl_CD_acc_row_addr,
+                            "h80000000".U | gbl_CD_acc_row_addr)
+      C_item_rows    := gbl_item_rows
+      C_item_cols    := gbl_item_cols
 
-      when (sched.ready(0)) {
-        sched.push               := 1.U
+      when (sched.ready >= 1.U) {
+        sched.push          := 1.U
+        sched.bits(0).rs1   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
+        sched.bits(0).rs2   := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
         sched.bits(0).inst.funct := PRELOAD_CMD
-        sched.bits(0).rs1        := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
-        sched.bits(0).rs2        := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
 
         // update next state
         state_n := s_DO_MATMUL
@@ -461,20 +488,25 @@ class TilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_DO_MATMUL) {
       // calculate compute parameters
-      val A_sp_row_addr = loop4_A_sp_row_addr(31,0)
-      val A_item_rows   = gbl_item_rows(15,0)
-      val A_item_cols   = loop2_k_item_dims(15,0)
+      val A_sp_row_addr = Wire(UInt(32.W))
+      val A_item_rows   = Wire(UInt(16.W))
+      val A_item_cols   = Wire(UInt(16.W))
+      A_sp_row_addr := loop4_A_sp_row_addr
+      A_item_rows   := gbl_item_rows
+      A_item_cols   := loop2_k_item_dims
 
-      val D_sp_row_addr = GARBAGE_ADDR(31,0)
-      val D_item_rows   = gbl_item_rows(15,0)
-      val D_item_cols   = gbl_item_cols(15,0)
+      val D_acc_row_addr = GARBAGE_ADDR
+      val D_item_rows    = Wire(UInt(16.W))
+      val D_item_cols    = Wire(UInt(16.W))
+      D_item_rows    := gbl_item_rows
+      D_item_cols    := gbl_item_cols
 
       // on first tile in 4th loop: compute_preloaded
       // else: compute_accumulated
-      when (sched.ready(0)) {
-        sched.push        := 1.U
-        sched.bits(0).rs1 := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
-        sched.bits(0).rs2 := Cat(D_item_rows,D_item_cols,D_sp_row_addr)
+      when (sched.ready >= 1.U) {
+        sched.push          := 1.U
+        sched.bits(0).rs1   := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
+        sched.bits(0).rs2   := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
         when (gbl_tile_row === loop1_tile_row_start) {
           sched.bits(0).inst.funct := COMPUTE_AND_FLIP_CMD
         }
@@ -489,18 +521,22 @@ class TilerFSM[T <: Data : Arithmetic]
     is (s_MAYBE_MOVE_C_TILE_INTO_MEM) {
       val C_mem_addr     = loop4_C_mem_addr
       val C_mem_stride   = g_C_BYTES_PER_ROW
-      val C_acc_row_addr = Cat(2.U(2), gbl_CD_acc_row_addr(29,0))
-      val C_item_rows    = gbl_item_rows(15,0)
-      val C_item_cols    = gbl_item_cols(15,0)
+
+      val C_acc_row_addr = Wire(UInt(32.W))
+      val C_item_rows    = Wire(UInt(16.W))
+      val C_item_cols    = Wire(UInt(16.W))
+      C_acc_row_addr := "h80000000".U | gbl_CD_acc_row_addr
+      C_item_rows    := gbl_item_rows
+      C_item_cols    := gbl_item_cols
 
       when(loop2_k_tile_col =/= g_K_TILE_COL_END) {
         state_n := s_NEXT_A_TILE_SUBROW_IN_SUBCOL
       }
-      .elsewhen (sched.ready(0)) {
-        sched.push               := 1.U
+      .elsewhen (sched.ready >= 1.U) {
+        sched.push          := 1.U
+        sched.bits(0).rs1   := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
+        sched.bits(0).rs2   := C_mem_addr
         sched.bits(0).inst.funct := STORE_CMD
-        sched.bits(0).rs1        := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
-        sched.bits(0).rs2        := C_mem_addr
 
         // update next state
         state_n := s_NEXT_A_TILE_SUBROW_IN_SUBCOL

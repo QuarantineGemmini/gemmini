@@ -26,9 +26,10 @@ class TilerScheduler[T <: Data: Arithmetic]
       val store = Decoupled(new GemminiCmd(ROB_ENTRIES))
       val flush = Decoupled(new GemminiCmd(ROB_ENTRIES))
     }
-    val completed = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
+    val completed = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
     val busy = Output(Bool())
   })
+  io.completed.ready := true.B
 
   //=========================================================================
   // ...
@@ -195,27 +196,25 @@ class TilerScheduler[T <: Data: Arithmetic]
         "cycle[%d], entry[%d], accept[%d], flush",
         debug_cycle, new_entry_id, cmd_id.value)
     }
+    .elsewhen (new_entry.is_preload) {
+      printf(
+        "cycle[%d], entry[%d], accept[%d], preload[B=%x, C=%x]\n",
+        debug_cycle, new_entry_id, cmd_id.value, 
+        cmd.rs1(31,0), cmd.rs2(31,0))
+    }
     .otherwise {
-      when (new_entry.is_preload) {
+      assert(new_entry.is_exec)
+      when (funct_is_compute_preload) {
         printf(
-          "cycle[%d], entry[%d], accept[%d], preload[B=%x, C=%x]\n",
+          "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, D=%x]\n",
           debug_cycle, new_entry_id, cmd_id.value, 
           cmd.rs1(31,0), cmd.rs2(31,0))
       }
       .otherwise {
-        assert(new_entry.is_exec)
-        when (funct_is_compute_preload) {
-          printf(
-            "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, D=%x]\n",
-            debug_cycle, new_entry_id, cmd_id.value, 
-            cmd.rs1(31,0), cmd.rs2(31,0))
-        }
-        .otherwise {
-          printf(
-            "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, D=%x]\n",
-            debug_cycle, new_entry_id, cmd_id.value, 
-            cmd.rs1(31,0), cmd.rs2(31,0))
-        }
+        printf(
+          "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, D=%x]\n",
+          debug_cycle, new_entry_id, cmd_id.value, 
+          cmd.rs1(31,0), cmd.rs2(31,0))
       }
     }
 

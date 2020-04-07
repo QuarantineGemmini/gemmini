@@ -28,7 +28,6 @@ object GemminiEE290Configs{
     sp_capacity  = CapacityInKilobytes(2048)
   )
 
-  print("got here\n")
   val Lab3Config = defaultConfig.copy(
     meshRows     = 32,
     meshColumns  = 32,
@@ -71,5 +70,5 @@ object WithEE290Lab3SmallSPGemminiConfig {
 //============================================================================
 object WithEE290Lab3Gemmini2Config {
   def apply(dummy:Int=0) 
-    = WithGemminiConfig(GemminiEE290Configs.Lab3Config)
+    = WithGemmini2Config(GemminiEE290Configs.Lab3Config)
 }

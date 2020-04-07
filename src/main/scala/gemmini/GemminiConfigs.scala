@@ -36,17 +36,28 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   headerFileName: String = "gemmini_params.h"
 ) {
   //==========================================================================
+  // sanity check mesh size
+  //==========================================================================
+  def BLOCK_ROWS = tileRows * meshRows
+  def BLOCK_COLS = tileColumns * meshColumns
+  require(BLOCK_ROWS == BLOCK_COLS, "BLOCK_ROWS != BLOCK_COLS!")
+
+  def DIM             = BLOCK_ROWS
+  def LOG2_DIM        = log2Up(DIM)
+  def LOG2_DIM_COUNT  = log2Up(DIM) + 1
+
+  //==========================================================================
   // gemmini1 hardware-specific global constants
   //==========================================================================
-  def sp_width = meshColumns * tileColumns * inputType.getWidth
+  def sp_width = DIM * inputType.getWidth
   def sp_bank_entries = sp_capacity match {
     case CapacityInKilobytes(kb) => kb * 1024 * 8 / (sp_banks * sp_width)
-    case CapacityInMatrices(ms) => ms * meshRows * tileRows / sp_banks
+    case CapacityInMatrices(ms) => ms * DIM / sp_banks
   }
-  def acc_width = meshColumns * tileColumns * accType.getWidth
+  def acc_width = DIM * accType.getWidth
   def acc_bank_entries = acc_capacity match {
     case CapacityInKilobytes(kb) => kb * 1024 * 8 / (acc_banks * acc_width)
-    case CapacityInMatrices(ms) => ms * meshRows * tileRows / acc_banks
+    case CapacityInMatrices(ms) => ms * DIM / acc_banks
   }
 
   def local_addr_t = new LocalAddr(sp_banks, sp_bank_entries, 
@@ -54,11 +65,11 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
 
   def max_in_flight_reqs = 16 // TODO calculate this somehow
 
-  def mvin_len_bits = log2Up(((dma_maxbytes / (inputType.getWidth / 8)) max 
-                              (meshColumns * tileColumns)) + 1)
-  def mvin_rows_bits = log2Up(meshRows * tileRows + 1)
-  def mvout_len_bits = log2Up(meshColumns * tileColumns + 1)
-  def mvout_rows_bits = log2Up(meshRows * tileRows + 1)
+  def mvin_len_bits   = log2Up(((dma_maxbytes / (inputType.getWidth / 8)) max 
+                               DIM) + 1)
+  def mvin_rows_bits  = log2Up(DIM + 1)
+  def mvout_len_bits  = log2Up(DIM + 1)
+  def mvout_rows_bits = log2Up(DIM + 1)
 
   // TODO: move this. was originally in Controller.scala
   def tagWidth = 32
@@ -72,7 +83,6 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   //==========================================================================
   // gemmini2 hardware-specific compile-time global constants
   //==========================================================================
-  require(tileRows == tileColumns, "tileRows != tileColumns!")
 
   def ITYPE_BITS       = inputType.getWidth
   def LOG2_ITYPE_BITS  = log2Up(ITYPE_BITS)
@@ -84,10 +94,6 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   def OTYPE_BYTES      = (accType.getWidth+7) / 8
   def LOG2_OTYPE_BYTES = log2Up(OTYPE_BYTES)
 
-  def DIM             = tileRows
-  def LOG2_DIM        = log2Up(tileRows)
-  def LOG2_DIM_COUNT  = log2Up(tileRows) + 1
-
   def SP_BANKS        = sp_banks
   def SP_BANK_ROWS    = sp_bank_entries
   def SP_ROWS         = SP_BANKS * SP_BANK_ROWS
@@ -98,7 +104,7 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
 
-  def MNK_BYTES                   = Int.MaxValue // max M,N,K size in bytes
+  def MNK_BYTES                   = Int.MaxValue / DIM 
   def LOG2_MNK_BYTES              = log2Up(MNK_BYTES)
   def MNK_BYTES_PER_TILE_ROW      = MNK_BYTES * DIM
   def LOG2_MNK_BYTES_PER_TILE_ROW = log2Up(MNK_BYTES_PER_TILE_ROW)

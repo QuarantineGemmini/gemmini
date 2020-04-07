@@ -4,7 +4,8 @@ import chisel3._
 import chisel3.util._
 import Util._
 
-class MultiHeadedQueue[T <: Data](gen: T, entries: Int, heads: Int, maxpop: Int = 2) extends Module {
+class MultiHeadedQueue[T <: Data]
+  (gen: T, entries: Int, heads: Int, maxpop: Int = 2) extends Module {
   val io = IO(new Bundle {
     val enq = Flipped(Decoupled(gen))
 

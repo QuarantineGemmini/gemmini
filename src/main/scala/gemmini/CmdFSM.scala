@@ -77,7 +77,7 @@ class CmdFSM[T <: Data: Arithmetic]
 
   // we block if we have accepted the COMPUTE_ALL command, but the tiler has
   // not started executing it yet.
-  io.busy := (state =/= s_EXECUTING)
+  io.busy := (state === s_EXECUTING)
 
   //==========================================================================
   // FSM 
@@ -127,7 +127,6 @@ class CmdFSM[T <: Data: Arithmetic]
         when (io.tiler.fire()) {
           state := s_LISTENING
         }.otherwise {
-          io.cmd.ready := false.B
           state := s_EXECUTING
         }
       }
