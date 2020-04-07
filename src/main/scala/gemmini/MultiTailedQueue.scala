@@ -16,19 +16,20 @@ class MultiTailedQueue[T <: Data](gen: T, entries: Int,
     val deq = Flipped(Decoupled(gen))
     val len = Output(UInt(log2Ceil(entries+1).W))
   })
-  assert(tails >= 1)
-  assert(io.enq.push <= len.U)
-  assert(io.enq.push <= tails.U)
-  assert(io.enq.push <= maxpush.U)
 
   val regs  = Reg(Vec(entries, gen))
   val raddr = RegInit(0.U((log2Ceil(entries) max 1).W))
   val waddr = RegInit(0.U((log2Ceil(entries) max 1).W))
   val len   = RegInit(0.U(log2Ceil(entries+1).W))
 
+  assert(tails >= 1)
+  assert(io.enq.push <= len)
+  assert(io.enq.push <= tails.U)
+  assert(io.enq.push <= maxpush.U)
+
   // push interface
   for (i <- 0 until tails) {
-    io.enq.ready(i) := len < (entries - i)
+    io.enq.ready(i) := len < (entries - i).U
   }
   waddr := wrappingAdd(waddr, io.enq.push, entries)
 

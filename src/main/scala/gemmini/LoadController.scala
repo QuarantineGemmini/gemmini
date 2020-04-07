@@ -4,26 +4,25 @@ import chisel3._
 import chisel3.util._
 import GemminiISA._
 import Util._
-import freechips.rocketchip.config.Parameters
-
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 
 // TODO deal with errors when reading scratchpad responses
 class LoadController[T <: Data](config: GemminiArrayConfig[T])
-  (implicit p: Parameters) extends Module with HasCoreParameters  
-{
+  (implicit val p: Parameters) extends Module with HasCoreParameters {
   import config._
 
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
-
     val dma = new ScratchpadReadMemIO(local_addr_t)
-
     val completed = Decoupled(UInt(log2Up(rob_entries).W))
-
     val busy = Output(Bool())
   })
 
-  val waiting_for_command :: waiting_for_dma_req_ready :: sending_rows :: Nil = Enum(3)
+  val (waiting_for_command :: 
+       waiting_for_dma_req_ready :: 
+       sending_rows :: 
+       Nil) = Enum(3)
   val control_state = RegInit(waiting_for_command)
 
   val stride = RegInit((sp_width / 8).U(coreMaxAddrBits.W))
@@ -125,6 +124,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T])
 }
 
 object LoadController {
-  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters)
-    = Module(new LoadController(config))
+  def apply[T <: Data: Arithmetic]
+    (config: GemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new LoadController(config))
 }

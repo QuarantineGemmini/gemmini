@@ -42,7 +42,7 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int,
   def is_same_address(other: LocalAddr): Bool = is_acc_addr === other.is_acc_addr && data === other.data
   def is_same_address(other: UInt): Bool = is_same_address(other.asTypeOf(this))
   def is_garbage(dummy: Int = 0) = is_acc_addr && accumulate && data.andR() &&
-    (if (garbage_bit.getWidth > 0) garbage_bit.toBool() else true.B)
+    (if (garbage_bit.getWidth > 0) garbage_bit.asBool() else true.B)
 
   def +(other: UInt) = {
     require(isPow2(sp_bank_entries)) // TODO remove this requirement

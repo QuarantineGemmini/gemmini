@@ -20,16 +20,15 @@ class GemminiCmd(rob_entries: Int)(implicit p: Parameters) extends Bundle {
     = (new GemminiCmd(rob_entries)).asInstanceOf[this.type]
 }
 
-
 //===========================================================================
 // TilerController Interface (gemmini2 mode only)
 //===========================================================================
-class TilerCmd(config: GemminiArrayConfig[T])(implicit p: Parameters)
-  extends CoreBundle {
+class TilerCmd[T <: Data: Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit p: Parameters)extends CoreBundle {
   import config._
-  val M              = UInt(32.U)
-  val N              = UInt(32.U)
-  val K              = UInt(32.U)
+  val m              = UInt(32.W)
+  val n              = UInt(32.W)
+  val k              = UInt(32.W)
   val addr_a         = UInt(xLen.W)
   val addr_b         = UInt(xLen.W)
   val addr_c         = UInt(xLen.W)
@@ -41,5 +40,5 @@ class TilerCmd(config: GemminiArrayConfig[T])(implicit p: Parameters)
   val repeating_bias = Bool()
 
   override def cloneType: this.type =
-    new TilerCmd(config).asInstanceOf[this.type]
+    (new TilerCmd(config)).asInstanceOf[this.type]
 }

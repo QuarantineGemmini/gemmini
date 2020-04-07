@@ -71,7 +71,8 @@ object GemminiConfigs {
 }
 
 object WithDefaultGemminiConfig {
-  def apply() = WithGemminiConfig(GemminiConfigs.defaultConfig)
+  def apply(dummy:Int=0) 
+    = WithGemminiConfig(GemminiConfigs.defaultConfig)
 }
 
 //===========================================================================

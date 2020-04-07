@@ -20,8 +20,8 @@ FIRESIM_DIR="$CY_DIR/sims/firesim"
 HW_CONFIG_PROJECT=example
 
 # available hardware-configs (vcs,verilator)
-CONFIG_LAB3=GemminiEE290Lab3RocketConfig
-CONFIG_GEMMINI2=Gemmini2RocketConfig
+HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+HW_CONFIG_G2=Gemmini2EE290Lab3RocketConfig
 
 # firesim configs
 FSIM_BUILD_CONFIG="$FCFG_DIR/config_build.ini"
@@ -49,7 +49,8 @@ VCS_PROFILE=0
 export ENABLE_PRINTF_PATTERN=''
 
 # default hardware config (vcs,verilator)
-HW_CONFIG=$CONFIG_LAB3
+HW_CONFIG="hw_lab3"
+HW_CONFIG_FULL="$HW_CONFIG_LAB3"
 
 #=============================================================================
 # subroutines
@@ -72,7 +73,8 @@ display_usage() {
 
   hardware configs (vcs, verilator)
   --------------------------------
-  -hw_lab3      --> build $CONFIG_LAB3
+  -hw_lab3      --> build $HW_CONFIG_LAB3 (default)
+  -hw_g2        --> build $HW_CONFIG_G2
   
   verilator options 
   -----------------
@@ -132,16 +134,16 @@ buildsim() {
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
       # compiler options
-      local cmdline="make CONFIG=$HW_CONFIG"
+      local cmdline="make CONFIG=$HW_CONFIG_FULL"
       local cmdline="$cmdline VCS_THREADS=$VCS_THREADS"
       local cmdline="$cmdline VCS_PROFILE=$VCS_PROFILE"
       if [ "$IS_DEBUG" -eq 1 ]; then cmdline="$cmdline debug"; fi
 
       # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
-        for f in simv-*-$HW_CONFIG* ucli.key vc_hdrs.h \
+        for f in simv-*-$HW_CONFIG_FULL* ucli.key vc_hdrs.h \
             simv-*.daidir/.vcs.timestamp \
-            generated-src/*.$HW_CONFIG/*.printf*.v ; do
+            generated-src/*.$HW_CONFIG_FULL/*.printf*.v ; do
           finfo "force removing $f" "$logfile"
           rm -fr $f
         done
@@ -155,7 +157,7 @@ buildsim() {
       if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
       # compiler options
-      local cmdline="make CONFIG=$HW_CONFIG"
+      local cmdline="make CONFIG=$HW_CONFIG_FULL"
       local cmdline="$cmdline VL8_THREADS=$VL8_THREADS"
       local cmdline="$cmdline VL8_PROFILE=$VL8_PROFILE"
       local cmdline="$cmdline VL8_FST_MODE=$VL8_FST_MODE"
@@ -163,9 +165,9 @@ buildsim() {
 
       # clean up files if force-rebuild
       if [ "$IS_FORCE" -eq 1 ]; then
-        for f in simulator-${HW_CONFIG_PROJECT}-$HW_CONFIG* \
-            generated-src/*.*.$HW_CONFIG/*.*.$HW_CONFIG \
-            generated-src/*.*.$HW_CONFIG/*.printf*.v ; do
+        for f in simulator-${HW_CONFIG_PROJECT}-$HW_CONFIG_FULL* \
+            generated-src/*.*.$HW_CONFIG_FULL/*.*.$HW_CONFIG_FULL \
+            generated-src/*.*.$HW_CONFIG_FULL/*.printf*.v ; do
           finfo "force removing $f" "$logfile"
           rm -fr "$f"
         done
@@ -216,8 +218,8 @@ while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
     #------------------------------------------------------------------------
-    -hw_g2) HW_CONFIG="$CONFIG_GEMMINI2" ;;
-    -hw_lab3) HW_CONFIG="$CONFIG_LAB3" ;;
+    -hw_lab3) HW_CONFIG="hw_lab3";  HW_CONFIG_FULL="$HW_CONFIG_LAB3" ;;
+    -hw_g2)   HW_CONFIG="hw_g2";    HW_CONFIG_FULL="$HW_CONFIG_G2"   ;;
     #------------------------------------------------------------------------
     -vl8_threads)
       if [ $# -eq 0 ] ; then err "-vl8_threads requires arg. see usage"; fi
@@ -234,9 +236,9 @@ while [ $# -ne 0 ] ; do
     #------------------------------------------------------------------------
     -vcs_profile) VCS_PROFILE=1 ;;
     #------------------------------------------------------------------------
-    -noisy)     IS_NOISY=1 ;;
-    -force)     IS_FORCE=1 ;;
-    -debug)     IS_DEBUG=1 ;;
+    -noisy) IS_NOISY=1 ;;
+    -force) IS_FORCE=1 ;;
+    -debug) IS_DEBUG=1 ;;
     -printf)
       if [ $# -eq 0 ] ; then err "-printf requires arg. see usage"; fi
       export ENABLE_PRINTF_PATTERN="$1"; shift

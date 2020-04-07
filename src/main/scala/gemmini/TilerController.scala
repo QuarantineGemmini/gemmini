@@ -6,10 +6,11 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
+import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 
 class TilerController[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit p: Parameters) 
+  (config: GemminiArrayConfig[T])(implicit val p: Parameters) 
   extends Module with HasCoreParameters {
   import config._
 
@@ -31,12 +32,12 @@ class TilerController[T <: Data: Arithmetic]
       val flush = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
     }
     val busy = Output(Bool())
-  }
+  })
 
   //=========================================================================
   // dispatch incoming commands
   //=========================================================================
-  val fsm = new TilerFSM(config)
+  val fsm = TilerFSM(config)
   fsm.io.cmd_in <> io.cmd_in
 
   val sched = TilerScheduler(config)

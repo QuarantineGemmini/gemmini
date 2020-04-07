@@ -1,10 +1,14 @@
 package gemmini
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
+
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 import GemminiISA._
 import Util._
-import freechips.rocketchip.config.Parameters
 
 // TODO handle reads from the same bank
 // TODO don't flush all 4 time steps when shorter flushes will work
@@ -13,7 +17,7 @@ import freechips.rocketchip.config.Parameters
 // TODO allow the matmul result to not be DIM-by-DIM, similar to how the 
 //      matmul inputs can be padded if they aren't DIM-by-DIM
 class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
-  (implicit p: Parameters, ev: Arithmetic[T]) 
+  (implicit val p: Parameters, ev: Arithmetic[T]) 
   extends Module with HasCoreParameters
 {
   import config._
@@ -708,6 +712,7 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
 }
 
 object ExecuteController {
-  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters)
-    = Module(new ExecuteController(config))
+  def apply[T <: Data: Arithmetic]
+    (config: GemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new ExecuteController(config))
 }

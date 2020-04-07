@@ -6,8 +6,12 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
+import GemminiISA._
 
-class FlushController(config: GemminiArrayConfig[T])(implicit p: Parameters)
+class FlushController[T <: Data : Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit val p: Parameters)
   extends Module with HasCoreParameters {
   import config._
 
@@ -25,7 +29,7 @@ class FlushController(config: GemminiArrayConfig[T])(implicit p: Parameters)
   val is_flush = cmd.bits.cmd.inst.funct === FLUSH_CMD
   val skip     = cmd.bits.cmd.rs1(0)
 
-  cmd.ready          := completed.ready
+  cmd.ready          := io.completed.ready
   io.completed.valid := cmd.valid
   io.completed.bits  := cmd.bits.rob_id
   io.flush_retry     := cmd.fire() && !skip
@@ -34,6 +38,7 @@ class FlushController(config: GemminiArrayConfig[T])(implicit p: Parameters)
 }
 
 object FlushController {
-  def apply(config: GemminiArrayConfig[T])(implicit p: Parameters) 
-    = Module(new FlushController(config))
+  def apply[T <: Data : Arithmetic]
+    (config: GemminiArrayConfig[T])(implicit p: Parameters) 
+      = Module(new FlushController(config))
 }

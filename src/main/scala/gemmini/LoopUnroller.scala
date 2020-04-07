@@ -100,7 +100,9 @@ class LoopUnroller(block_size: Int)(implicit p: Parameters) extends Module {
 }
 
 object LoopUnroller {
-  def apply(enq: ReadyValidIO[RoCCCommand], block_size: Int)(implicit p: Parameters): DecoupledIO[RoCCCommand] = {
+  def apply(enq: ReadyValidIO[RoCCCommand], block_size: Int)
+    (implicit p: Parameters): DecoupledIO[RoCCCommand] = 
+  {
     val lu = Module(new LoopUnroller(block_size))
     lu.io.in <> enq
     lu.io.out

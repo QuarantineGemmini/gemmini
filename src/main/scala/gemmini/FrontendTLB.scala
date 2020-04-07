@@ -100,7 +100,9 @@ class FrontendTLBIO(implicit p: Parameters) extends CoreBundle {
 }
 
 class FrontendTLB(nClients: Int, entries: Int, maxSize: Int, edge: TLEdgeOut)
-                 (implicit p: Parameters) extends CoreModule {
+  (implicit p: Parameters) extends CoreModule {
+  implicit val e = edge
+
   val io = IO(new Bundle {
     val clients = Flipped(Vec(nClients, new FrontendTLBIO))
     val ptw = new TLBPTWIO
@@ -132,6 +134,6 @@ class FrontendTLB(nClients: Int, entries: Int, maxSize: Int, edge: TLEdgeOut)
 
 object FrontendTLB {
   def apply(nClients: Int, entries: Int, maxSize: Int, edge: TLEdgeOut)
-    (p: Parameters)
-    = Module(new FrontendTLB(nClients, entries, maxSize))
+    (implicit p: Parameters)
+    = Module(new FrontendTLB(nClients, entries, maxSize, edge))
 }

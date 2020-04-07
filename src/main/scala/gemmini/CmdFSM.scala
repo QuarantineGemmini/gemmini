@@ -8,12 +8,13 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import chisel3.experimental._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 import GemminiISA._
 
-class CmdFsm[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit p: Parameters)
+class CmdFSM[T <: Data: Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit val p: Parameters)
   extends Module with HasCoreParameters {
   import config._
   //==========================================================================
@@ -28,10 +29,8 @@ class CmdFsm[T <: Data: Arithmetic]
   //==========================================================================
   // FSM states
   //==========================================================================
-  object CmdFsmState extends ChiselEnum {
-    val LISTENING, EXECUTING, ERROR = Value
-  }
-  val state = RegInit(CmdFsmState.LISTENING)
+  val (s_LISTENING :: s_EXECUTING :: s_ERROR :: Nil) = Enum(3)
+  val state = RegInit(s_LISTENING)
 
   //==========================================================================
   // local state registers
@@ -78,7 +77,7 @@ class CmdFsm[T <: Data: Arithmetic]
 
   // we block if we have accepted the COMPUTE_ALL command, but the tiler has
   // not started executing it yet.
-  io.busy := (state =/= CmdFsmState.EXECUTING)
+  io.busy := (state =/= s_EXECUTING)
 
   //==========================================================================
   // FSM 
@@ -92,19 +91,19 @@ class CmdFsm[T <: Data: Arithmetic]
     config_ex_valid := false.B
     bias_valid := false.B
     // And go back to listening for commands
-    state := CmdFsmState.LISTENING
+    state := s_LISTENING
   }
 
-  when (state === CmdFsmState.EXECUTING) {
-    // Pending EXECUTION ongoing
+  when (state === s_EXECUTING) {
+    // Pending s_EXECUTION ongoing
     // Wait for tiling/ execution to complete,
     // let any further commands queue up
     io.tiler.valid := true.B
     when (io.tiler.fire()) {
-      state := CmdFsmState.LISTENING
+      state := s_LISTENING
     }
-  }.elsewhen (state === CmdFsmState.ERROR) {
-    // In ERROR state - only update based on RESET commands
+  }.elsewhen (state === s_ERROR) {
+    // In s_ERROR state - only update based on RESET commands
     io.cmd.ready := true.B
     when (io.cmd.fire()) {
       val cmd = io.cmd.bits
@@ -113,7 +112,7 @@ class CmdFsm[T <: Data: Arithmetic]
         reset_and_listen()
       } // All other commands are ignored
     }
-  }.otherwise { // LISTENING State
+  }.otherwise { // s_LISTENING State
     io.cmd.ready := true.B
     when (io.cmd.fire()) {
       val cmd = io.cmd.bits
@@ -126,13 +125,13 @@ class CmdFsm[T <: Data: Arithmetic]
         // FIXME: check all valid
         io.tiler.valid := true.B
         when (io.tiler.fire()) {
-          state := CmdFsmState.LISTENING
+          state := s_LISTENING
         }.otherwise {
           io.cmd.ready := false.B
-          state := CmdFsmState.EXECUTING
+          state := s_EXECUTING
         }
       }
-      .elsewhen ((funct === CONFIG_CMD) && (rs1(1,0) == CONFIG_EX)) {
+      .elsewhen ((funct === CONFIG_CMD) && (rs1(1,0) === CONFIG_EX)) {
         // FIXME: check validity of all these settings
         //        [ssteffl]: TODO disallow output-stationary dataflow
         //                   (check validity of dataflow bit!)
@@ -173,7 +172,7 @@ class CmdFsm[T <: Data: Arithmetic]
       .otherwise {
         // Invalid command type
         // FIXME: error-cause setup
-        state := CmdFsmState.ERROR
+        state := s_ERROR
       }
     }
   }

@@ -31,8 +31,7 @@ class GemminiModule[T <: Data: Arithmetic](outer: Gemmini[T])
   import outer.spad
 
   // TLB
-  implicit val edge = outer.tlNode.edges.out.head
-  val tlb = Module(new FrontendTLB(2, 4, dma_maxbytes))
+  val tlb = FrontendTLB(2, 4, dma_maxbytes, outer.tlNode.edges.out.head)
   (tlb.io.clients zip outer.spad.module.io.tlb).foreach(t => t._1 <> t._2)
   tlb.io.exp.flush_skip := false.B
   tlb.io.exp.flush_retry := false.B
@@ -51,9 +50,9 @@ class GemminiModule[T <: Data: Arithmetic](outer: Gemmini[T])
   val rob = Module(new ROB(new RoCCCommand, rob_entries, local_addr_t, meshRows*tileRows, meshColumns*tileColumns))
 
   // Controllers
-  val load_controller = Module(new LoadController(outer.config, coreMaxAddrBits, local_addr_t))
-  val store_controller = Module(new StoreController(outer.config, coreMaxAddrBits, local_addr_t))
-  val ex_controller = Module(new ExecuteController(outer.config))
+  val load_controller = LoadController(outer.config)
+  val store_controller = StoreController(outer.config)
+  val ex_controller = ExecuteController(outer.config)
 
   load_controller.io.cmd.valid := rob.io.issue.ld.valid
   rob.io.issue.ld.ready := load_controller.io.cmd.ready

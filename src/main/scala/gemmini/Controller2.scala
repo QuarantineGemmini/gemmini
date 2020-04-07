@@ -6,6 +6,9 @@
 //============================================================================
 package gemmini
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
+
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
@@ -14,7 +17,7 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 
 class Gemmini2[T <: Data : Arithmetic]
-  (opcodes: OpcodeSet, config: GemminiArrayConfig[T])
+  (opcodes: OpcodeSet, val config: GemminiArrayConfig[T])
   (implicit p: Parameters)
   extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1) {
 
@@ -32,13 +35,14 @@ class GemminiModule2[T <: Data: Arithmetic]
   (outer: Gemmini2[T], config: GemminiArrayConfig[T])(implicit p: Parameters)
   extends LazyRoCCModuleImp(outer) with HasCoreParameters {
   import outer.config._
+  import outer.spad
 
   //=========================================================================
   // OoO Issuing
   //=========================================================================
   val raw_cmd = Queue(io.cmd)
 
-  val cmd_fsm = CmdFSM(outer.config))
+  val cmd_fsm = CmdFSM(outer.config)
   cmd_fsm.io.cmd <> raw_cmd
 
   val tiler = TilerController(outer.config)

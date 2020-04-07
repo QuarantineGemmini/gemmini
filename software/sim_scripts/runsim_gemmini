@@ -152,186 +152,186 @@ cat <<EOF
   runsim_gemmini -firesim lab3_orig_tiler
 
 EOF
-exit 1
+  exit 1
 }
 
 #=============================================================================
 # run spike, vcs, verilator
 #=============================================================================
 sw_dir() {
-echo "${SW_DIR}/gemmini-rocc-tests/build_${SW_MODE}/$1"
+  echo "${SW_DIR}/gemmini-rocc-tests/build_${SW_MODE}/$1"
 }
 
 runsim() {
-local workload_dir="$1"
-local workload_name="$2"
+  local workload_dir="$1"
+  local workload_name="$2"
 
-# initialize workload, workload args
-local workload_binary="${workload_dir}/${workload_name}-${SW_PLATFORM}"
-local workload_args="$WORKLOAD_ARGS"
-local binary_name="$(basename "$workload_binary")"
-if [ "$SW_PLATFORM" == "pk" ]; then
-  workload_args="$workload_binary $workload_args"
-  workload_binary=pk
-fi
+  # initialize workload, workload args
+  local workload_binary="${workload_dir}/${workload_name}-${SW_PLATFORM}"
+  local workload_args="$WORKLOAD_ARGS"
+  local binary_name="$(basename "$workload_binary")"
+  if [ "$SW_PLATFORM" == "pk" ]; then
+    workload_args="$workload_binary $workload_args"
+    workload_binary=pk
+  fi
 
-# initialize logs, performance counter
-local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
-local testname="${ts}__${SW_PLATFORM}__${SW_MODE}__${binary_name}"
-local starttime=$SECONDS
+  # initialize logs, performance counter
+  local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
+  local testname="${ts}__${SW_PLATFORM}__${SW_MODE}__${binary_name}"
+  local starttime=$SECONDS
 
-# initialize simulator options
-local extra_opts=""
-local debugger_opts=""
+  # initialize simulator options
+  local extra_opts=""
+  local debugger_opts=""
 
-info "$testname started"
-#------------------------
-case $HW_SIM in
-  spike)
-    # rundir/logging setup
-    cd "$SPIKE_DIR"
-    local logdir="$SPIKE_DIR/logs"
-    local logfile="${logdir}/${testname}.log"
-    if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
+  info "$testname started"
+  #------------------------
+  case $HW_SIM in
+    spike)
+      # rundir/logging setup
+      cd "$SPIKE_DIR"
+      local logdir="$SPIKE_DIR/logs"
+      local logfile="${logdir}/${testname}.log"
+      if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
-    # simulator, simulator options
-    BIN="spike"
-    local extra_opts="--extension=${SPIKE_EXT}"
-    if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts -l"; fi
-    if [ "$IS_DEBUGGER" -eq 1 ] ; then debugger_opts="$debugger_opts -d"; fi
-    ;;
-  vcs)
-    # rundir/logging setup
-    cd "$VCS_DIR"
-    local logdir="$VCS_DIR/logs"
-    local logfile="${logdir}/${testname}.log"
-    local vcdfile="${logdir}/${testname}.vcd"
-    local vpdfile="${logdir}/${testname}.vpd"
-    if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
+      # simulator, simulator options
+      BIN="spike"
+      local extra_opts="--extension=${SPIKE_EXT}"
+      if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts -l"; fi
+      if [ "$IS_DEBUGGER" -eq 1 ] ; then debugger_opts="$debugger_opts -d"; fi
+      ;;
+    vcs)
+      # rundir/logging setup
+      cd "$VCS_DIR"
+      local logdir="$VCS_DIR/logs"
+      local logfile="${logdir}/${testname}.log"
+      local vcdfile="${logdir}/${testname}.vcd"
+      local vpdfile="${logdir}/${testname}.vpd"
+      if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
-    # simulator, simulator options
-    BIN="$VCS_DIR/simv-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
-    if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
-    if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
-    extra_opts="$extra_opts +permissive"
-    extra_opts="$extra_opts +max-cycles=$MAX_CYCLES"
-    extra_opts="$extra_opts -fgp=multisocket,single_socket_mode"
+      # simulator, simulator options
+      BIN="$VCS_DIR/simv-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
+      if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
+      if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
+      extra_opts="$extra_opts +permissive"
+      extra_opts="$extra_opts +max-cycles=$MAX_CYCLES"
+      extra_opts="$extra_opts -fgp=multisocket,single_socket_mode"
 
-    # trace configuration
-    case $TRACE_TYPE in
-      none) ;;
-      vcd_full) extra_opts="$extra_opts +vcdfile=$vcdfile"
-                extra_opts="$extra_opts +dump-start=$TRACE_START" ;;
-      vpd_full) extra_opts="$extra_opts +vcdplusfile=$vpdfile"
-                extra_opts="$extra_opts +dump-start=$TRACE_START" ;;
-      *) err "vcs does not support $TRACE_TYPE tracing mode!"
-    esac
-    extra_opts="$extra_opts +permissive-off"
+      # trace configuration
+      case $TRACE_TYPE in
+        none) ;;
+        vcd_full) extra_opts="$extra_opts +vcdfile=$vcdfile"
+                  extra_opts="$extra_opts +dump-start=$TRACE_START" ;;
+        vpd_full) extra_opts="$extra_opts +vcdplusfile=$vpdfile"
+                  extra_opts="$extra_opts +dump-start=$TRACE_START" ;;
+        *) err "vcs does not support $TRACE_TYPE tracing mode!"
+      esac
+      extra_opts="$extra_opts +permissive-off"
 
-    if [ "$IS_DEBUGGER" -eq 1 ] ; then
-      debugger_opts="$debugger_opts +permissive -gui +permissive-off"
-    fi
-    ;;
-  verilator)
-    # rundir/logging setup
-    cd "$VERILATOR_DIR"
-    local logdir="$VERILATOR_DIR/logs"
-    local logfile="${logdir}/${testname}.log"
-    local vcdfile="${logdir}/${testname}.vcd"
-    local fstfile="${logdir}/${testname}.fst"
-    if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
+      if [ "$IS_DEBUGGER" -eq 1 ] ; then
+        debugger_opts="$debugger_opts +permissive -gui +permissive-off"
+      fi
+      ;;
+    verilator)
+      # rundir/logging setup
+      cd "$VERILATOR_DIR"
+      local logdir="$VERILATOR_DIR/logs"
+      local logfile="${logdir}/${testname}.log"
+      local vcdfile="${logdir}/${testname}.vcd"
+      local fstfile="${logdir}/${testname}.fst"
+      if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
-    # simulator, simulator options
-    BIN="$VERILATOR_DIR/simulator-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
-    if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
-    if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
-    extra_opts="$extra_opts -c "
-    extra_opts="$extra_opts +max-cycles=$MAX_CYCLES"
+      # simulator, simulator options
+      BIN="$VERILATOR_DIR/simulator-${HW_CONFIG_PROJECT}-${HW_CONFIG_FULL}"
+      if [ "$IS_DEBUG" -eq 1 ] ; then BIN="${BIN}-debug"; fi
+      if [ "$IS_VERBOSE" -eq 1 ] ; then extra_opts="$extra_opts +verbose"; fi
+      extra_opts="$extra_opts -c "
+      extra_opts="$extra_opts +max-cycles=$MAX_CYCLES"
 
-    # trace configuration
-    case $TRACE_TYPE in
-      none) ;;
-      vcd_full) extra_opts="$extra_opts -v $vcdfile -x $TRACE_START";;
-      fst_full) extra_opts="$extra_opts -v $fstfile -x $TRACE_START";;
-      *) err "verilator does not support $TRACE_TYPE tracing mode!"
-    esac
-    
-    if [ "$IS_DEBUGGER" -eq 1 ] ; then err "verilator has no debugger!"; fi
-    ;;
-  *)
-    err "workload $workload_name got invalid simulator: $HW_SIM"
-    ;;
-esac
-#-------------------------------------------------------------------------
-if [ "$IS_DEBUGGER" -eq 1 ] ; then
-  info "interactive debug started, no logfile generated!"
-  stty -echo
-  $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
-  stty echo
-elif [ "$IS_NOISY" -eq 1 ] ; then
-  set -x
-  $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
-    |& spike-dasm |& tee -a "$logfile"
-  stty echo
-  set +x
-else
-  $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
-    |& spike-dasm &>> "$logfile"
-  stty echo
-fi
-#-------------------------------------------------------------------------
-totaltime=$(( $SECONDS-$starttime ))
-if grep FAIL "$logfile" ; then 
-  ferr "$testname failed!" "$logfile"; 
-fi
-finfo "$testname succeeded in $totaltime seconds" "$logfile"
+      # trace configuration
+      case $TRACE_TYPE in
+        none) ;;
+        vcd_full) extra_opts="$extra_opts -v $vcdfile -x $TRACE_START";;
+        fst_full) extra_opts="$extra_opts -v $fstfile -x $TRACE_START";;
+        *) err "verilator does not support $TRACE_TYPE tracing mode!"
+      esac
+      
+      if [ "$IS_DEBUGGER" -eq 1 ] ; then err "verilator has no debugger!"; fi
+      ;;
+    *)
+      err "workload $workload_name got invalid simulator: $HW_SIM"
+      ;;
+  esac
+  #-------------------------------------------------------------------------
+  if [ "$IS_DEBUGGER" -eq 1 ] ; then
+    info "interactive debug started, no logfile generated!"
+    stty -echo
+    $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
+    stty echo
+  elif [ "$IS_NOISY" -eq 1 ] ; then
+    set -x
+    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
+      |& spike-dasm |& tee -a "$logfile"
+    stty echo
+    set +x
+  else
+    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
+      |& spike-dasm &>> "$logfile"
+    stty echo
+  fi
+  #-------------------------------------------------------------------------
+  totaltime=$(( $SECONDS-$starttime ))
+  if grep FAIL "$logfile" ; then 
+    ferr "$testname failed!" "$logfile"; 
+  fi
+  finfo "$testname succeeded in $totaltime seconds" "$logfile"
 }
 
 #=============================================================================
 # run firesim
 #=============================================================================
 firesim_cmds(){
-local runtime_config="$1"
-firesim launchrunfarm -c "$runtime_config" -a "$HWDB_CONFIG"
-firesim infrasetup    -c "$runtime_config" -a "$HWDB_CONFIG"
-firesim runworkload   -c "$runtime_config" -a "$HWDB_CONFIG" 
+  local runtime_config="$1"
+  firesim launchrunfarm -c "$runtime_config" -a "$HWDB_CONFIG"
+  firesim infrasetup    -c "$runtime_config" -a "$HWDB_CONFIG"
+  firesim runworkload   -c "$runtime_config" -a "$HWDB_CONFIG" 
 }
 
 runfiresim() {
-local workload_name="$1"
-local runtime_config="$2"
+  local workload_name="$1"
+  local runtime_config="$2"
 
-if [ "$HW_SIM" != "firesim" ]; then
-  err "$workload_name must be run with -firesim simulator!"
-fi
+  if [ "$HW_SIM" != "firesim" ]; then
+    err "$workload_name must be run with -firesim simulator!"
+  fi
 
-# initialize logs, performance counter
-local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
-local testname="${ts}__${workload_name}"
-local starttime=$SECONDS
+  # initialize logs, performance counter
+  local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
+  local testname="${ts}__${workload_name}"
+  local starttime=$SECONDS
 
-# rundir/logging setup
-cd "$FIRESIM_DIR"
-local logdir="$FIRESIM_DIR/logs"
-local logfile="${logdir}/${testname}.log"
-if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
+  # rundir/logging setup
+  cd "$FIRESIM_DIR"
+  local logdir="$FIRESIM_DIR/logs"
+  local logfile="${logdir}/${testname}.log"
+  if [ ! -d "$logdir" ]; then mkdir -p "$logdir" ; fi
 
-info "$testname started"
-#-------------------------------------------------------------------------
-if [ "$IS_NOISY" -eq 1 ] ; then
-  set -x
-  firesim_cmds "$runtime_config" |& tee -a "$logfile"
-  set +x
-else
-  firesim_cmds "$runtime_config" &>> "$logfile"
-fi
-stty echo
-#-------------------------------------------------------------------------
-totaltime=$(( $SECONDS-$starttime ))
-if grep FAIL "$logfile" ; then 
-  ferr "$testname failed!" "$logfile"; 
-fi
-finfo "$testname succeeded in $totaltime seconds" "$logfile"
+  info "$testname started"
+  #-------------------------------------------------------------------------
+  if [ "$IS_NOISY" -eq 1 ] ; then
+    set -x
+    firesim_cmds "$runtime_config" |& tee -a "$logfile"
+    set +x
+  else
+    firesim_cmds "$runtime_config" &>> "$logfile"
+  fi
+  stty echo
+  #-------------------------------------------------------------------------
+  totaltime=$(( $SECONDS-$starttime ))
+  if grep FAIL "$logfile" ; then 
+    ferr "$testname failed!" "$logfile"; 
+  fi
+  finfo "$testname succeeded in $totaltime seconds" "$logfile"
 }
 
 #=============================================================================
@@ -355,14 +355,8 @@ while [ $# -ne 0 ] ; do
     -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
     -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
     #-------------------------------------------------------------------------
-    -hw_lab3)
-      HW_CONFIG="hw_lab3"
-      HW_CONFIG_FULL="$HW_CONFIG_LAB3"
-      ;;
-    -hw_g2)
-      HW_CONFIG="hw_g2"
-      HW_CONFIG_FULL="$HW_CONFIG_G2"
-      ;;
+    -hw_lab3) HW_CONFIG="hw_lab3";  HW_CONFIG_FULL="$HW_CONFIG_LAB3" ;;
+    -hw_g2)   HW_CONFIG="hw_g2";    HW_CONFIG_FULL="$HW_CONFIG_G2"   ;;
     #-------------------------------------------------------------------------
     -noisy)       IS_NOISY=1    ;;
     -verbose)     IS_VERBOSE=1  ;;

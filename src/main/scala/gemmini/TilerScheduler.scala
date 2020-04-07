@@ -5,12 +5,13 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 import GemminiISA._
 import Util._
 
 class TilerScheduler[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit p: Parameters) 
+  (config: GemminiArrayConfig[T])(implicit val p: Parameters) 
   extends Module with HasCoreParameters {
   import config._
 
@@ -27,12 +28,12 @@ class TilerScheduler[T <: Data: Arithmetic]
     }
     val completed = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
     val busy = Output(Bool())
-  }
+  })
 
   //=========================================================================
   // ...
   //=========================================================================
-  val ldq :: stq :: exq :: Nil = Enum(3)
+  val ldq :: stq :: exq :: flq :: Nil = Enum(4)
   val q_t = ldq.cloneType
 
   val MAX_CMD_ID   = 1000000            // FOR DEBUGGING ONLY
@@ -59,10 +60,11 @@ class TilerScheduler[T <: Data: Arithmetic]
     val is_config = Bool()
 
     val cmd_id     = UInt(log2Up(MAX_CMD_ID).W)   // FOR DEBUGGING ONLY
-    val is_load    = Bool()    // true on config_load.  FOR DEBUGGING ONLY
-    val is_store   = Bool()    // true on config_store. FOR DEBUGGING ONLY
-    val is_ex      = Bool()    // true on config_ex.    FOR DEBUGGING ONLY
-    val is_preload = Bool()    // true on config_preload. FOR DEBUGGING ONLY
+    val is_load    = Bool()  // also true on config_load.  FOR DEBUGGING ONLY
+    val is_store   = Bool()  // also true on config_store. FOR DEBUGGING ONLY
+    val is_exec    = Bool()  // also true on config_ex.    FOR DEBUGGING ONLY
+    val is_preload = Bool()  // FOR DEBUGGING ONLY
+    val is_flush   = Bool()  // FOR DEBUGGING ONLY
 
     val op1 = new SPRange()
     val op2 = new SPRange()
@@ -72,13 +74,13 @@ class TilerScheduler[T <: Data: Arithmetic]
 
     val complete_on_issue = Bool()
 
-    val cmd = cmd_t.cloneType
+    val cmd = new RoCCCommand
 
-    val deps = Vec(nEntries, Bool())
+    val deps = Vec(ROB_ENTRIES, Bool())
     def ready(dummy: Int = 0): Bool = !deps.reduce(_ || _)
   }
 
-  val entries = Reg(Vec(nEntries, UDValid(new Entry)))
+  val entries = Reg(Vec(ROB_ENTRIES, UDValid(new Entry)))
 
   val empty = !entries.map(_.valid).reduce(_ || _)
   val full = entries.map(_.valid).reduce(_ && _)
@@ -86,21 +88,22 @@ class TilerScheduler[T <: Data: Arithmetic]
   io.busy := !empty
 
   // Read in commands to the buffer
-  io.alloc.ready := !full
+  io.cmd_in.ready := !full
 
-  val last_allocated = Reg(UInt(log2Up(nEntries).W))
+  val last_allocated = Reg(UInt(log2Up(ROB_ENTRIES).W))
 
   val new_entry = Wire(new Entry)
   new_entry := DontCare
-  val new_entry_id = MuxCase((nEntries-1).U, entries.zipWithIndex.map { 
+  val new_entry_id = MuxCase((ROB_ENTRIES-1).U, entries.zipWithIndex.map { 
                                         case (e, i) => !e.valid -> i.U })
-  val alloc_fire = io.alloc.fire()
+  val alloc_fire = io.cmd_in.fire()
 
-  when (io.alloc.fire()) {
+  when (io.cmd_in.fire()) {
     val spAddrBits = 32
-    val cmd = io.alloc.bits
+    val cmd = io.cmd_in.bits
     val funct = cmd.inst.funct
-    val funct_is_compute = funct === COMPUTE_AND_STAY_CMD || funct === COMPUTE_AND_FLIP_CMD
+    val funct_is_compute = funct === COMPUTE_AND_STAY_CMD || 
+                           funct === COMPUTE_AND_FLIP_CMD
     val funct_is_compute_preload = funct === COMPUTE_AND_FLIP_CMD
     val config_cmd_type = cmd.rs1(1,0) // TODO magic numbers
 
@@ -112,7 +115,7 @@ class TilerScheduler[T <: Data: Arithmetic]
     new_entry.op1.valid := funct === PRELOAD_CMD || funct_is_compute
     new_entry.op1.is_sp := cmd.rs1(31)
     new_entry.op1.start := cmd.rs1(29,0)
-    new_entry.op1.end   := cmd.rs1(29,0) + block_rows.U
+    new_entry.op1.end   := cmd.rs1(29,0) + DIM.U
 
     val mvin_mvout_rows = cmd.rs2(63, 48)
     val mvin_mvout_cols = cmd.rs2(47, 32)
@@ -121,36 +124,36 @@ class TilerScheduler[T <: Data: Arithmetic]
     new_entry.op2.is_sp := cmd.rs2(31)
     new_entry.op2.start := cmd.rs2(29,0)
     new_entry.op2.end   := cmd.rs2(29,0) + 
-                           Mux(funct_is_compute, block_rows.U, mvin_mvout_rows)
+                           Mux(funct_is_compute, DIM.U, mvin_mvout_rows)
 
     new_entry.dst.valid := funct === PRELOAD_CMD || funct === LOAD_CMD
     new_entry.dst.is_sp := cmd.rs2(31)
     new_entry.dst.start := cmd.rs2(29,0)
     new_entry.dst.end   := cmd.rs2(29,0) + 
-                           Mux(funct === PRELOAD_CMD, block_rows.U, 
+                           Mux(funct === PRELOAD_CMD, DIM.U, 
                             mvin_mvout_rows)
 
     val is_load    = (funct === LOAD_CMD) || 
                      (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
     val is_store   = (funct === STORE_CMD) || 
                      (funct === CONFIG_CMD && config_cmd_type === CONFIG_STORE)
-    val is_ex      = funct === PRELOAD_CMD ||
+    val is_exec    = funct === PRELOAD_CMD ||
                      funct_is_compute || 
                      (funct === CONFIG_CMD && config_cmd_type === CONFIG_EX)
     val is_preload = funct === PRELOAD_CMD
+    val is_flush   = funct === FLUSH_CMD
 
     // never allow this to wrap.FOR DEBUGGING ONLY
     assert(!cmd_id.inc())
     new_entry.cmd_id     := cmd_id.value // FOR DEBUGGING ONLY
     new_entry.is_load    := is_load      // FOR DEBUGGING ONLY
     new_entry.is_store   := is_store     // FOR DEBUGGING ONLY
-    new_entry.is_ex      := is_ex        // FOR DEBUGGING ONLY
+    new_entry.is_exec    := is_exec      // FOR DEBUGGING ONLY
     new_entry.is_preload := is_preload   // FOR DEBUGGING ONLY
+    new_entry.is_flush   := is_flush     // FOR DEBUGGING ONLY
     //======================================================================
     // debug
     //======================================================================
-    //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
-    //  new_entry.bits.cmd.rs2))
     when(new_entry.is_config) {
       when (new_entry.is_load) {
         printf(
@@ -165,7 +168,7 @@ class TilerScheduler[T <: Data: Arithmetic]
           new_entry.cmd.rs2)
       }
       .otherwise {
-        assert(new_entry.is_ex)
+        assert(new_entry.is_exec)
         printf(
           "cycle[%d], entry[%d], accept[%d], " +
           "config_ex[matmul_rshift=%x, acc_rshift=%x, relu6_lshift=%x]\n", 
@@ -187,6 +190,11 @@ class TilerScheduler[T <: Data: Arithmetic]
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
     }
+    .elsewhen (new_entry.is_flush) {
+      printf(
+        "cycle[%d], entry[%d], accept[%d], flush",
+        debug_cycle, new_entry_id, cmd_id.value)
+    }
     .otherwise {
       when (new_entry.is_preload) {
         printf(
@@ -195,7 +203,7 @@ class TilerScheduler[T <: Data: Arithmetic]
           cmd.rs1(31,0), cmd.rs2(31,0))
       }
       .otherwise {
-        assert(new_entry.is_ex)
+        assert(new_entry.is_exec)
         when (funct_is_compute_preload) {
           printf(
             "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, D=%x]\n",
@@ -213,9 +221,10 @@ class TilerScheduler[T <: Data: Arithmetic]
 
     //======================================================================
     new_entry.q := Mux1H(Seq(
-      is_load -> ldq,
+      is_load  -> ldq,
       is_store -> stq,
-      is_ex -> exq
+      is_exec  -> exq,
+      is_flush -> flq
     ))
 
     // We search for all entries which write to an address which we read from
@@ -267,16 +276,18 @@ class TilerScheduler[T <: Data: Arithmetic]
   }
 
   // Issue commands which are ready to be issued
-  Seq((ldq, io.issue.ld), 
-      (stq, io.issue.st), (exq, io.issue.ex)).foreach { case (q, io) =>
-    val issue_id = MuxCase((nEntries-1).U, entries.zipWithIndex.map { 
+  Seq((ldq, io.issue.load), 
+      (stq, io.issue.store), 
+      (exq, io.issue.exec), 
+      (flq, io.issue.flush)).foreach { case (q, io) =>
+    val issue_id = MuxCase((ROB_ENTRIES-1).U, entries.zipWithIndex.map { 
       case (e, i) => (e.valid && e.bits.ready() && 
                       !e.bits.issued && e.bits.q === q) -> i.U
     })
     io.valid := entries.map(e => e.valid && e.bits.ready() && !e.bits.issued 
                                  && e.bits.q === q).reduce(_ || _)
-    io.cmd := entries(issue_id).bits.cmd
-    io.rob_id := issue_id
+    io.bits.cmd := entries(issue_id).bits.cmd
+    io.bits.rob_id := issue_id
 
     // ssteff: added for debug
     when(io.fire()) {
@@ -301,7 +312,7 @@ class TilerScheduler[T <: Data: Arithmetic]
             debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
         }
         .otherwise {
-          assert(entries(issue_id).bits.is_ex)
+          assert(entries(issue_id).bits.is_exec)
           printf(
             "cycle[%d], entry[%d],  issue[%d], config_ex\n",
             debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
@@ -317,13 +328,18 @@ class TilerScheduler[T <: Data: Arithmetic]
           "cycle[%d], entry[%d],  issue[%d], mvout\n",
           debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
       }
+      .elsewhen (entries(issue_id).bits.is_flush) {
+        printf(
+          "cycle[%d], entry[%d], accept[%d], flush",
+          debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
+      }
       .elsewhen (entries(issue_id).bits.is_preload) {
         printf(
           "cycle[%d], entry[%d],  issue[%d], preload\n",
           debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
       }
       .otherwise {
-        assert(entries(issue_id).bits.is_ex)
+        assert(entries(issue_id).bits.is_exec)
         printf(
           "cycle[%d], entry[%d],  issue[%d], ex\n",
           debug_cycle, issue_id, entries(issue_id).bits.cmd_id)
@@ -355,7 +371,7 @@ class TilerScheduler[T <: Data: Arithmetic]
     //======================================================================
     //  entries(io.completed.bits).bits.cmd.rs2))
     when (entries(io.completed.bits).bits.is_config) {
-      assert(entries(io.completed.bits).bits.is_ex)
+      assert(entries(io.completed.bits).bits.is_exec)
       printf(
         "cycle[%d], entry[%d],  final[%d], config_ex\n",
         debug_cycle, io.completed.bits, 
@@ -373,6 +389,12 @@ class TilerScheduler[T <: Data: Arithmetic]
         debug_cycle, io.completed.bits, 
         entries(io.completed.bits).bits.cmd_id)
     }
+    .elsewhen (entries(io.completed.bits).bits.is_flush) {
+      printf(
+        "cycle[%d], entry[%d],  final[%d], flush\n",
+        debug_cycle, io.completed.bits, 
+        entries(io.completed.bits).bits.cmd_id)
+    }
     .elsewhen (entries(io.completed.bits).bits.is_preload) {
       printf(
         "cycle[%d], entry[%d],  final[%d], preload\n",
@@ -380,7 +402,7 @@ class TilerScheduler[T <: Data: Arithmetic]
         entries(io.completed.bits).bits.cmd_id)
     }
     .otherwise {
-      assert(entries(io.completed.bits).bits.is_ex)
+      assert(entries(io.completed.bits).bits.is_exec)
       printf(
         "cycle[%d], entry[%d],  final[%d], ex\n",
         debug_cycle, io.completed.bits, 
@@ -407,6 +429,7 @@ class TilerScheduler[T <: Data: Arithmetic]
   val util_ld_q = PopCount(entries.map(e => e.valid && e.bits.q === ldq))
   val util_st_q = PopCount(entries.map(e => e.valid && e.bits.q === stq))
   val util_ex_q = PopCount(entries.map(e => e.valid && e.bits.q === exq))
+  val util_fl_q = PopCount(entries.map(e => e.valid && e.bits.q === flq))
 
   val packed_deps = VecInit(entries.map(e => Cat(e.bits.deps)))
   dontTouch(packed_deps)
@@ -419,7 +442,11 @@ class TilerScheduler[T <: Data: Arithmetic]
 
   val cycles_since_issue = RegInit(0.U(32.W))
 
-  when (io.issue.ld.fire() || io.issue.st.fire() || io.issue.ex.fire() || !io.busy) {
+  when (io.issue.load.fire() || 
+        io.issue.store.fire() || 
+        io.issue.exec.fire() || 
+        io.issue.flush.fire() || 
+        !io.busy) {
     cycles_since_issue := 0.U
   }.elsewhen(io.busy) {
     cycles_since_issue := cycles_since_issue + 1.U
@@ -435,6 +462,7 @@ class TilerScheduler[T <: Data: Arithmetic]
     printf(p"Utilization ld q: $util_ld_q\n")
     printf(p"Utilization st q: $util_st_q\n")
     printf(p"Utilization ex q: $util_ex_q\n")
+    printf(p"Utilization fl q: $util_fl_q\n")
     printf(p"Packed deps: $packed_deps\n")
     printf(p"Last allocated: $last_allocated\n\n")
   }
