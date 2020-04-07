@@ -38,11 +38,11 @@ class GemminiModule2[T <: Data: Arithmetic]
   //=========================================================================
   val raw_cmd = Queue(io.cmd)
 
-  val parser = CmdParser(outer.config))
-  parser.io.in <> raw_cmd
+  val cmd_fsm = CmdFSM(outer.config))
+  cmd_fsm.io.cmd <> raw_cmd
 
   val tiler = TilerController(outer.config)
-  tiler.io.cmd_in <> parser.io.cmd_out
+  tiler.io.cmd_in <> cmd_fsm.io.tiler
 
   //=========================================================================
   // TLB (2-clients, 4 entries)
@@ -84,16 +84,9 @@ class GemminiModule2[T <: Data: Arithmetic]
   tlb.io.exp.flush_skip    := flush.io.flush_skip
 
   //=========================================================================
-  // Power Management Unit
-  //=========================================================================
-  //val pmu  = PowerManagement(outer.config)
-  //pmu.io.tiler_hint <> tiler.io.
-  //tiler.io.in <> cmd_parser.io.out
-
-  //=========================================================================
   // Busy Signal (used by RocketCore during fence insn)
   //=========================================================================
-  io.busy := raw_cmd.valid || cmd_parser.io.busy || tiler.io.busy ||
+  io.busy := raw_cmd.valid || cmd_fsm.io.busy || tiler.io.busy ||
              spad.module.io.busy ||
              load.io.busy || store.io.busy || exec.io.busy || flush.io.busy
 }

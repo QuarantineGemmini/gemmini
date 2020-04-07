@@ -10,14 +10,6 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile._
 import GemminiISA._
 
-
-class GemminiCmd(rob_entries: Int)(implicit p: Parameters) extends Bundle {
-  val cmd = new RoCCCommand
-  val rob_id = UInt(log2Up(rob_entries).W)
-  override def cloneType: this.type 
-    = (new GemminiCmd(rob_entries)).asInstanceOf[this.type]
-}
-
 class Gemmini[T <: Data : Arithmetic]
   (opcodes: OpcodeSet, val config: GemminiArrayConfig[T])
   (implicit p: Parameters)

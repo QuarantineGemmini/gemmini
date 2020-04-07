@@ -24,6 +24,7 @@ SPIKE_DIR="$CY_DIR/sims/spike"
 # general simulator options (vcs, verilator)
 HW_CONFIG_PROJECT=example
 HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+HW_CONFIG_G2=Gemmini2EE290Lab3RocketConfig
 
 # workloads (vcs, verilator)
 TEST_0=echo
@@ -54,7 +55,7 @@ SW_MODE="orig_tiler"
 SPIKE_EXT="gemmini"
 
 # HW_CONFIG: lab3
-HW_CONFIG="lab3"
+HW_CONFIG="hw_lab3"
 HW_CONFIG_FULL="$HW_CONFIG_LAB3"
 
 # HW_SIM: spike, vcs, verilator, firesim
@@ -123,7 +124,8 @@ cat <<EOF
   
   hw config, tracing, runtime verbosity (vcs, verilator)
   ------------------------------------------------------
-  -lab3             --> the $HW_CONFIG_LAB3 Chisel config (default)
+  -hw_lab3      --> the $HW_CONFIG_LAB3 Chisel config (default)
+  -hw_g2        --> the $HW_CONFIG_G2 Chisel config
   
   -trace_start <c>  --> start tracing at this cycle (defaults to 0)
   -vcd_full         --> capture all signals in design
@@ -338,68 +340,72 @@ finfo "$testname succeeded in $totaltime seconds" "$logfile"
 if [ $# -eq 0 ] ; then display_usage; fi
 
 while [ $# -ne 0 ] ; do
-arg=$1; shift;
-case $arg in
-  #-------------------------------------------------------------------------
-  -spike)     HW_SIM="spike"     ;;
-  -vcs)       HW_SIM="vcs"       ;;
-  -verilator) HW_SIM="verilator" ;;
-  -firesim)   HW_SIM="firesim"   ;;
-  #-------------------------------------------------------------------------
-  -bare)  SW_PLATFORM="baremetal" ;;
-  -pk)    SW_PLATFORM="pk" ;;
-  #-------------------------------------------------------------------------
-  -orig_tiler) SW_MODE="orig_tiler"; SPIKE_EXT="gemmini"  ;;
-  -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
-  -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
-  #-------------------------------------------------------------------------
-  -lab3)
-    HW_CONFIG="lab3"
-    HW_CONFIG_FULL="$HW_CONFIG_LAB3"
-    ;;
-  #-------------------------------------------------------------------------
-  -noisy)       IS_NOISY=1    ;;
-  -verbose)     IS_VERBOSE=1  ;;
-  -debug)       IS_DEBUG=1    ;;
-  -debugger)    IS_DEBUGGER=1 ;;
-  #------------------------------------------------------------------------
-  -trace_start) 
-    if [ $# -eq 0 ] ; then err "-trace_start requires arg. see usage"; fi
-    TRACE_START=$1; shift;
-    ;;
-  -vcd_full) TRACE_TYPE="vcd_full" ;;
-  -vpd_full) TRACE_TYPE="vpd_full" ;;
-  -fst_full) TRACE_TYPE="fst_full" ;;
-  -vcd_mesh)    
-    err "vcd_mesh not supported yet"
-    TRACE_TYPE="mesh" 
-    ;;
-  #------------------------------------------------------------------------
-  -max_cycles)
-    if [ $# -eq 0 ] ; then err "-max_cycles requires arg. see usage"; fi
-    MAX_CYCLES=$1; shift;
-    ;;
-  -args)
-    if [ $# -eq 0 ] ; then err "-args requires arg. see usage"; fi
-    WORKLOAD_ARGS=$1; shift;
-    ;;
-  -h|-help) display_usage ;;
-  #------------------------------------------------------------------------
-  0) runsim "$(sw_dir bareMetalC)"   "$TEST_0" ;;
-  1) runsim "$(sw_dir bareMetalC)"   "$TEST_1" ;;
-  2) runsim "$(sw_dir bareMetalC)"   "$TEST_2" ;;
-  3) runsim "$(sw_dir bareMetalC)"   "$TEST_3" ;;
-  4) runsim "$(sw_dir ee290)"        "$TEST_4" ;;
-  5) runsim "$(sw_dir ee290)"        "$TEST_5" ;;
-  6) runsim "$(sw_dir ee290)"        "$TEST_6" ;;
-  7) runsim "$(sw_dir ee290)"        "$TEST_7" ;;
-  8) runsim "$(sw_dir imagenet)"     "$TEST_8" ;;
-  9) runsim "$(sw_dir imagenet)"     "$TEST_9" ;;
-  #------------------------------------------------------------------------
-  lab3_orig_tiler) runfiresim "$arg" "$FSIM_RT_LAB3_ORIG" ;;
-  lab3_fsm_tiler)  runfiresim "$arg" "$FSIM_RT_LAB3_FSM" ;;
-  lab3_hw_tiler)   runfiresim "$arg" "$FSIM_RT_LAB3_HW" ;;
-  #------------------------------------------------------------------------
-  *) err "invalid option: $arg" ;;
-esac
+  arg=$1; shift;
+  case $arg in
+    #-------------------------------------------------------------------------
+    -spike)     HW_SIM="spike"     ;;
+    -vcs)       HW_SIM="vcs"       ;;
+    -verilator) HW_SIM="verilator" ;;
+    -firesim)   HW_SIM="firesim"   ;;
+    #-------------------------------------------------------------------------
+    -bare)  SW_PLATFORM="baremetal" ;;
+    -pk)    SW_PLATFORM="pk" ;;
+    #-------------------------------------------------------------------------
+    -orig_tiler) SW_MODE="orig_tiler"; SPIKE_EXT="gemmini"  ;;
+    -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
+    -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
+    #-------------------------------------------------------------------------
+    -hw_lab3)
+      HW_CONFIG="hw_lab3"
+      HW_CONFIG_FULL="$HW_CONFIG_LAB3"
+      ;;
+    -hw_g2)
+      HW_CONFIG="hw_g2"
+      HW_CONFIG_FULL="$HW_CONFIG_G2"
+      ;;
+    #-------------------------------------------------------------------------
+    -noisy)       IS_NOISY=1    ;;
+    -verbose)     IS_VERBOSE=1  ;;
+    -debug)       IS_DEBUG=1    ;;
+    -debugger)    IS_DEBUGGER=1 ;;
+    #-------------------------------------------------------------------------
+    -trace_start) 
+      if [ $# -eq 0 ] ; then err "-trace_start requires arg. see usage"; fi
+      TRACE_START=$1; shift;
+      ;;
+    -vcd_full) TRACE_TYPE="vcd_full" ;;
+    -vpd_full) TRACE_TYPE="vpd_full" ;;
+    -fst_full) TRACE_TYPE="fst_full" ;;
+    -vcd_mesh)    
+      err "vcd_mesh not supported yet"
+      TRACE_TYPE="mesh" 
+      ;;
+    #-------------------------------------------------------------------------
+    -max_cycles)
+      if [ $# -eq 0 ] ; then err "-max_cycles requires arg. see usage"; fi
+      MAX_CYCLES=$1; shift;
+      ;;
+    -args)
+      if [ $# -eq 0 ] ; then err "-args requires arg. see usage"; fi
+      WORKLOAD_ARGS=$1; shift;
+      ;;
+    -h|-help) display_usage ;;
+    #-------------------------------------------------------------------------
+    0) runsim "$(sw_dir bareMetalC)"   "$TEST_0" ;;
+    1) runsim "$(sw_dir bareMetalC)"   "$TEST_1" ;;
+    2) runsim "$(sw_dir bareMetalC)"   "$TEST_2" ;;
+    3) runsim "$(sw_dir bareMetalC)"   "$TEST_3" ;;
+    4) runsim "$(sw_dir ee290)"        "$TEST_4" ;;
+    5) runsim "$(sw_dir ee290)"        "$TEST_5" ;;
+    6) runsim "$(sw_dir ee290)"        "$TEST_6" ;;
+    7) runsim "$(sw_dir ee290)"        "$TEST_7" ;;
+    8) runsim "$(sw_dir imagenet)"     "$TEST_8" ;;
+    9) runsim "$(sw_dir imagenet)"     "$TEST_9" ;;
+    #-------------------------------------------------------------------------
+    lab3_orig_tiler) runfiresim "$arg" "$FSIM_RT_LAB3_ORIG" ;;
+    lab3_fsm_tiler)  runfiresim "$arg" "$FSIM_RT_LAB3_FSM" ;;
+    lab3_hw_tiler)   runfiresim "$arg" "$FSIM_RT_LAB3_HW" ;;
+    #-------------------------------------------------------------------------
+    *) err "invalid option: $arg" ;;
+  esac
 done

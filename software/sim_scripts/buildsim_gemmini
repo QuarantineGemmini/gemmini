@@ -21,6 +21,7 @@ HW_CONFIG_PROJECT=example
 
 # available hardware-configs (vcs,verilator)
 CONFIG_LAB3=GemminiEE290Lab3RocketConfig
+CONFIG_GEMMINI2=Gemmini2RocketConfig
 
 # firesim configs
 FSIM_BUILD_CONFIG="$FCFG_DIR/config_build.ini"
@@ -215,6 +216,7 @@ while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
     #------------------------------------------------------------------------
+    -hw_g2) HW_CONFIG="$CONFIG_GEMMINI2" ;;
     -hw_lab3) HW_CONFIG="$CONFIG_LAB3" ;;
     #------------------------------------------------------------------------
     -vl8_threads)

@@ -58,3 +58,10 @@ object WithEE290Lab3GemminiConfig {
 object WithEE290Lab3SmallSPGemminiConfig {
   def apply = WithGemminiConfig(GemminiEE290Configs.Lab3SmallSPConfig)
 }
+
+//============================================================================
+// EE290 Configs (gemmini2)
+//============================================================================
+object WithEE290Lab3Gemmini2Config {
+  def apply = WithGemminiConfig(GemminiEE290Configs.Lab3Config)
+}

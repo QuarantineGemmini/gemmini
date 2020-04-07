@@ -17,7 +17,7 @@ class TilerController[T <: Data: Arithmetic]
   // Interface
   //=========================================================================
   val io = IO(new Bundle {
-    val cmd_in = Flipped(Decoupled(new TilerCmd))
+    val cmd_in = Flipped(Decoupled(new TilerCmd(config)))
     val issue = new Bundle {
       val exec  = Decoupled(new GemminiCmd(ROB_ENTRIES))
       val load  = Decoupled(new GemminiCmd(ROB_ENTRIES))
@@ -31,7 +31,6 @@ class TilerController[T <: Data: Arithmetic]
       val flush = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
     }
     val busy = Output(Bool())
-    //val eventbus = ...
   }
 
   //=========================================================================

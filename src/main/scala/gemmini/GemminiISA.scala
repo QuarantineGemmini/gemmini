@@ -18,12 +18,13 @@ object GemminiISA {
   //==========================================================================
   // New Gemmini2 opcodes
   //==========================================================================
-  val ADDR_AB  = 10.U
-  val ADDR_CD  = 11.U
-  val SIZE0    = 12.U
-  val SIZE1    = 13.U
-  val RPT_BIAS = 14.U
-  val RESET    = 15.U
+  val COMPUTE_ALL = 4.U  // same as COMPUTE_AND_FLIP
+  val ADDR_AB     = 10.U
+  val ADDR_CD     = 11.U
+  val SIZE0       = 12.U
+  val SIZE1       = 13.U
+  val RPT_BIAS    = 14.U
+  val RESET       = 15.U
 
   //==========================================================================
   // config-opcode parameters (rs1[1:0] values))))

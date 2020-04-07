@@ -19,12 +19,26 @@ object WithGemminiConfig {
       case BuildRoCC => Seq((p: Parameters) => {
         implicit val q = p
         implicit val v = implicitly[ValName]
-        LazyModule(new Gemmini[T](OpcodeSet.custom3, config))
+        LazyModule(new Gemmini(OpcodeSet.custom3, config))
       })
       case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
     })
   }
 }
+
+object WithGemmini2Config {
+  def apply[T <: Data : Arithmetic](config: GemminiArrayConfig[T]) = {
+    new Config((site, here, up) => {
+      case BuildRoCC => Seq((p: Parameters) => {
+        implicit val q = p
+        implicit val v = implicitly[ValName]
+        LazyModule(new Gemmini2(OpcodeSet.custom3, config))
+      })
+      case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
+    })
+  }
+}
+
 
 //===========================================================================
 // Default Gemmini Configuration
@@ -57,7 +71,7 @@ object GemminiConfigs {
 }
 
 object WithDefaultGemminiConfig {
-  def apply = WithGemminiConfig(GemminiConfigs.defaultConfig)
+  def apply() = WithGemminiConfig(GemminiConfigs.defaultConfig)
 }
 
 //===========================================================================
