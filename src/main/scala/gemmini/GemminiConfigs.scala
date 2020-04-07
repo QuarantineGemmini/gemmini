@@ -44,7 +44,7 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
 
   def DIM             = BLOCK_ROWS
   def LOG2_DIM        = log2Up(DIM)
-  def LOG2_DIM_COUNT  = log2Up(DIM) + 1
+  def LOG2_DIM_COUNT  = log2Up(DIM + 1)
 
   //==========================================================================
   // gemmini1 hardware-specific global constants
@@ -85,14 +85,13 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   //==========================================================================
 
   def ITYPE_BITS       = inputType.getWidth
-  def LOG2_ITYPE_BITS  = log2Up(ITYPE_BITS)
   def ITYPE_BYTES      = (inputType.getWidth+7) / 8
-  def LOG2_ITYPE_BYTES = log2Up(ITYPE_BYTES)
+  def LOG2_ITYPE_BYTES = if(ITYPE_BYTES <= 1) 0 else log2Up(ITYPE_BYTES)
 
   def OTYPE_BITS       = accType.getWidth
   def LOG2_OTYPE_BITS  = log2Up(OTYPE_BITS)
   def OTYPE_BYTES      = (accType.getWidth+7) / 8
-  def LOG2_OTYPE_BYTES = log2Up(OTYPE_BYTES)
+  def LOG2_OTYPE_BYTES = if(OTYPE_BYTES <= 1) 0 else log2Up(OTYPE_BYTES)
 
   def SP_BANKS        = sp_banks
   def SP_BANK_ROWS    = sp_bank_entries
@@ -104,7 +103,7 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
 
-  def MNK_BYTES                   = Int.MaxValue / DIM 
+  def MNK_BYTES                   = Int.MaxValue / DIM  // TODO: upper bound?
   def LOG2_MNK_BYTES              = log2Up(MNK_BYTES)
   def MNK_BYTES_PER_TILE_ROW      = MNK_BYTES * DIM
   def LOG2_MNK_BYTES_PER_TILE_ROW = log2Up(MNK_BYTES_PER_TILE_ROW)

@@ -115,26 +115,26 @@ class TilerFSM[T <: Data : Arithmetic]
   val (gbl_tile_row, gbl_tile_row_n) = regwire(LOG2_TILE_IDX)
   val (gbl_tile_col, gbl_tile_col_n) = regwire(LOG2_TILE_IDX)
   // how many elements (tall,wide) is this tile
-  val (gbl_item_rows, gbl_item_rows_n) = regwire(LOG2_DIM_COUNT)
-  val (gbl_item_cols, gbl_item_cols_n) = regwire(LOG2_DIM_COUNT)
+  val gbl_item_rows = Reg(UInt(LOG2_DIM_COUNT.W))
+  val gbl_item_cols = Reg(UInt(LOG2_DIM_COUNT.W))
   // which tmp-slot in sp being used now, and which is the alternate
-  val (gbl_B_cur_sp_row_addr, gbl_B_cur_sp_row_addr_n) = regwire(LOG2_SP_ROWS)
-  val (gbl_B_alt_sp_row_addr, gbl_B_alt_sp_row_addr_n) = regwire(LOG2_SP_ROWS)
+  val gbl_B_cur_sp_row_addr = Reg(UInt(LOG2_SP_ROWS.W))
+  val gbl_B_alt_sp_row_addr = Reg(UInt(LOG2_SP_ROWS.W))
 
   //------------------------------------------------------------------------
   // global state that is reset for each output-group
   //------------------------------------------------------------------------
   // where to put next C/D-tile in acc
-  val (gbl_CD_acc_row_addr, gbl_CD_acc_row_addr_n) = regwire(LOG2_ACC_ROWS)
+  val gbl_CD_acc_row_addr = Reg(UInt(LOG2_ACC_ROWS.W))
 
   //------------------------------------------------------------------------
   // loop1-local state
   //------------------------------------------------------------------------
   // (ul-x,ul-y,br-x,br-y) tile x in output-group
-  val (loop1_tile_col_start, loop1_tile_col_start_n) = regwire(LOG2_TILE_IDX)
-  val (loop1_tile_col_end,   loop1_tile_col_end_n)   = regwire(LOG2_TILE_IDX)
-  val (loop1_tile_row_start, loop1_tile_row_start_n) = regwire(LOG2_TILE_IDX)
-  val (loop1_tile_row_end,   loop1_tile_row_end_n)   = regwire(LOG2_TILE_IDX)
+  val loop1_tile_col_start = Reg(UInt(LOG2_TILE_IDX.W))
+  val loop1_tile_col_end   = Reg(UInt(LOG2_TILE_IDX.W))
+  val loop1_tile_row_start = Reg(UInt(LOG2_TILE_IDX.W))
+  val loop1_tile_row_end   = Reg(UInt(LOG2_TILE_IDX.W))
   // initialized from global-constants
   val loop1_A_mem_addr = Reg(UInt(xLen.W))
   val loop1_B_mem_addr = Reg(UInt(xLen.W))
@@ -147,7 +147,7 @@ class TilerFSM[T <: Data : Arithmetic]
   // which tile-column in A we are in
   val (loop2_k_tile_col, loop2_k_tile_col_n) = regwire(LOG2_TILE_IDX)
   // how many elems in k-dim is this tile
-  val (loop2_k_item_dims, loop2_k_item_dims_n) = regwire(LOG2_DIM_COUNT)
+  val loop2_k_item_dims = Reg(UInt(LOG2_DIM_COUNT.W))
   // initialized from loop1 values
   val loop2_A_mem_addr = Reg(UInt(xLen.W))
   val loop2_B_mem_addr = Reg(UInt(xLen.W))
@@ -167,7 +167,7 @@ class TilerFSM[T <: Data : Arithmetic]
   // loop4-local state
   //------------------------------------------------------------------------
   // where in the sp is the next A tile
-  val (loop4_A_sp_row_addr, loop4_A_sp_row_addr_n) = regwire(LOG2_SP_ROWS)
+  val loop4_A_sp_row_addr = Reg(UInt(LOG2_SP_ROWS.W))
   // initialized from loop3 values
   val loop4_A_mem_addr = Reg(UInt(xLen.W))
   val loop4_B_mem_addr = Reg(UInt(xLen.W))
@@ -180,12 +180,12 @@ class TilerFSM[T <: Data : Arithmetic]
 
   // continuous assigns (only added in the switch-cases that call this!)
   def update_tile_dims(dummy: Int = 0) = {
-    gbl_item_rows_n     := Mux(gbl_tile_row_n === g_TILE_ROW_END, 
-                               g_LAST_M_ITEMS, DIM.U)
-    gbl_item_cols_n     := Mux(gbl_tile_col_n === g_TILE_COL_END, 
-                               g_LAST_N_ITEMS, DIM.U)
-    loop2_k_item_dims_n := Mux(loop2_k_tile_col_n === g_K_TILE_COL_END,
-                               g_LAST_K_ITEMS, DIM.U)
+    gbl_item_rows     := Mux(gbl_tile_row_n === g_TILE_ROW_END, 
+                             g_LAST_M_ITEMS, DIM.U)
+    gbl_item_cols     := Mux(gbl_tile_col_n === g_TILE_COL_END, 
+                             g_LAST_N_ITEMS, DIM.U)
+    loop2_k_item_dims := Mux(loop2_k_tile_col_n === g_K_TILE_COL_END,
+                             g_LAST_K_ITEMS, DIM.U)
   }
 
   def MIN(a: UInt, b: UInt) = Mux(a < b, a, b)
@@ -263,23 +263,23 @@ class TilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_RESET_OUTPUT_GROUP) {
       // define mutable gbl state, persist across all ogs
-      gbl_tile_row_n          := 0.U
-      gbl_tile_col_n          := 0.U
-      gbl_B_cur_sp_row_addr_n := GBL_B_SP_ROW_ADDR_1.U
-      gbl_B_alt_sp_row_addr_n := GBL_B_SP_ROW_ADDR_2.U
+      gbl_tile_row_n        := 0.U
+      gbl_tile_col_n        := 0.U
+      gbl_B_cur_sp_row_addr := GBL_B_SP_ROW_ADDR_1.U
+      gbl_B_alt_sp_row_addr := GBL_B_SP_ROW_ADDR_2.U
       update_tile_dims()
 
       // define mutable gbl state, reset after each og
-      gbl_CD_acc_row_addr_n := 0.U
+      gbl_CD_acc_row_addr := 0.U
 
       // update the start/end tiles for this output-group (inclusive)
       // NOTE: duplicated with next_output_group!!
-      loop1_tile_col_start_n := gbl_tile_col_n
-      loop1_tile_col_end_n   := MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
-                                    g_TILE_COL_END)
-      loop1_tile_row_start_n := gbl_tile_row_n
-      loop1_tile_row_end_n   := MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
-                                    g_TILE_ROW_END)
+      loop1_tile_col_start := gbl_tile_col_n
+      loop1_tile_col_end   := MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
+                                  g_TILE_COL_END)
+      loop1_tile_row_start := gbl_tile_row_n
+      loop1_tile_row_end   := MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
+                                  g_TILE_ROW_END)
 
       // derived pointers to matrices in memory for this og
       loop1_A_mem_addr := g_A_MEM_ADDR
@@ -292,10 +292,10 @@ class TilerFSM[T <: Data : Arithmetic]
     }
     //=======================================================================
     is (s_RESET_A_TILE_SUBCOL) {
-      loop2_k_tile_col_n    := 0.U
-      gbl_tile_row_n        := loop1_tile_row_start
-      gbl_tile_col_n        := loop1_tile_col_start
-      gbl_CD_acc_row_addr_n := 0.U
+      loop2_k_tile_col_n  := 0.U
+      gbl_tile_row_n      := loop1_tile_row_start
+      gbl_tile_col_n      := loop1_tile_col_start
+      gbl_CD_acc_row_addr := 0.U
       update_tile_dims()
 
       loop2_A_mem_addr := loop1_A_mem_addr
@@ -383,7 +383,7 @@ class TilerFSM[T <: Data : Arithmetic]
       loop4_C_mem_addr := loop3_C_mem_addr
       loop4_D_mem_addr := loop3_D_mem_addr
 
-      loop4_A_sp_row_addr_n := 0.U
+      loop4_A_sp_row_addr := 0.U
 
       // update next state
       state := s_MAYBE_MOVE_A_TILE_INTO_SP
@@ -548,8 +548,8 @@ class TilerFSM[T <: Data : Arithmetic]
       }
       .otherwise {
         // modify global state
-        gbl_tile_row_n        := gbl_tile_row        + 1.U
-        gbl_CD_acc_row_addr_n := gbl_CD_acc_row_addr + BYTE_ROWS_PER_TILE.U
+        gbl_tile_row_n      := gbl_tile_row        + 1.U
+        gbl_CD_acc_row_addr := gbl_CD_acc_row_addr + BYTE_ROWS_PER_TILE.U
         update_tile_dims()
 
         // modify loop4-local state
@@ -560,7 +560,7 @@ class TilerFSM[T <: Data : Arithmetic]
                                 Mux(g_HAS_BIAS && !g_REPEATING_BIAS,
                                     g_D_BYTES_PER_TILE_ROW, 0.U)
 
-        loop4_A_sp_row_addr_n := loop4_A_sp_row_addr + BYTE_ROWS_PER_TILE.U
+        loop4_A_sp_row_addr := loop4_A_sp_row_addr + BYTE_ROWS_PER_TILE.U
 
         // update next state
         state := s_MAYBE_MOVE_A_TILE_INTO_SP
@@ -574,13 +574,13 @@ class TilerFSM[T <: Data : Arithmetic]
       }
       .otherwise {
         // modify global state
-        gbl_tile_row_n        := loop1_tile_row_start
-        gbl_tile_col_n        := gbl_tile_col        + 1.U
-        gbl_CD_acc_row_addr_n := gbl_CD_acc_row_addr + BYTE_ROWS_PER_TILE.U
+        gbl_tile_row_n      := loop1_tile_row_start
+        gbl_tile_col_n      := gbl_tile_col        + 1.U
+        gbl_CD_acc_row_addr := gbl_CD_acc_row_addr + BYTE_ROWS_PER_TILE.U
         update_tile_dims()
 
-        gbl_B_cur_sp_row_addr_n := gbl_B_alt_sp_row_addr
-        gbl_B_alt_sp_row_addr_n := gbl_B_cur_sp_row_addr
+        gbl_B_cur_sp_row_addr := gbl_B_alt_sp_row_addr
+        gbl_B_alt_sp_row_addr := gbl_B_cur_sp_row_addr
 
         // modify loop3-local state
         loop3_A_mem_addr := loop3_A_mem_addr + 0.U
@@ -598,10 +598,10 @@ class TilerFSM[T <: Data : Arithmetic]
         state := s_NEXT_OUTPUT_GROUP
       }
       .otherwise {
-        loop2_k_tile_col_n    := loop2_k_tile_col + 1.U
-        gbl_tile_row_n        := loop1_tile_row_start
-        gbl_tile_col_n        := loop1_tile_col_start
-        gbl_CD_acc_row_addr_n := 0.U
+        loop2_k_tile_col_n  := loop2_k_tile_col + 1.U
+        gbl_tile_row_n      := loop1_tile_row_start
+        gbl_tile_col_n      := loop1_tile_col_start
+        gbl_CD_acc_row_addr := 0.U
         update_tile_dims()
 
         loop2_A_mem_addr := loop2_A_mem_addr + I_TILE_BYTE_WIDTH.U
@@ -610,8 +610,8 @@ class TilerFSM[T <: Data : Arithmetic]
         loop2_D_mem_addr := loop2_D_mem_addr + 0.U
 
         // swap current/alternate B-tile scratchpad addrs
-        gbl_B_cur_sp_row_addr_n := gbl_B_alt_sp_row_addr
-        gbl_B_alt_sp_row_addr_n := gbl_B_cur_sp_row_addr
+        gbl_B_cur_sp_row_addr := gbl_B_alt_sp_row_addr
+        gbl_B_alt_sp_row_addr := gbl_B_cur_sp_row_addr
 
         // update next state
         state := s_MOVE_FIRST_B_TILE_INTO_SP
@@ -642,26 +642,33 @@ class TilerFSM[T <: Data : Arithmetic]
         }
    
         // reset global state that resets for each new output-group
-        gbl_CD_acc_row_addr_n := 0.U
+        gbl_CD_acc_row_addr := 0.U
 
         // update the start/end tiles for this output-group (inclusive)
-        loop1_tile_col_start_n := gbl_tile_col_n
-        loop1_tile_col_end_n := MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
+        val l_tile_col_start  = gbl_tile_col_n
+        val l_tile_col_end    = MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
                                     g_TILE_COL_END)
-        loop1_tile_row_start_n := gbl_tile_row_n
-        loop1_tile_row_end_n := MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
+        val l_tile_row_start  = gbl_tile_row_n
+        val l_tile_row_end    = MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
                                     g_TILE_ROW_END)
+
+        loop1_tile_col_start := l_tile_col_start
+        loop1_tile_col_end   := l_tile_col_end
+                                
+        loop1_tile_row_start := l_tile_row_start
+        loop1_tile_row_end   := l_tile_row_end
+                                
          
         // update all derived pointers to matrices in memory
         when(l_did_row_incr) {
-          loop1_A_mem_addr := g_A_MEM_ADDR + (loop1_tile_row_start_n *
+          loop1_A_mem_addr := g_A_MEM_ADDR + (l_tile_row_start *
                                               g_A_BYTES_PER_TILE_ROW)
           loop1_B_mem_addr := g_B_MEM_ADDR
-          loop1_C_mem_addr := g_C_MEM_ADDR + (loop1_tile_row_start_n *
+          loop1_C_mem_addr := g_C_MEM_ADDR + (l_tile_row_start *
                                               g_C_BYTES_PER_TILE_ROW)
           loop1_D_mem_addr := Mux(!g_HAS_BIAS, 0.U,
                                 Mux(g_REPEATING_BIAS, g_D_MEM_ADDR,
-                                 (g_D_MEM_ADDR + (loop1_tile_row_start_n *
+                                 (g_D_MEM_ADDR + (l_tile_row_start *
                                                   g_D_BYTES_PER_TILE_ROW))))
         }
         .elsewhen (l_did_col_incr) {

@@ -182,14 +182,14 @@ class TilerScheduler[T <: Data: Arithmetic]
         "cycle[%d], entry[%d], accept[%d], " +
         "mvin[dram=%x, spad=%x, rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
+        cmd.rs2, cmd.rs1(31,0), cmd.rs1(63,48), cmd.rs1(47,32))
     }
     .elsewhen (new_entry.is_store) {
       printf(
         "cycle[%d], entry[%d], accept[%d], " + 
         "mvout[dram=%x, spad=%x, rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
+        cmd.rs2, cmd.rs1(31,0), cmd.rs1(63,48), cmd.rs1(47,32))
     }
     .elsewhen (new_entry.is_flush) {
       printf(
