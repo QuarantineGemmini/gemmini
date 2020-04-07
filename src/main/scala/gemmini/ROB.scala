@@ -2,43 +2,29 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
-
-import freechips.rocketchip.tile.RoCCCommand
-
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 import GemminiISA._
 import Util._
 
-import midas.targetutils
-
-// TODO unify this class with GemminiCmdWithDeps
-class ROBIssue[T <: Data](cmd_t: T, nEntries: Int) extends Bundle {
-  val valid = Output(Bool())
-  val ready = Input(Bool())
-  val cmd = Output(cmd_t.cloneType)
-  val rob_id = Output(UInt(log2Up(nEntries).W))
-
-  def fire(dummy: Int=0) = valid && ready
-
-  override def cloneType: this.type 
-    = new ROBIssue(cmd_t, nEntries).asInstanceOf[this.type]
-}
-
-class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows: Int, block_cols: Int) extends Module {
+class ROB(nEntries: Int,  block_rows: Int, block_cols: Int)
+  (implicit p: Parameters) extends Module 
+{
   val io = IO(new Bundle {
-    val alloc = Flipped(Decoupled(cmd_t.cloneType))
-
-    val completed = Flipped(Valid(UInt(log2Up(nEntries).W)))
-
+    val alloc = Flipped(Decoupled(new RoCCCommand))
     val issue = new Bundle {
-      val ld = new ROBIssue(cmd_t, nEntries)
-      val st = new ROBIssue(cmd_t, nEntries)
-      val ex = new ROBIssue(cmd_t, nEntries)
+      val ld = Decoupled(new GemminiCmd(nEntries))
+      val st = Decoupled(new GemminiCmd(nEntries))
+      val ex = Decoupled(new GemminiCmd(nEntries))
     }
-
+    val completed = Flipped(Decoupled(UInt(log2Up(nEntries).W)))
     val busy = Output(Bool())
   })
 
-  val ldq :: stq :: exq :: Nil = Enum(3)
+  // always ready to retire completed commands
+  io.completed.ready := true.B
+
+  val (ldq :: stq :: exq :: Nil) = Enum(3)
   val q_t = ldq.cloneType
 
   val MAX_CMD_ID   = 1000000            // FOR DEBUGGING ONLY
@@ -78,7 +64,7 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
     val complete_on_issue = Bool()
 
-    val cmd = cmd_t.cloneType
+    val cmd = new RoCCCommand
 
     val deps = Vec(nEntries, Bool())
     def ready(dummy: Int = 0): Bool = !deps.reduce(_ || _)
@@ -103,10 +89,10 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
   val alloc_fire = io.alloc.fire()
 
   when (io.alloc.fire()) {
-    val spAddrBits = 32
     val cmd = io.alloc.bits
     val funct = cmd.inst.funct
-    val funct_is_compute = funct === COMPUTE_AND_STAY_CMD || funct === COMPUTE_AND_FLIP_CMD
+    val funct_is_compute = (funct === COMPUTE_AND_STAY_CMD || 
+                            funct === COMPUTE_AND_FLIP_CMD)
     val funct_is_compute_preload = funct === COMPUTE_AND_FLIP_CMD
     val config_cmd_type = cmd.rs1(1,0) // TODO magic numbers
 
@@ -155,8 +141,6 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     //======================================================================
     // debug
     //======================================================================
-    //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
-    //  new_entry.bits.cmd.rs2))
     when(new_entry.is_config) {
       when (new_entry.is_load) {
         printf(
@@ -173,44 +157,45 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
       .otherwise {
         assert(new_entry.is_ex)
         printf(
-          "cycle[%d], entry[%d], accept[%d], config_ex[matmul_rshift=%x, acc_rshift=%x, relu6_lshift=%x]\n", 
+          "cycle[%d], entry[%d], accept[%d], " +
+          "config_ex[matmul_rshift=%x, acc_rshift=%x, relu6_lshift=%x]\n", 
           debug_cycle, new_entry_id, cmd_id.value, 
           cmd.rs1(63,32), cmd.rs2(31,0), cmd.rs2(63,32))
       }
     }
     .elsewhen (new_entry.is_load) {
       printf(
-        "cycle[%d], entry[%d], accept[%d], mvin[dram=%x, spad=%x, rows=%x, cols=%x]\n",
+        "cycle[%d], entry[%d], accept[%d], " +
+        "mvin[dram=%x, spad=%x, rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
     }
     .elsewhen (new_entry.is_store) {
       printf(
-        "cycle[%d], entry[%d], accept[%d], mvout[dram=%x, spad=%x, rows=%x, cols=%x]\n",
+        "cycle[%d], entry[%d], accept[%d], " +
+        "mvout[dram=%x, spad=%x, rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
     }
+    .elsewhen (new_entry.is_preload) {
+      printf(
+        "cycle[%d], entry[%d], accept[%d], preload[B=%x, C=%x]\n",
+        debug_cycle, new_entry_id, cmd_id.value, 
+        cmd.rs1(31,0), cmd.rs2(31,0))
+    }
     .otherwise {
-      when (new_entry.is_preload) {
+      assert(new_entry.is_ex)
+      when (funct_is_compute_preload) {
         printf(
-          "cycle[%d], entry[%d], accept[%d], preload[B=%x, C=%x]\n",
+          "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, D=%x]\n",
           debug_cycle, new_entry_id, cmd_id.value, 
           cmd.rs1(31,0), cmd.rs2(31,0))
       }
       .otherwise {
-        assert(new_entry.is_ex)
-        when (funct_is_compute_preload) {
-          printf(
-            "cycle[%d], entry[%d], accept[%d], ex.pre[A=%x, D=%x]\n",
-            debug_cycle, new_entry_id, cmd_id.value, 
-            cmd.rs1(31,0), cmd.rs2(31,0))
-        }
-        .otherwise {
-          printf(
-            "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, D=%x]\n",
-            debug_cycle, new_entry_id, cmd_id.value, 
-            cmd.rs1(31,0), cmd.rs2(31,0))
-        }
+        printf(
+          "cycle[%d], entry[%d], accept[%d], ex.acc[A=%x, D=%x]\n",
+          debug_cycle, new_entry_id, cmd_id.value, 
+          cmd.rs1(31,0), cmd.rs2(31,0))
       }
     }
 
@@ -277,8 +262,8 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
 
     io.valid := entries.map(e => e.valid && e.bits.ready() && 
                                 !e.bits.issued && e.bits.q === q).reduce(_ || _)
-    io.cmd := entries(issue_id).bits.cmd
-    io.rob_id := issue_id
+    io.bits.cmd := entries(issue_id).bits.cmd
+    io.bits.rob_id := issue_id
 
     // ssteff: added for debug
     when(io.fire()) {
@@ -354,8 +339,6 @@ class ROB(cmd_t: RoCCCommand, nEntries: Int, local_addr_t: LocalAddr, block_rows
     //======================================================================
     // debug
     //======================================================================
-    //printf(midas.targetutils.SynthesizePrintf("ISSUE config_mvin: stride=%x\n", 
-    //  entries(io.completed.bits).bits.cmd.rs2))
     when (entries(io.completed.bits).bits.is_config) {
       assert(entries(io.completed.bits).bits.is_ex)
       printf(

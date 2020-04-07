@@ -25,15 +25,18 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
 
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
-
     val srams = new Bundle {
-      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width))
-      val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, sp_width, (sp_width / (aligned_to * 8)) max 1))
+      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, 
+                                                    sp_width))
+      val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, 
+                            sp_width, (sp_width / (aligned_to * 8)) max 1))
     }
-
     val acc = new Bundle {
-      val read = Vec(acc_banks, new AccumulatorReadIO(acc_bank_entries, log2Up(accType.getWidth), Vec(meshColumns, Vec(tileColumns, inputType))))
-      val write = Vec(acc_banks, new AccumulatorWriteIO(acc_bank_entries, Vec(meshColumns, Vec(tileColumns, accType))))
+      val read = Vec(acc_banks, new AccumulatorReadIO(acc_bank_entries, 
+                          log2Up(accType.getWidth), 
+                          Vec(meshColumns, Vec(tileColumns, inputType))))
+      val write = Vec(acc_banks, new AccumulatorWriteIO(acc_bank_entries, 
+                          Vec(meshColumns, Vec(tileColumns, accType))))
     }
 
     val completed = Valid(UInt(log2Up(rob_entries).W))
