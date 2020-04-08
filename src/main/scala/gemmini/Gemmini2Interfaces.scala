@@ -7,6 +7,7 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.rocket._
 import freechips.rocketchip.tile._
 import GemminiISA._
 
@@ -38,6 +39,7 @@ class TilerCmd[T <: Data: Arithmetic]
   val relu6_lshift   = UInt(log2Up(accType.getWidth).W)
   val activation     = UInt(2.W)
   val repeating_bias = Bool()
+  val status         = new MStatus
 
   override def cloneType: this.type =
     (new TilerCmd(config)).asInstanceOf[this.type]

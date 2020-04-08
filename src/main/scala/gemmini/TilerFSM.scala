@@ -32,8 +32,10 @@ class TilerFSM[T <: Data : Arithmetic]
   val busy  = io.busy
 
   // initialize ports/pins
-  sched.bits(0) := DontCare
-  sched.bits(1) := DontCare
+  for (i <- 0 to 1) {
+    sched.bits(i) := DontCare
+    sched.bits(i).status := io.cmd_in.bits.status
+  }
   sched.push := 0.U
   io.cmd_in.ready := false.B
   busy := true.B

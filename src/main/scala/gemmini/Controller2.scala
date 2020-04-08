@@ -38,17 +38,6 @@ class GemminiModule2[T <: Data: Arithmetic]
   import outer.spad
 
   //=========================================================================
-  // OoO Issuing
-  //=========================================================================
-  val raw_cmd = Queue(io.cmd)
-
-  val cmd_fsm = CmdFSM(outer.config)
-  cmd_fsm.io.cmd <> raw_cmd
-
-  val tiler = TilerController(outer.config)
-  tiler.io.cmd_in <> cmd_fsm.io.tiler
-
-  //=========================================================================
   // TLB (2-clients, 4 entries)
   //=========================================================================
   val tlb = FrontendTLB(2, 4, dma_maxbytes, outer.tlNode.edges.out.head)
@@ -59,6 +48,19 @@ class GemminiModule2[T <: Data: Arithmetic]
   spad.module.io.flush := tlb.io.exp.flush()
 
   dontTouch(outer.spad.module.io.tlb)
+
+  //=========================================================================
+  // OoO Issuing
+  //=========================================================================
+  val raw_cmd = Queue(io.cmd)
+
+  val cmd_fsm = CmdFSM(outer.config)
+  cmd_fsm.io.cmd         <> raw_cmd
+  tlb.io.exp.flush_retry := cmd_fsm.io.flush_retry
+  tlb.io.exp.flush_skip  := cmd_fsm.io.flush_skip
+
+  val tiler = TilerController(outer.config)
+  tiler.io.cmd_in <> cmd_fsm.io.tiler
 
   //=========================================================================
   // OoO Execution
@@ -81,16 +83,10 @@ class GemminiModule2[T <: Data: Arithmetic]
   tiler.io.completed.store <> store.io.completed
   spad.module.io.dma.write <> store.io.dma
 
-  val flush = FlushController(outer.config)
-  flush.io.cmd             <> tiler.io.issue.flush
-  tiler.io.completed.flush <> flush.io.completed
-  tlb.io.exp.flush_retry   := flush.io.flush_retry
-  tlb.io.exp.flush_skip    := flush.io.flush_skip
-
   //=========================================================================
   // Busy Signal (used by RocketCore during fence insn)
   //=========================================================================
   io.busy := raw_cmd.valid || cmd_fsm.io.busy || tiler.io.busy ||
              spad.module.io.busy ||
-             load.io.busy || store.io.busy || exec.io.busy || flush.io.busy
+             load.io.busy || store.io.busy || exec.io.busy
 }

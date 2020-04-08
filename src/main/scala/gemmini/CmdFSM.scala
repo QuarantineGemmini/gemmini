@@ -10,6 +10,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental._
 import freechips.rocketchip.config._
+import freechips.rocketchip.rocket._
 import freechips.rocketchip.tile._
 import GemminiISA._
 
@@ -21,15 +22,17 @@ class CmdFSM[T <: Data: Arithmetic]
   // module ports
   //==========================================================================
   val io = IO(new Bundle {
-    val cmd   = Flipped(Decoupled(new RoCCCommand))
-    val tiler = Decoupled(new TilerCmd(config))
-    val busy  = Output(Bool())
+    val cmd         = Flipped(Decoupled(new RoCCCommand))
+    val tiler       = Decoupled(new TilerCmd(config))
+    val flush_retry = Output(Bool())
+    val flush_skip  = Output(Bool())
+    val busy        = Output(Bool())
   });
 
   //==========================================================================
   // FSM states
   //==========================================================================
-  val (s_LISTENING :: s_EXECUTING :: s_ERROR :: Nil) = Enum(3)
+  val (s_LISTENING :: s_EX_PENDING :: s_ERROR :: Nil) = Enum(3)
   val state = RegInit(s_LISTENING)
 
   //==========================================================================
@@ -56,11 +59,18 @@ class CmdFSM[T <: Data: Arithmetic]
   val config_ex_valid = RegInit(false.B)
   val bias_valid = RegInit(false.B)
 
+  // pass CSR status bits to tiler (TODO: fix this api)
+  val status = Reg(new MStatus)
+  status := DontCare
+
   //==========================================================================
   // Combinational Output Defaults 
   //==========================================================================
-  io.cmd.ready   := false.B
-  io.tiler.valid := false.B
+  io.cmd.ready         := false.B
+  io.tiler.valid       := false.B
+  io.tiler.bits.status := status
+  io.flush_retry       := false.B
+  io.flush_skip        := false.B
 
   io.tiler.bits.m              := m
   io.tiler.bits.n              := n
@@ -77,7 +87,7 @@ class CmdFSM[T <: Data: Arithmetic]
 
   // we block if we have accepted the COMPUTE_ALL command, but the tiler has
   // not started executing it yet.
-  io.busy := (state === s_EXECUTING)
+  io.busy := (state === s_EX_PENDING)
 
   //==========================================================================
   // FSM 
@@ -94,8 +104,8 @@ class CmdFSM[T <: Data: Arithmetic]
     state := s_LISTENING
   }
 
-  when (state === s_EXECUTING) {
-    // Pending s_EXECUTION ongoing
+  when (state === s_EX_PENDING) {
+    // Pending s_EX ongoing
     // Wait for tiling/ execution to complete,
     // let any further commands queue up
     io.tiler.valid := true.B
@@ -119,15 +129,24 @@ class CmdFSM[T <: Data: Arithmetic]
       val funct = cmd.inst.funct
       val rs1 = cmd.rs1
       val rs2 = cmd.rs2
+
+      // always update status bits on a successful RoCC command
+      status := cmd.status
+
       // Execute command
-      when (funct === COMPUTE_ALL) {
+      when (funct === FLUSH_CMD) {
+        val skip = cmd.rs1(0)
+        io.flush_retry := !skip
+        io.flush_skip  := skip
+      }
+      .elsewhen (funct === COMPUTE_ALL) {
         // Signal to the Tiler, and move to our EXEC state
         // FIXME: check all valid
         io.tiler.valid := true.B
         when (io.tiler.fire()) {
           state := s_LISTENING
         }.otherwise {
-          state := s_EXECUTING
+          state := s_EX_PENDING
         }
       }
       .elsewhen ((funct === CONFIG_CMD) && (rs1(1,0) === CONFIG_EX)) {
