@@ -230,9 +230,9 @@ class TilerFSM[T <: Data : Arithmetic]
       g_LAST_N_ITEMS := Mux(cmd.n(LOG2_DIM-1,0).orR,cmd.n(LOG2_DIM-1,0),DIM.U)
       g_LAST_K_ITEMS := Mux(cmd.k(LOG2_DIM-1,0).orR,cmd.k(LOG2_DIM-1,0),DIM.U)
 
-      g_TILE_ROW_END   := (cmd.m >> LOG2_DIM) + cmd.m(LOG2_DIM-1,0).orR
-      g_TILE_COL_END   := (cmd.n >> LOG2_DIM) + cmd.n(LOG2_DIM-1,0).orR
-      g_K_TILE_COL_END := (cmd.k >> LOG2_DIM) + cmd.k(LOG2_DIM-1,0).orR
+      g_TILE_ROW_END   := (cmd.m >> LOG2_DIM) + cmd.m(LOG2_DIM-1,0).orR - 1.U 
+      g_TILE_COL_END   := (cmd.n >> LOG2_DIM) + cmd.n(LOG2_DIM-1,0).orR - 1.U
+      g_K_TILE_COL_END := (cmd.k >> LOG2_DIM) + cmd.k(LOG2_DIM-1,0).orR - 1.U
 
       // update interface signals. we are only ready when an input cmd is
       // ready AND the output queue has 2 slots available to write to
@@ -325,8 +325,8 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(0).rs1   := CONFIG_LOAD
         sched.bits(0).rs2   := B_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
-        sched.bits(1).rs2   := B_mem_addr
+        sched.bits(1).rs1   := B_mem_addr
+        sched.bits(1).rs2   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -366,8 +366,8 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(0).rs1   := CONFIG_LOAD
         sched.bits(0).rs2   := B_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
-        sched.bits(1).rs2   := B_mem_addr
+        sched.bits(1).rs1   := B_mem_addr
+        sched.bits(1).rs2   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -410,8 +410,8 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(0).rs1   := CONFIG_LOAD
         sched.bits(0).rs2   := A_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
-        sched.bits(1).rs2   := A_mem_addr
+        sched.bits(1).rs1   := A_mem_addr
+        sched.bits(1).rs2   := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -440,8 +440,8 @@ class TilerFSM[T <: Data : Arithmetic]
         sched.bits(0).rs1   := CONFIG_LOAD
         sched.bits(0).rs2   := D_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
-        sched.bits(1).rs2   := D_mem_addr
+        sched.bits(1).rs1   := D_mem_addr
+        sched.bits(1).rs2   := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -532,8 +532,8 @@ class TilerFSM[T <: Data : Arithmetic]
       }
       .elsewhen (sched.ready >= 1.U) {
         sched.push          := 1.U
-        sched.bits(0).rs1   := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
-        sched.bits(0).rs2   := C_mem_addr
+        sched.bits(0).rs1   := C_mem_addr
+        sched.bits(0).rs2   := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
         sched.bits(0).inst.funct := STORE_CMD
 
         // update next state

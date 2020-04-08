@@ -45,12 +45,12 @@ class TilerScheduler[T <: Data: Arithmetic]
 
   // scratchpad range, used for tracking RAW, WAR, and WAW deps
   class SPRange extends Bundle {
-    val valid = Bool()
-    val is_sp = Bool()
-    val start = UInt(30.W) // TODO magic number
-    val end   = UInt(30.W) // TODO magic number
+    val valid  = Bool()
+    val is_acc = Bool()
+    val start  = UInt(30.W) // TODO magic number
+    val end    = UInt(30.W) // TODO magic number
     def overlaps(other: SPRange) = valid && other.valid && 
-                                   (is_sp === other.is_sp) &&
+                                   (is_acc === other.is_acc) &&
                                    (start < other.end) && 
                                    (end > other.start)
   }
@@ -100,7 +100,6 @@ class TilerScheduler[T <: Data: Arithmetic]
   val alloc_fire = io.cmd_in.fire()
 
   when (io.cmd_in.fire()) {
-    val spAddrBits = 32
     val cmd = io.cmd_in.bits
     val funct = cmd.inst.funct
     val funct_is_compute = funct === COMPUTE_AND_STAY_CMD || 
@@ -113,22 +112,22 @@ class TilerScheduler[T <: Data: Arithmetic]
 
     new_entry.is_config := funct === CONFIG_CMD
 
-    new_entry.op1.valid := funct === PRELOAD_CMD || funct_is_compute
-    new_entry.op1.is_sp := cmd.rs1(31)
-    new_entry.op1.start := cmd.rs1(29,0)
-    new_entry.op1.end   := cmd.rs1(29,0) + DIM.U
+    new_entry.op1.valid  := funct === PRELOAD_CMD || funct_is_compute
+    new_entry.op1.is_acc := cmd.rs1(31)
+    new_entry.op1.start  := cmd.rs1(29,0)
+    new_entry.op1.end    := cmd.rs1(29,0) + DIM.U
 
     val mvin_mvout_rows = cmd.rs2(63, 48)
     val mvin_mvout_cols = cmd.rs2(47, 32)
 
     new_entry.op2.valid := funct_is_compute || funct === STORE_CMD
-    new_entry.op2.is_sp := cmd.rs2(31)
+    new_entry.op2.is_acc := cmd.rs2(31)
     new_entry.op2.start := cmd.rs2(29,0)
     new_entry.op2.end   := cmd.rs2(29,0) + 
                            Mux(funct_is_compute, DIM.U, mvin_mvout_rows)
 
     new_entry.dst.valid := funct === PRELOAD_CMD || funct === LOAD_CMD
-    new_entry.dst.is_sp := cmd.rs2(31)
+    new_entry.dst.is_acc := cmd.rs2(31)
     new_entry.dst.start := cmd.rs2(29,0)
     new_entry.dst.end   := cmd.rs2(29,0) + 
                            Mux(funct === PRELOAD_CMD, DIM.U, 
@@ -182,14 +181,14 @@ class TilerScheduler[T <: Data: Arithmetic]
         "cycle[%d], entry[%d], accept[%d], " +
         "mvin[dram=%x, spad=%x, rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs2, cmd.rs1(31,0), cmd.rs1(63,48), cmd.rs1(47,32))
+        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
     }
     .elsewhen (new_entry.is_store) {
       printf(
         "cycle[%d], entry[%d], accept[%d], " + 
         "mvout[dram=%x, spad=%x, rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs2, cmd.rs1(31,0), cmd.rs1(63,48), cmd.rs1(47,32))
+        cmd.rs1, cmd.rs2(31,0), cmd.rs2(63,48), cmd.rs2(47,32))
     }
     .elsewhen (new_entry.is_flush) {
       printf(
