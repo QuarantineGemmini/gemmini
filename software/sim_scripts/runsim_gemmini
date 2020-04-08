@@ -37,6 +37,7 @@ TEST_6=very_large_matmul
 TEST_7=cifar_quant
 TEST_8=mobilenet
 TEST_9=resnet50
+TEST_10=gemm
 
 # firesim configs (workload and simulator)
 HWDB_CONFIG="$FCFG_DIR/config_hwdb.ini"
@@ -89,16 +90,17 @@ cat <<EOF
   
   spike/verilator/vcs workloads
   -----------------------------
-  0: $TEST_0 
-  1: $TEST_1 
-  2: $TEST_2 
-  3: $TEST_3 
-  4: $TEST_4 
-  5: $TEST_5 
-  6: $TEST_6 
-  7: $TEST_7
-  8: $TEST_8
-  9: $TEST_9
+  0:  $TEST_0 
+  1:  $TEST_1 
+  2:  $TEST_2 
+  3:  $TEST_3 
+  4:  $TEST_4 
+  5:  $TEST_5 
+  6:  $TEST_6 
+  7:  $TEST_7
+  8:  $TEST_8
+  9:  $TEST_9
+  10: $TEST_10
   
   firesim workloads
   -----------------
@@ -177,7 +179,8 @@ runsim() {
 
   # initialize logs, performance counter
   local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
-  local testname="${ts}__${SW_PLATFORM}__${SW_MODE}__${HW_CONFIG}__${binary_name}"
+  local testname="${ts}__${SW_PLATFORM}__${SW_MODE}"
+  local testname="${testname}__${HW_CONFIG}__${binary_name}"
   local starttime=$SECONDS
 
   # initialize simulator options
@@ -266,7 +269,8 @@ runsim() {
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
     info "interactive debug started, no logfile generated!"
     stty -echo
-    $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
+    $NUMACTL $BIN 
+      $debugger_opts $extra_opts "$workload_binary" $workload_args
     stty echo
   elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
@@ -385,16 +389,17 @@ while [ $# -ne 0 ] ; do
       ;;
     -h|-help) display_usage ;;
     #-------------------------------------------------------------------------
-    0) runsim "$(sw_dir bareMetalC)"   "$TEST_0" ;;
-    1) runsim "$(sw_dir bareMetalC)"   "$TEST_1" ;;
-    2) runsim "$(sw_dir bareMetalC)"   "$TEST_2" ;;
-    3) runsim "$(sw_dir bareMetalC)"   "$TEST_3" ;;
-    4) runsim "$(sw_dir ee290)"        "$TEST_4" ;;
-    5) runsim "$(sw_dir ee290)"        "$TEST_5" ;;
-    6) runsim "$(sw_dir ee290)"        "$TEST_6" ;;
-    7) runsim "$(sw_dir ee290)"        "$TEST_7" ;;
-    8) runsim "$(sw_dir imagenet)"     "$TEST_8" ;;
-    9) runsim "$(sw_dir imagenet)"     "$TEST_9" ;;
+    0)  runsim "$(sw_dir bareMetalC)"   "$TEST_0"  ;;
+    1)  runsim "$(sw_dir bareMetalC)"   "$TEST_1"  ;;
+    2)  runsim "$(sw_dir bareMetalC)"   "$TEST_2"  ;;
+    3)  runsim "$(sw_dir bareMetalC)"   "$TEST_3"  ;;
+    4)  runsim "$(sw_dir ee290)"        "$TEST_4"  ;;
+    5)  runsim "$(sw_dir ee290)"        "$TEST_5"  ;;
+    6)  runsim "$(sw_dir ee290)"        "$TEST_6"  ;;
+    7)  runsim "$(sw_dir ee290)"        "$TEST_7"  ;;
+    8)  runsim "$(sw_dir imagenet)"     "$TEST_8"  ;;
+    9)  runsim "$(sw_dir imagenet)"     "$TEST_9"  ;;
+    10) runsim "$(sw_dir ee290)"        "$TEST_10" ;;
     #-------------------------------------------------------------------------
     lab3_orig_tiler) runfiresim "$arg" "$FSIM_RT_LAB3_ORIG" ;;
     lab3_fsm_tiler)  runfiresim "$arg" "$FSIM_RT_LAB3_FSM" ;;
