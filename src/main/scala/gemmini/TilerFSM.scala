@@ -647,12 +647,12 @@ class TilerFSM[T <: Data : Arithmetic]
         gbl_CD_acc_row_addr := 0.U
 
         // update the start/end tiles for this output-group (inclusive)
-        val l_tile_col_start  = gbl_tile_col_n
-        val l_tile_col_end    = MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
-                                    g_TILE_COL_END)
-        val l_tile_row_start  = gbl_tile_row_n
-        val l_tile_row_end    = MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
-                                    g_TILE_ROW_END)
+        val l_tile_col_start = gbl_tile_col_n
+        val l_tile_col_end   = MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
+                                   g_TILE_COL_END)
+        val l_tile_row_start = gbl_tile_row_n
+        val l_tile_row_end   = MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
+                                   g_TILE_ROW_END)
 
         loop1_tile_col_start := l_tile_col_start
         loop1_tile_col_end   := l_tile_col_end

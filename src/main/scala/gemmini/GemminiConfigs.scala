@@ -45,6 +45,7 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   def DIM             = BLOCK_ROWS
   def LOG2_DIM        = log2Up(DIM)
   def LOG2_DIM_COUNT  = log2Up(DIM + 1)
+  require(DIM >= 2, "the systolic array must have DIM of at least 2")
 
   //==========================================================================
   // gemmini1 hardware-specific global constants
@@ -111,8 +112,8 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   def LOG2_TILE_IDX               = log2Up(TILE_IDX)
 
   //--------------------------------------------------------------------------
-  def I_TILE_BYTE_WIDTH = DIM * inputType.getWidth
-  def O_TILE_BYTE_WIDTH = DIM * accType.getWidth
+  def I_TILE_BYTE_WIDTH = DIM * ((inputType.getWidth+7) / 8)
+  def O_TILE_BYTE_WIDTH = DIM * ((accType.getWidth+7) / 8)
 
   def GBL_B_SP_ROW_ADDR_1 = (SP_BANKS * SP_BANK_ROWS) - 2*DIM
   def GBL_B_SP_ROW_ADDR_2 = (SP_BANKS * SP_BANK_ROWS) - 1*DIM
@@ -141,12 +142,16 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   //==========================================================================
   // other stuff
   //==========================================================================
-  require(isPow2(sp_bank_entries), "each SRAM bank must have a power-of-2 rows, to simplify address calculations") // TODO remove this requirement
-  require(sp_bank_entries % (meshRows * tileRows) == 0, "the number of rows in a bank must be a multiple of the dimensions of the systolic array")
-  require(meshColumns * tileColumns == meshRows * tileRows, "the systolic array must be square") // TODO remove this requirement
-  require(meshColumns * tileColumns >= 2, "the systolic array must have a dimension of at least 2") // TODO remove this requirement
-  require(isPow2(meshColumns * tileColumns), "the systolic array's dimensions must be powers of 2") // TODO remove this requirement
-  require(acc_bank_entries % (meshRows * tileRows) == 0, "the number of rows in an accumulator bank must be a multiple of the dimensions of the systolic array")
+  // TODO remove these requirements
+  require(isPow2(sp_bank_entries), 
+    "each SRAM bank must have a power-of-2 rows, " + 
+    "to simplify address calculations") 
+  require(sp_bank_entries % DIM == 0, 
+    "the number of rows in a bank must be a multiple of " +
+    "the dimensions of the systolic array")
+  require(acc_bank_entries % DIM == 0, 
+    "the number of rows in an accumulator bank must be a " +
+    "multiple of the dimensions of the systolic array")
 
   def generateHeader(guard: String = "GEMMINI_PARAMS_H"): String = {
     // Returns the (min,max) values for a dataType
