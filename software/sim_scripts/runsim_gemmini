@@ -26,6 +26,16 @@ HW_CONFIG_PROJECT=example
 HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 HW_CONFIG_G2=Gemmini2EE290Lab3RocketConfig
 
+# gemmini2 DSEs
+HW_CONFIG_G2_DSE1=Gemmini2dim16sp64acc16bus064
+HW_CONFIG_G2_DSE2=Gemmini2dim16sp16acc64bus064
+HW_CONFIG_G2_DSE3=Gemmini2dim32sp16acc64bus064
+HW_CONFIG_G2_DSE4=Gemmini2dim32sp16acc64bus064
+HW_CONFIG_G2_DSE5=Gemmini2dim16sp64acc16bus128
+HW_CONFIG_G2_DSE6=Gemmini2dim32sp64acc16bus128
+HW_CONFIG_G2_DSE7=Gemmini2dim16sp16acc64bus128
+HW_CONFIG_G2_DSE8=Gemmini2dim32sp16acc64bus128
+
 # workloads (vcs, verilator)
 TEST_0=echo
 TEST_1=padded
@@ -128,6 +138,14 @@ cat <<EOF
   ------------------------------------------------------
   -hw_lab3      --> the $HW_CONFIG_LAB3 Chisel config (default)
   -hw_g2        --> the $HW_CONFIG_G2 Chisel config
+  -hw_g2_dse1   --> build $HW_CONFIG_G2_DSE1
+  -hw_g2_dse2   --> build $HW_CONFIG_G2_DSE2
+  -hw_g2_dse3   --> build $HW_CONFIG_G2_DSE3
+  -hw_g2_dse4   --> build $HW_CONFIG_G2_DSE4
+  -hw_g2_dse5   --> build $HW_CONFIG_G2_DSE5
+  -hw_g2_dse6   --> build $HW_CONFIG_G2_DSE6
+  -hw_g2_dse7   --> build $HW_CONFIG_G2_DSE7
+  -hw_g2_dse8   --> build $HW_CONFIG_G2_DSE8
   
   -trace_start <c>  --> start tracing at this cycle (defaults to 0)
   -vcd_full         --> capture all signals in design
@@ -359,8 +377,16 @@ while [ $# -ne 0 ] ; do
     -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
     -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
     #-------------------------------------------------------------------------
-    -hw_lab3) HW_CONFIG="hw_lab3";  HW_CONFIG_FULL="$HW_CONFIG_LAB3" ;;
-    -hw_g2)   HW_CONFIG="hw_g2";    HW_CONFIG_FULL="$HW_CONFIG_G2"   ;;
+    -hw_lab3)    HW_CONFIG="hw_lab3";    HW_CONFIG_FULL="$HW_CONFIG_LAB3"   ;;
+    -hw_g2)      HW_CONFIG="hw_g2";      HW_CONFIG_FULL="$HW_CONFIG_G2"     ;;
+    -hw_g2_dse1) HW_CONFIG="hw_g2_dse1"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE1";;
+    -hw_g2_dse2) HW_CONFIG="hw_g2_dse2"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE2";;
+    -hw_g2_dse3) HW_CONFIG="hw_g2_dse3"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE3";;
+    -hw_g2_dse4) HW_CONFIG="hw_g2_dse4"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE4";;
+    -hw_g2_dse5) HW_CONFIG="hw_g2_dse5"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE5";;
+    -hw_g2_dse6) HW_CONFIG="hw_g2_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE6";;
+    -hw_g2_dse7) HW_CONFIG="hw_g2_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE7";;
+    -hw_g2_dse8) HW_CONFIG="hw_g2_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE8";;
     #-------------------------------------------------------------------------
     -noisy)       IS_NOISY=1    ;;
     -verbose)     IS_VERBOSE=1  ;;
