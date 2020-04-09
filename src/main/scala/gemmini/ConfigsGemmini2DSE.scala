@@ -87,7 +87,7 @@ object Gemmini2DSEConfigs {
 }
 
 //============================================================================
-// Design Space Exploration Rocket-Chip Mixins
+// Design Space Exploration Rocket-Chip Mixins (gemmini2)
 //============================================================================
 
 object WithGemmini2dim16sp64acc16bus064 {
@@ -113,5 +113,35 @@ object WithGemmini2dim16sp16acc64bus128 {
 }
 object WithGemmini2dim32sp16acc64bus128 {
   def apply() = WithGemmini2Config(Gemmini2DSEConfigs.dim32sp16acc64bus128)
+}
+
+//============================================================================
+// Design Space Exploration Rocket-Chip Mixins (gemmini1 reference!!!)
+// - notice the WithGemminiConfig instead of WithGemmini2Config
+//============================================================================
+
+object WithGemminidim16sp64acc16bus064 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim16sp64acc16bus064)
+}
+object WithGemminidim32sp64acc16bus064 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim32sp64acc16bus064)
+}
+object WithGemminidim16sp16acc64bus064 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim16sp16acc64bus064)
+}
+object WithGemminidim32sp16acc64bus064 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim32sp16acc64bus064)
+}
+object WithGemminidim16sp64acc16bus128 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim16sp64acc16bus128)
+}
+object WithGemminidim32sp64acc16bus128 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim32sp64acc16bus128)
+}
+object WithGemminidim16sp16acc64bus128 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim16sp16acc64bus128)
+}
+object WithGemminidim32sp16acc64bus128 {
+  def apply() = WithGemminiConfig(Gemmini2DSEConfigs.dim32sp16acc64bus128)
 }
 
