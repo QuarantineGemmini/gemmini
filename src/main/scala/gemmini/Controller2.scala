@@ -86,7 +86,28 @@ class GemminiModule2[T <: Data: Arithmetic]
   //=========================================================================
   // Busy Signal (used by RocketCore during fence insn)
   //=========================================================================
-  io.busy := raw_cmd.valid || cmd_fsm.io.busy || tiler.io.busy ||
-             spad.module.io.busy ||
-             load.io.busy || store.io.busy || exec.io.busy
+  val is_computing = cmd_fsm.io.busy || tiler.io.busy ||
+                     spad.module.io.busy ||
+                     load.io.busy || store.io.busy || exec.io.busy
+
+  io.busy := raw_cmd.valid || is_computing
+
+  //=========================================================================
+  // instrumentation for profiling counters
+  // - don't use raw_cmd.valid, since it causes spurious prof_starts when
+  //   the cmd_fsm is being configured
+  //=========================================================================
+  val busy_last  = RegNext(is_computing)
+  val prof_start = WireDefault(~busy_last & is_computing)
+  val prof_end   = WireDefault(busy_last & ~is_computing)
+
+  val prof_cycle = RegInit(0.U(32.W))
+  prof_cycle := Mux(prof_start, 0.U, prof_cycle + 1.U)
+
+  val prof = Wire(new Profiling)
+  prof.start := prof_start
+  prof.end   := prof_end
+  prof.cycle := prof_cycle
+
+  exec.io.prof := prof
 }

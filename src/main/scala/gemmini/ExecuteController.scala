@@ -42,6 +42,8 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
     val completed = Valid(UInt(log2Up(rob_entries).W))
 
     val busy = Output(Bool())
+
+    val prof = Input(new Profiling)
   })
 
   val block_size = meshRows*tileRows
@@ -129,8 +131,12 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   val cntl = mesh_cntl_signals_q.io.deq.bits
 
   // Instantiate the actual mesh
-  val mesh = Module(new MeshWithDelays(inputType, outputType, accType, mesh_tag, dataflow, pe_latency,
-    tileRows, tileColumns, meshRows, meshColumns, shifter_banks, shifter_banks))
+  val mesh = Module(new MeshWithDelays(
+    inputType, outputType, accType, mesh_tag, dataflow, pe_latency,
+    tileRows, tileColumns, meshRows, meshColumns, shifter_banks, 
+    shifter_banks))
+
+  mesh.io.prof := io.prof
 
   mesh.io.a.valid := false.B
   mesh.io.b.valid := false.B

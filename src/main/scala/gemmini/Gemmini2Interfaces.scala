@@ -44,3 +44,13 @@ class TilerCmd[T <: Data: Arithmetic]
   override def cloneType: this.type =
     (new TilerCmd(config)).asInstanceOf[this.type]
 }
+
+//===========================================================================
+// Instrumentation for profile counters
+//===========================================================================
+class Profiling extends Bundle {
+  val start = Bool()
+  val end   = Bool()
+  val cycle = UInt(32.W)
+}
+

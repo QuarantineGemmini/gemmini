@@ -41,6 +41,8 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     val out = Valid(C_TYPE) // TODO make this ready-valid
 
     val flush = Flipped(Decoupled(UInt(2.W)))
+
+    val prof = Input(new Profiling)
   })
 
   def shifted[T <: Data](x: Vec[Vec[T]], banks: Int, reverse: Boolean = false) = {
@@ -242,6 +244,24 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
       fire_counter := 0.U
       tag_queue.io.in.valid := true.B
       flushing := false.B
+    }
+  }
+
+  //=========================================================================
+  // hardware profiling counters (non architecturally visible!)
+  //=========================================================================
+  withReset(io.prof.start) {
+    val total_cycles = RegInit(0.U(32.W))
+    val flush_cycles = RegInit(0.U(32.W))
+
+    total_cycles := total_cycles + 1.U
+    flush_cycles := flush_cycles + flushing
+
+    when(io.prof.end) {
+      printf(s"G2-PERF[%d]: total-cycles:      %d\n", 
+              io.prof.cycle, total_cycles)
+      printf(s"G2-PERF[%d]: mesh-flush-cycles: %d\n", 
+              io.prof.cycle, flush_cycles)
     }
   }
 }
