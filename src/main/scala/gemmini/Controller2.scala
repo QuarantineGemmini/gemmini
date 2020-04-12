@@ -104,10 +104,18 @@ class GemminiModule2[T <: Data: Arithmetic]
   val prof_cycle = RegInit(0.U(32.W))
   prof_cycle := Mux(prof_start, 0.U, prof_cycle + 1.U)
 
+  val debug_cycle = RegInit(0.U(40.W))
+  debug_cycle := debug_cycle + 1.U
+
   val prof = Wire(new Profiling)
-  prof.start := prof_start
-  prof.end   := prof_end
-  prof.cycle := prof_cycle
+  prof.start       := prof_start
+  prof.end         := prof_end
+  prof.cycle       := prof_cycle
+  prof.debug_cycle := debug_cycle
 
   exec.io.prof := prof
+
+  when(prof.end) {
+    printf(s"G2-PERF[%d]: total-cycles: %d\n", prof.debug_cycle, prof.cycle)
+  }
 }

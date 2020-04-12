@@ -49,8 +49,9 @@ class TilerCmd[T <: Data: Arithmetic]
 // Instrumentation for profile counters
 //===========================================================================
 class Profiling extends Bundle {
-  val start = Bool()
-  val end   = Bool()
-  val cycle = UInt(32.W)
+  val start       = Bool()
+  val end         = Bool()
+  val cycle       = UInt(32.W)
+  val debug_cycle = UInt(40.W)
 }
 
