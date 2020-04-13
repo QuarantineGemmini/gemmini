@@ -111,6 +111,29 @@ class TilerFSM[T <: Data : Arithmetic]
   val g_K_TILE_COL_END        = Reg(UInt(LOG2_TILE_IDX.W))
 
   //------------------------------------------------------------------------
+  // combinational calculation of optimal output-groups. this is updated at
+  // the s_IDLE -> s_RESET_OUTPUT_GROUP state transition
+  //------------------------------------------------------------------------
+  val g_OG_DIM_SELECT = OG_HEIGHT_MAP.zipWithIndex.map{ case(h,i) => 
+    val w = TOTAL_ACC_TILES/h
+    if (h < w)      WireDefault(g_TILE_ROW_END < h.U)
+    else if(h > w)  WireDefault(g_TILE_COL_END < w.U)
+    else            WireDefault((i == (OG_HEIGHT_MAP.size-1)).asBool)
+  }
+  val g_TILE_ROWS_PER_GROUP = MuxCase(
+    OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1).U,
+    OG_HEIGHT_MAP.zipWithIndex.map{
+      case(h,i) => (g_OG_DIM_SELECT(i) -> h.U)
+    })
+  val g_TILE_COLS_PER_GROUP = MuxCase(
+    (TOTAL_ACC_TILES / OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1)).U,
+    OG_HEIGHT_MAP.zipWithIndex.map{
+      case(h,i) => (g_OG_DIM_SELECT(i) -> (TOTAL_ACC_TILES/h).U)
+    })
+  val g_I_BYTE_COLS_PER_GROUP = g_TILE_COLS_PER_GROUP <<I_TILE_BYTE_WIDTH_LOG2
+  val g_O_BYTE_COLS_PER_GROUP = g_TILE_COLS_PER_GROUP <<O_TILE_BYTE_WIDTH_LOG2
+
+  //------------------------------------------------------------------------
   // global state persistent across all loops
   //------------------------------------------------------------------------
   // current output-group tile (y,x)
@@ -192,8 +215,6 @@ class TilerFSM[T <: Data : Arithmetic]
 
   def MIN(a: UInt, b: UInt) = Mux(a < b, a, b)
 
-  def hwprintf(str: String) = printf(f"HW-FSM: $str")
-
   //=========================================================================
   // FSM core
   //=========================================================================
@@ -274,14 +295,11 @@ class TilerFSM[T <: Data : Arithmetic]
       // define mutable gbl state, reset after each og
       gbl_CD_acc_row_addr := 0.U
 
-      // update the start/end tiles for this output-group (inclusive)
-      // NOTE: duplicated with next_output_group!!
-      when (g_TILE_ROW_END <= TILE_COLS_PER_GROUP_M1.U) {
       loop1_tile_col_start := gbl_tile_col_n
-      loop1_tile_col_end   := MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
+      loop1_tile_col_end   := MIN(gbl_tile_col_n + g_TILE_COLS_PER_GROUP-1.U,
                                   g_TILE_COL_END)
       loop1_tile_row_start := gbl_tile_row_n
-      loop1_tile_row_end   := MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
+      loop1_tile_row_end   := MIN(gbl_tile_row_n + g_TILE_ROWS_PER_GROUP-1.U,
                                   g_TILE_ROW_END)
 
       // derived pointers to matrices in memory for this og
@@ -649,11 +667,11 @@ class TilerFSM[T <: Data : Arithmetic]
 
         // update the start/end tiles for this output-group (inclusive)
         val l_tile_col_start = gbl_tile_col_n
-        val l_tile_col_end   = MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
-                                   g_TILE_COL_END)
+        val l_tile_col_end  = MIN(gbl_tile_col_n + g_TILE_COLS_PER_GROUP-1.U,
+                                  g_TILE_COL_END)
         val l_tile_row_start = gbl_tile_row_n
-        val l_tile_row_end   = MIN(gbl_tile_row_n + TILE_ROWS_PER_GROUP_M1.U,
-                                   g_TILE_ROW_END)
+        val l_tile_row_end  = MIN(gbl_tile_row_n + g_TILE_ROWS_PER_GROUP-1.U,
+                                  g_TILE_ROW_END)
 
         loop1_tile_col_start := l_tile_col_start
         loop1_tile_col_end   := l_tile_col_end
@@ -676,10 +694,10 @@ class TilerFSM[T <: Data : Arithmetic]
         }
         .elsewhen (l_did_col_incr) {
           loop1_A_mem_addr := loop1_A_mem_addr + 0.U
-          loop1_B_mem_addr := loop1_B_mem_addr + I_BYTE_COLS_PER_GROUP.U
-          loop1_C_mem_addr := loop1_C_mem_addr + I_BYTE_COLS_PER_GROUP.U
+          loop1_B_mem_addr := loop1_B_mem_addr + g_I_BYTE_COLS_PER_GROUP
+          loop1_C_mem_addr := loop1_C_mem_addr + g_I_BYTE_COLS_PER_GROUP
           loop1_D_mem_addr := loop1_D_mem_addr + 
-                              Mux(!g_HAS_BIAS, 0.U, O_BYTE_COLS_PER_GROUP.U)
+                              Mux(!g_HAS_BIAS, 0.U, g_O_BYTE_COLS_PER_GROUP)
         }
 
         // update next state

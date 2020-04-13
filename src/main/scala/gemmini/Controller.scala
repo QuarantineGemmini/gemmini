@@ -35,6 +35,7 @@ class GemminiModule[T <: Data: Arithmetic](outer: Gemmini[T])
   (tlb.io.clients zip outer.spad.module.io.tlb).foreach(t => t._1 <> t._2)
   tlb.io.exp.flush_skip := false.B
   tlb.io.exp.flush_retry := false.B
+  io.interrupt := tlb.io.exp.interrupt
 
   dontTouch(outer.spad.module.io.tlb)
 
@@ -78,10 +79,6 @@ class GemminiModule[T <: Data: Arithmetic](outer: Gemmini[T])
   rob_completed_arb.io.in(2)       <> store_controller.io.completed
   rob.io.completed                 <> rob_completed_arb.io.out
 
-  io.busy := raw_cmd.valid || unrolled_cmd.valid || 
-             rob.io.busy || spad.module.io.busy
-  io.interrupt := tlb.io.exp.interrupt
-
   // Issue commands to controllers
   when (unrolled_cmd.valid) {
     val funct = unrolled_cmd.bits.inst.funct
@@ -99,4 +96,43 @@ class GemminiModule[T <: Data: Arithmetic](outer: Gemmini[T])
       }
     }
   }
+
+  //=========================================================================
+  // Busy Signal (used by RocketCore during fence insn)
+  //=========================================================================
+  val is_computing = unrolled_cmd.valid || 
+                     rob.io.busy ||
+                     spad.module.io.busy ||
+                     load_controller.io.busy || 
+                     store_controller.io.busy || 
+                     ex_controller.io.busy
+  io.busy := raw_cmd.valid || is_computing 
+
+  //=========================================================================
+  // instrumentation for profiling counters
+  // - don't use raw_cmd.valid, since it causes spurious prof_starts when
+  //   the cmd_fsm is being configured
+  //=========================================================================
+  val busy_last  = RegNext(is_computing)
+  val prof_start = WireDefault(~busy_last & is_computing)
+  val prof_end   = WireDefault(busy_last & ~is_computing)
+
+  val prof_cycle = RegInit(0.U(32.W))
+  prof_cycle := Mux(prof_start, 0.U, prof_cycle + 1.U)
+
+  val debug_cycle = RegInit(0.U(40.W))
+  debug_cycle := debug_cycle + 1.U
+
+  val prof = Wire(new Profiling)
+  prof.start       := prof_start
+  prof.end         := prof_end
+  prof.cycle       := prof_cycle
+  prof.debug_cycle := debug_cycle
+
+  ex_controller.io.prof := prof
+
+  //when(prof.end) {
+  //  printf(s"G2-PERF[%d]: total-cycles: %d\n", prof.debug_cycle, prof.cycle)
+  //}
+
 }

@@ -1,5 +1,6 @@
 package gemmini
 
+import scala.math.{pow,sqrt}
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
@@ -32,7 +33,6 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   inputType: T,
   outputType: T,
   accType: T,
-  pe_latency: Int,
   headerFileName: String = "gemmini_params.h"
 ) {
   val meshCols = meshColumns
@@ -117,30 +117,28 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   //--------------------------------------------------------------------------
   def I_TILE_BYTE_WIDTH = DIM * ((inputType.getWidth+7) / 8)
   def O_TILE_BYTE_WIDTH = DIM * ((accType.getWidth+7) / 8)
+  def I_TILE_BYTE_WIDTH_LOG2 = log2Up(I_TILE_BYTE_WIDTH)
+  def O_TILE_BYTE_WIDTH_LOG2 = log2Up(O_TILE_BYTE_WIDTH)
+  require(pow(2,I_TILE_BYTE_WIDTH_LOG2) == I_TILE_BYTE_WIDTH,
+    s"I_TILE_BYTE_WIDTH is not power of 2: $I_TILE_BYTE_WIDTH")
+  require(pow(2,O_TILE_BYTE_WIDTH_LOG2) == O_TILE_BYTE_WIDTH,
+    s"O_TILE_BYTE_WIDTH is not power of 2: $O_TILE_BYTE_WIDTH")
 
   def GBL_B_SP_ROW_ADDR_1 = (SP_BANKS * SP_BANK_ROWS) - 2*DIM
   def GBL_B_SP_ROW_ADDR_2 = (SP_BANKS * SP_BANK_ROWS) - 1*DIM
 
-  def TILE_ROWS_PER_GROUP_TMP = (SP_BANKS * SP_BANK_ROWS / DIM) - 2
-  def TILE_COLS_PER_GROUP_TMP = (ACC_ROWS / DIM) / TILE_ROWS_PER_GROUP_TMP
-  // NOTE: this happens if accumulator size < scratchpad size. Don't do 
-  //       this! your accumulator should be much larger than scratchpad!
-  def TILE_ROWS_PER_GROUP = if (TILE_COLS_PER_GROUP_TMP == 0) 4 
-                            else TILE_ROWS_PER_GROUP_TMP
-  def TILE_COLS_PER_GROUP = if (TILE_COLS_PER_GROUP_TMP == 0) 
-                               (ACC_ROWS / DIM) / TILE_ROWS_PER_GROUP
-                            else TILE_COLS_PER_GROUP_TMP
-  def TILE_ROWS_PER_GROUP_M1 = TILE_ROWS_PER_GROUP - 1
-  def TILE_COLS_PER_GROUP_M1 = TILE_COLS_PER_GROUP - 1
-  require(TILE_ROWS_PER_GROUP > 0, 
-    f"TILE_ROWS_PER_GROUP = $TILE_ROWS_PER_GROUP")
-  require(TILE_COLS_PER_GROUP > 0, 
-    f"TILE_COLS_PER_GROUP = $TILE_COLS_PER_GROUP")
+  def USABLE_SP_TILES = (SP_ROWS / DIM) - 2
+  def TOTAL_ACC_TILES = (ACC_ROWS / DIM)
+  def SQRT_ACC_TILES = sqrt(TOTAL_ACC_TILES).toInt
+  assert(USABLE_SP_TILES >= TOTAL_ACC_TILES, 
+    s"SP_TILES($USABLE_SP_TILES) + 2 < ACC_TILES($TOTAL_ACC_TILES)")
 
+  // prioritize sizes that cause the output-group to be further from square
+  def OG_HEIGHT_MAP = (1 to TOTAL_ACC_TILES).sortWith((h1, h2) => {
+    (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs
+  })
 
-  def BYTE_ROWS_PER_TILE    = DIM
-  def I_BYTE_COLS_PER_GROUP = TILE_COLS_PER_GROUP * I_TILE_BYTE_WIDTH
-  def O_BYTE_COLS_PER_GROUP = TILE_COLS_PER_GROUP * O_TILE_BYTE_WIDTH
+  def BYTE_ROWS_PER_TILE = DIM
 
   //==========================================================================
   // other stuff
@@ -213,7 +211,9 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
     header ++= s"#define ADDR_LEN 32\n"
     header ++= s"#define BANK_NUM $sp_banks\n"
     header ++= s"#define BANK_ROWS $sp_bank_entries\n"
-    header ++= s"#define ACC_ROWS ${acc_banks * acc_bank_entries}\n" // TODO add ACC_BANKS as well
+    header ++= s"#define ACC_ROWS ${ACC_ROWS}\n"
+    header ++= 
+      s"#define ACC_ROWS_SQRT ${sqrt(ACC_ROWS / DIM).toInt}\n"
 
     val max_bytes = 64
     header ++= s"#define MAX_BYTES $max_bytes\n"

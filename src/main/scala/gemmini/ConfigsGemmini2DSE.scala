@@ -49,7 +49,7 @@ object Gemmini2DSEConfigs {
     headerFileName = "gemmini_params_dim32sp64acc16bus064.h"
   )
   val dim16sp16acc64bus064 = base.copy(
-    sp_capacity    = CapacityInKilobytes(16),
+    sp_capacity    = CapacityInKilobytes(32),
     acc_capacity   = CapacityInKilobytes(64),
     dma_buswidth   = 64,
     headerFileName = "gemmini_params_dim16sp16acc64bus064.h"
@@ -57,7 +57,7 @@ object Gemmini2DSEConfigs {
   val dim32sp16acc64bus064 = base.copy(
     meshRows       = 32,
     meshColumns    = 32,
-    sp_capacity    = CapacityInKilobytes(16),
+    sp_capacity    = CapacityInKilobytes(32),
     acc_capacity   = CapacityInKilobytes(64),
     dma_buswidth   = 64,
     headerFileName = "gemmini_params_dim32sp16acc64bus064.h"
@@ -72,7 +72,7 @@ object Gemmini2DSEConfigs {
     headerFileName = "gemmini_params_dim32sp64acc16bus128.h"
   )
   val dim16sp16acc64bus128 = base.copy(
-    sp_capacity    = CapacityInKilobytes(16),
+    sp_capacity    = CapacityInKilobytes(32),
     acc_capacity   = CapacityInKilobytes(64),
     headerFileName = "gemmini_params_dim16sp16acc64bus128.h"
   )
@@ -81,7 +81,7 @@ object Gemmini2DSEConfigs {
     dma_buswidth   = 256,
     meshRows       = 32,
     meshColumns    = 32,
-    sp_capacity    = CapacityInKilobytes(18),
+    sp_capacity    = CapacityInKilobytes(32),
     acc_capacity   = CapacityInKilobytes(64),
     headerFileName = "gemmini_params_dim32sp16acc64bus128.h"
   )
