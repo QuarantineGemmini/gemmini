@@ -260,9 +260,12 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         val ex_read_req = io.srams.read(i).req
         val exread = ex_read_req.valid
 
-        // TODO we tie the write dispatch queue's, and write issue queue's, ready and valid signals together here
-        val dmawrite = write_dispatch_q.valid && write_issue_q.io.enq.ready &&
-          !write_dispatch_q.bits.laddr.is_acc_addr && write_dispatch_q.bits.laddr.sp_bank() === i.U
+        // TODO we tie the write dispatch queue's, 
+        // and write issue queue's, ready and valid signals together here
+        val dmawrite = write_dispatch_q.valid && 
+                       write_issue_q.io.enq.ready &&
+                       !write_dispatch_q.bits.laddr.is_acc_addr && 
+                       write_dispatch_q.bits.laddr.sp_bank() === i.U
 
         bio.read.req.valid := exread || dmawrite
         ex_read_req.ready := bio.read.req.ready

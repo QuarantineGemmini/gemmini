@@ -276,6 +276,7 @@ class TilerFSM[T <: Data : Arithmetic]
 
       // update the start/end tiles for this output-group (inclusive)
       // NOTE: duplicated with next_output_group!!
+      when (g_TILE_ROW_END <= TILE_COLS_PER_GROUP_M1.U) {
       loop1_tile_col_start := gbl_tile_col_n
       loop1_tile_col_end   := MIN(gbl_tile_col_n + TILE_COLS_PER_GROUP_M1.U,
                                   g_TILE_COL_END)

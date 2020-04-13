@@ -32,7 +32,6 @@ object Gemmini2DSEBaseConfig {
     inputType       = SInt(8.W),
     outputType      = SInt(19.W),
     accType         = SInt(32.W),
-    pe_latency      = 0
   )
 }
 
@@ -78,9 +77,11 @@ object Gemmini2DSEConfigs {
     headerFileName = "gemmini_params_dim16sp16acc64bus128.h"
   )
   val dim32sp16acc64bus128 = base.copy(
+    // TODO TODO TODO: actually look into the dma_buswidth...
+    dma_buswidth   = 256,
     meshRows       = 32,
     meshColumns    = 32,
-    sp_capacity    = CapacityInKilobytes(16),
+    sp_capacity    = CapacityInKilobytes(18),
     acc_capacity   = CapacityInKilobytes(64),
     headerFileName = "gemmini_params_dim32sp16acc64bus128.h"
   )
