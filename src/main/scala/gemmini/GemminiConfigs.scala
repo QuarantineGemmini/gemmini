@@ -35,6 +35,9 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   pe_latency: Int,
   headerFileName: String = "gemmini_params.h"
 ) {
+  val meshCols = meshColumns
+  val tileCols = tileColumns
+
   //==========================================================================
   // sanity check mesh size
   //==========================================================================

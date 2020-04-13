@@ -4,6 +4,8 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 
 // A Grid is a 2D array of Tile modules with registers in between each 
 // tile and registers from the bottom row and rightmost column of 
@@ -13,11 +15,12 @@ import chisel3.experimental._
 // @param tileCols
 // @param meshRows
 // @param meshCols
-class Mesh[T <: Data : Arithmetic](
-  inputType: T, outputType: T, accType: T,
-  val tileRows: Int, val tileCols: Int,
-  val meshRows: Int, val meshCols: Int) extends Module 
-{
+class Mesh[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
+  (implicit val p: Parameters) extends Module {
+  import config._
+  //=========================================================================
+  // module interface
+  //=========================================================================
   val io = IO(new Bundle {
     val in_a    = Input(Vec(meshRows, Vec(tileRows, inputType)))
     val in_b    = Input(Vec(meshCols, Vec(tileCols, inputType)))
@@ -28,6 +31,10 @@ class Mesh[T <: Data : Arithmetic](
     val in_valid  = Input(Vec(meshCols, Vec(tileCols, Bool())))
     val out_valid = Output(Vec(meshCols, Vec(tileCols, Bool())))
   })
+
+  //=========================================================================
+  // body
+  //=========================================================================
   // mesh(r)(c) => Tile at row r, column c
   val mesh: Seq[Seq[Tile[T]]] = Seq.fill(meshRows, meshCols)(
     Module(new Tile(inputType, outputType, accType, tileRows, tileCols)))
@@ -64,7 +71,6 @@ class Mesh[T <: Data : Arithmetic](
       case ((in_ctrl, valid), tile) =>
         (tile.io.in_ctrl, in_ctrl, valid).zipped.foreach { 
           case (tile_ctrl, ctrl, v) =>
-            tile_ctrl.shift := RegEnable(ctrl.shift, v)
             tile_ctrl.propagate := RegEnable(ctrl.propagate, v)
         }
         (tile.io.out_ctrl, tile.io.out_valid)

@@ -47,7 +47,7 @@ class PE[T <: Data](inputType: T, outputType: T, accType: T)
   io.out_valid := valid
 
   // hardcoded to WS
-  when(prop) {
+  when(prop.asBool) {
     io.out_c := c1
     io.out_b := b.mac(a, c2.withWidthOf(inputType))
     c1 := Mux(valid, d, c1)
@@ -55,6 +55,6 @@ class PE[T <: Data](inputType: T, outputType: T, accType: T)
   .otherwise {
     io.out_c := c2
     io.out_b := b.mac(a, c1.withWidthOf(inputType))
-    c2 := Mux(valid, d, d2)
+    c2 := Mux(valid, d, c2)
   }
 }

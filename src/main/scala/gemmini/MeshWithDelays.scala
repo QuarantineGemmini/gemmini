@@ -8,14 +8,32 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
-
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 import gemmini.Util._
 
-class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
-  (inputType: T, val outputType: T, accType: T, tagType: U,
-   tileRows: Int, tileCols: Int, meshRows: Int, meshCols: Int,
-   leftBanks: Int, upBanks: Int, outBanks: Int = 1)
-  extends Module {
+class MeshQueueTag[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
+  (implicit val p: Parameters) extends Bundle with TagQueueTag {
+  import config._
+
+  val rob_id = UDValid(UInt(log2Up(rob_entries).W))
+  val addr = local_addr_t.cloneType
+  val rows = UInt(log2Up(DIM + 1).W)
+  val cols = UInt(log2Up(DIM + 1).W)
+
+  override def make_this_garbage(dummy: Int = 0): Unit = {
+    rob_id.valid := false.B
+    addr.make_this_garbage()
+  }
+  override def cloneType: MeshQueueTag.this.type 
+    = new MeshQueueTag(config).asInstanceOf[this.type]
+}
+
+
+class MeshWithDelays[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
+  (implicit val p: Parameters) 
+  extends Module with HasCoreParameters {
+  import config._
   //=========================================================================
   // module interface
   //=========================================================================
@@ -29,10 +47,10 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
   val io = IO(new Bundle {
     val a       = Flipped(Decoupled(A_TYPE))
     val d       = Flipped(Decoupled(D_TYPE))
-    val tag_in  = Flipped(Decoupled(tagType))
+    val tag_in  = Flipped(Decoupled(new MeshQueueTag(config)))
     val pe_ctrl = Input(new PEControl(accType))
     val out     = Valid(C_TYPE)
-    val tag_out = Output(tagType)
+    val tag_out = Output(new MeshQueueTag(config))
     val busy    = Output(Bool())
     val prof    = Input(new Profiling)
   })
@@ -103,22 +121,20 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
   //=========================================================================
   // Create inner Mesh
   //=========================================================================
-  val mesh = Module(new Mesh(
-    inputType, outputType, accType, tileRows, tileCols, meshRows, meshCols))
+  val mesh = Module(new Mesh(config))
 
   val not_paused_vec = VecInit(Seq.fill(meshCols)(
                          VecInit(Seq.fill(tileCols)(!pause))))
   val a_shifter_in   = Mux(io.a.fire(), io.a.bits, a_buf)
   val d_shifter_in   = Mux(io.d.fire(), io.d.bits, d_buf)
 
-  mesh.io.in_valid := shifted(not_paused_vec, upBanks)
-  mesh.io.in_a     := shifted(a_shifter_in, leftBanks)
-  mesh.io.in_d     := shifted(d_shifter_in, upBanks)
+  mesh.io.in_valid := shifted(not_paused_vec, shifter_banks)
+  mesh.io.in_a     := shifted(a_shifter_in, shifter_banks)
+  mesh.io.in_d     := shifted(d_shifter_in, shifter_banks)
 
   // just fill b-cols with nothing, since in WS mode, we always accumulate
   // by writing the D-matrix to the accumulator
-  mesh.io.in_b := VecInit(Seq.fill(meshCols)(
-                    VecInit(Seq.fill(tileCols)(0.U.asTypeOf(B_TYPE)))))
+  mesh.io.in_b := 0.U.asTypeOf(B_TYPE)
 
   mesh.io.in_ctrl.zipWithIndex.foreach { case (ss, i) =>
     ss.foreach(_.propagate := ShiftRegister(propagate_index_n, i))
@@ -128,25 +144,26 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
   // mesh->ex-ctrller output
   //=========================================================================
   val shifter_out = mesh.io.out_b
-  io.out.valid := shifted(mesh.io.out_valid, outBanks, reverse = true)(0)(0)
-  io.out.bits  := shifted(shifter_out, outBanks, reverse = true)
+  io.out.valid := shifted(mesh.io.out_valid, shifter_banks, true)(0)(0)
+  io.out.bits  := shifted(shifter_out, shifter_banks, true)
 
   //=========================================================================
   // Tags
   //=========================================================================
   // tag is written to on the very last cycle of input-data
-  val tag_queue = Queue(tagType, 5)
-  tag_queue.io.enq <> io.tag_in
-  tag_queue.io.deq.ready := false.B
+  val tag_queue = Queue(io.tag_in, 5)
+  tag_queue.ready := false.B
 
   // this current tag allows delaying the written tag_in by 1 matmul, since
   // we load the tag for the preload, and have to write the tag out after
   // the FOLLOWING compute
-  val current_tag = RegInit(0.U.asTypeOf(tagType))
+  val garbage_tag = WireInit(0.U.asTypeOf(new MeshQueueTag(config)))
+  garbage_tag.make_this_garbage()
+  val current_tag = RegInit(garbage_tag)
   io.tag_out := current_tag
 
   // we are busy if we still have unfinished, valid tags 
-  io.busy := tag_queue.io.deq.valid || current_tag.rob_id.valid
+  io.busy := tag_queue.valid || current_tag.rob_id.valid
 
   // TODO: this is hardcoded to output DIM rows
   val output_counter = RegInit(0.U(log2Up(DIM + 1).W))
@@ -154,10 +171,8 @@ class MeshWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
   output_counter := wrappingAdd(output_counter, io.out.valid, DIM)
 
   when (is_last_row_output && io.out.valid) {
-    tag_queue.io.deq.ready := true.B
-    current_tag := Mux(tag_queue.io.deq.fire(), 
-                       tag_queue.io.deq.bits,
-                       0.U.asTypeOf(tagType))
+    tag_queue.ready := true.B
+    current_tag := Mux(tag_queue.fire(),tag_queue.bits, garbage_tag)
   }
 
   //=========================================================================

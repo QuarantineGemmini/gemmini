@@ -30,21 +30,23 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
 
   val A_TYPE = Vec(meshRows, Vec(tileRows, inputType))
   val D_TYPE = Vec(meshCols, Vec(tileCols, inputType))
-  val C_TYPE = Vec(meshCols, Vec(tileCols, outputType))
 
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
     val srams = new Bundle {
-      val read = Vec(sp_banks, 
-                     new ScratchpadReadIO(sp_bank_entries, sp_width))
+      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, 
+                                                    sp_width))
       val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, 
-                            sp_width, (sp_width / (aligned_to * 8)) max 1))
+                              sp_width, (sp_width / (aligned_to * 8)) max 1))
     }
+
     val acc = new Bundle {
-      val read = Vec(acc_banks, jnew AccumulatorReadIO(acc_bank_entries, 
-                          log2Up(accType.getWidth), D_TYPE))
+      val read = Vec(acc_banks, 
+        new AccumulatorReadIO(acc_bank_entries, log2Up(accType.getWidth), 
+                              Vec(meshColumns, Vec(tileColumns, inputType))))
       val write = Vec(acc_banks, 
-                      new AccumulatorWriteIO(acc_bank_entries, C_TYPE))
+        new AccumulatorWriteIO(acc_bank_entries, 
+                               Vec(meshColumns, Vec(tileColumns, accType))))
     }
     val completed = Valid(UInt(log2Up(rob_entries).W))
     val busy = Output(Bool())
@@ -74,6 +76,11 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   val preload_cmd_place = Mux(DoPreloads(0), 0.U, 1.U)
 
   val in_prop = functs(0) === COMPUTE_AND_FLIP_CMD
+
+  // configuration state
+  val acc_shift   = Reg(UInt(log2Up(accType.getWidth).W))
+  val relu6_shift = Reg(UInt(log2Up(accType.getWidth).W))
+  val activation  = Reg(UInt(2.W))
 
   // SRAM addresses of matmul operands
   val a_address_rs1 = rs1s(0).asTypeOf(local_addr_t)
@@ -302,11 +309,12 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   val s_IDLE :: s_PRELOAD :: s_MUL :: s_MUL_PRE :: Nil = Enum(4)
   val state = RegInit(s_IDLE)
   val state_n = WireInit(state)
+  state := state_n
 
-  // configuration state
-  val acc_shift   = Reg(UInt(log2Up(accType.getWidth).W))
-  val relu6_shift = Reg(UInt(log2Up(accType.getWidth).W))
-  val activation  = Reg(UInt(2.W))
+  // if we are committing the mul tag back to the rob. the backend datapath
+  // needs to stall its write back to the rob if this is happening on the
+  // same cycle
+  val is_mul_tag_finished = WireInit(false.B)
 
   switch (state) {
     is (s_IDLE) {
@@ -345,7 +353,7 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
       when (about_to_fire_all_rows) {
         cmd.pop := 2.U
 
-        // commit the compute command
+        is_mul_tag_finished := true.B
         io.completed.valid := true.B
         io.completed.bits  := cmd.bits(0).rob_id
 
@@ -357,7 +365,7 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
       when (about_to_fire_all_rows) {
         cmd.pop := 1.U
 
-        // commit the compute command
+        is_mul_tag_finished := true.B
         io.completed.valid := true.B
         io.completed.bits  := cmd.bits(0).rob_id
 
@@ -405,8 +413,8 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   cntlq_in.bits.c_rows := c_rows
   cntlq_in.bits.c_cols := c_cols
 
-  cntlq_in.bits.rob_id.valid := !do_single_mul_n && 
-                                !c_address_rs2.is_garbage()
+  cntlq_in.bits.rob_id.valid := !c_address_rs2.is_garbage() &&
+                                (state === s_MUL_PRE || state === s_PRELOAD)
   cntlq_in.bits.rob_id.bits  := cmd.bits(preload_cmd_place).rob_id
   cntlq_in.bits.prop         := in_prop
   cntlq_in.bits.last_row     := about_to_fire_all_rows
@@ -414,34 +422,18 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   //========================================================================
   // Instantiate the actual mesh
   //========================================================================
-  val mesh_tag = new Bundle with TagQueueTag {
-    val rob_id = UDValid(UInt(log2Up(rob_entries).W))
-    val addr = local_addr_t.cloneType
-    val rows = UInt(log2Up(DIM + 1).W)
-    val cols = UInt(log2Up(DIM + 1).W)
+  val mesh = Module(new MeshWithDelays[T](config))
 
-    override def make_this_garbage(dummy: Int = 0): Unit = {
-      rob_id.valid := false.B
-      addr.make_this_garbage()
-    }
-  }
+  mesh.io.tag_in.valid := false.B
+  mesh.io.tag_in.bits  := DontCare
+  mesh.io.a.valid      := false.B
+  mesh.io.d.valid      := false.B
+  mesh.io.a.bits       := DontCare
+  mesh.io.d.bits       := DontCare
+  mesh.io.prof         := io.prof
 
-  val mesh = Module(new MeshWithDelays(
-    inputType, outputType, accType, mesh_tag,
-    tileRows, tileCols, meshRows, meshCols, 
-    shifter_banks, shifter_banks, shifter_banks))
-
-  mesh.io.tag_in.valid         := false.B
-  mesh.io.tag_in.bits          := DontCare
-  mesh.io.a.valid              := false.B
-  mesh.io.d.valid              := false.B
-  mesh.io.a.bits               := DontCare
-  mesh.io.d.bits               := DontCare
-  mesh.io.pe_control.propagate := cntlq.prop
-  mesh.io.prof                 := io.prof
-
-  val mesh_is_busy := mesh.io.busy
-  io.busy := mesh_is_busy
+  // busy if the mesh has pending tags
+  io.busy := mesh.io.busy
 
   //=========================================================================
   // write inputs into mesh datapath (read from scratchpad/accumulator)
@@ -467,8 +459,8 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   val dataD_valid = cntlq.d_garbage || 
                     cntlq.d_unpadded_cols === 0.U || 
                     MuxCase(readValid(cntlq.d_bank), Seq(
-                    cntlq.preload_zeros -> false.B,
-                    cntlq.d_read_from_acc -> accReadValid(cntlq.d_bank_acc)
+                      cntlq.preload_zeros -> false.B,
+                      cntlq.d_read_from_acc -> accReadValid(cntlq.d_bank_acc)
                     ))
 
   // data read from scratchpad/accumulator
@@ -490,16 +482,20 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
                 Vec(DIM, inputType)).zipWithIndex.map { case (d, i) => 
                   Mux(i.U < cntlq.d_unpadded_cols, d, inputType.zero)})
 
-  // write tag_in into mesh only on last row written
-  mesh.io.tag_in.valid       := cntlq.last_row
+  // write the PE-control signals
+  mesh.io.pe_ctrl.propagate  := cntlq.prop
+
+  // write tag_in into mesh only on last row written. ALL compute rob_ids are
+  // written to the mesh, even if they have garbage output addrs
+  mesh.io.tag_in.valid       := cntlq.last_row && cntlq_out_ready
   mesh.io.tag_in.bits.rob_id := cntlq.rob_id
   mesh.io.tag_in.bits.addr   := Mux(cntlq.do_single_mul,
-                                    cntlq.c_addr, 
-                                    GARBAGE_ADDR)
+                                    GARBAGE_ADDR.asTypeOf(local_addr_t),
+                                    cntlq.c_addr)
   mesh.io.tag_in.bits.cols   := cntlq.c_cols
   mesh.io.tag_in.bits.rows   := cntlq.c_rows
 
-  when (cntlq.last_row) {
+  when (mesh.io.tag_in.valid) {
     assert(mesh.io.tag_in.fire(), "could not write tag_in to mesh!")
   }
 
@@ -508,8 +504,8 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
     mesh.io.a.valid := cntlq.a_fire && dataA_valid
     mesh.io.d.valid := cntlq.d_fire && dataD_valid
   }
-  mesh.io.a.bits := dataA
-  mesh.io.d.bits := dataD
+  mesh.io.a.bits := dataA.asTypeOf(A_TYPE)
+  mesh.io.d.bits := dataD.asTypeOf(D_TYPE)
 
   cntlq_out_ready := 
     (!cntlq.a_fire || mesh.io.a.fire() || !mesh.io.a.ready) &&
@@ -532,13 +528,12 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   // TODO: make this finish after w_matrix_rows
   // TODO: allow this to stall the mesh output (use Decoupled on mesh.io.out)
   val output_row = RegInit(0.U(log2Up(DIM+1).W))
-  val output_row_n = wrappingAdd(output_row, is_array_outputting, DIM)
-  output_row := output_row_n
+  output_row := wrappingAdd(output_row, is_array_outputting, DIM)
 
   val is_array_outputting_valid_row = is_array_outputting && 
-                                      (output_row_n < w_matrix_rows)
-  val is_array_outputting_last_row := is_array_outputting && 
-                                      (output_row_n === w_matrix_rows)
+                                      (output_row < w_matrix_rows)
+  val is_array_outputting_last_row = is_array_outputting && 
+                                     (output_row === (w_matrix_rows-1.U))
 
   val w_bank = Mux(write_to_acc, w_address.acc_bank(), w_address.sp_bank())
   val w_row  = Mux(write_to_acc, w_address.acc_row(),  w_address.sp_row())
@@ -566,10 +561,9 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   }
 
   when (pending_preload_tag_complete.valid && ~is_mul_tag_finished) {
-      io.completed.valid := true.B
-      io.completed.bits := pending_preload_tag_complete.bits
-      pending_preload_tag_complete.valid := false.B
-    }
+    io.completed.valid := true.B
+    io.completed.bits := pending_preload_tag_complete.bits
+    pending_preload_tag_complete.valid := false.B
   }
 
   //-------------------------------------------------------------------------
@@ -590,8 +584,8 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
                             !is_output_garbage
     io.srams.write(i).addr := current_w_bank_address
     io.srams.write(i).data := activated_wdata.asUInt()
-    io.srams.write(i).mask := w_mask.flatMap(
-                  b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
+    io.srams.write(i).mask := w_mask.flatMap(b => 
+                          Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
   }
 
   //-------------------------------------------------------------------------
@@ -605,8 +599,8 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
     io.acc.write(i).addr := current_w_bank_address
     io.acc.write(i).data := mesh.io.out.bits
     io.acc.write(i).acc := w_address.accumulate
-    io.acc.write(i).mask := w_mask.flatMap(
-                       b => Seq.fill(accType.getWidth / (aligned_to * 8))(b))
+    io.acc.write(i).mask := w_mask.flatMap(b => 
+                            Seq.fill(accType.getWidth / (aligned_to * 8))(b))
   }
 
   //=========================================================================
