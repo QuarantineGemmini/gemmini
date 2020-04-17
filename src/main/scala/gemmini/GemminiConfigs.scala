@@ -34,6 +34,7 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   outputType: T,
   accType: T,
   headerFileName: String = "gemmini_params.h"
+  fg_sa_div: Int,
 ) {
   val meshCols = meshColumns
   val tileCols = tileColumns

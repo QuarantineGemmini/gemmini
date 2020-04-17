@@ -89,12 +89,15 @@ class ScratchpadWriteIO(val n: Int, val w: Int, val mask_len: Int) extends Bundl
   val data = Output(UInt(w.W))
 }
 
-class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends Module {
-  // This is essentially a pipelined SRAM with the ability to stall pipeline stages
-
+class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) 
+  extends Module {
+  // This is essentially a pipelined SRAM with the ability to 
+  // stall pipeline stages
   require(w % aligned_to == 0 || w < aligned_to)
-  val mask_len = (w / (aligned_to * 8)) max 1 // How many mask bits are there?
-  val mask_elem = UInt((w min (aligned_to * 8)).W) // What datatype does each mask bit correspond to?
+  // How many mask bits are there?
+  val mask_len = (w / (aligned_to * 8)) max 1 
+  // What datatype does each mask bit correspond to?
+  val mask_elem = UInt((w min (aligned_to * 8)).W) 
 
   val io = IO(new Bundle {
     val read = Flipped(new ScratchpadReadIO(n, w))
@@ -106,9 +109,11 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
 
   when (io.write.en) {
     if (aligned_to >= w)
-      mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)))
+      mem.write(io.write.addr, 
+        io.write.data.asTypeOf(Vec(mask_len, mask_elem)))
     else
-      mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
+      mem.write(io.write.addr, 
+        io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
   }
 
   val raddr = io.read.req.bits.addr
@@ -116,13 +121,15 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
   val rdata = mem.read(raddr, ren).asUInt()
   val fromDMA = io.read.req.bits.fromDMA
 
-  // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
+  // Make a queue which buffers the result of an SRAM read if it 
+  // can't immediately be consumed
   val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.data := rdata
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
-  val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
+  val q_will_be_empty = 
+    (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
   io.read.req.ready := q_will_be_empty
 
   // Build the rest of the resp pipeline
