@@ -1,123 +1,64 @@
+//===========================================================================
+// DMACmdTracker tracks outstanding mem-ops from Load/Store Controller
+//===========================================================================
 package gemmini
 
 import chisel3._
 import chisel3.util._
 
-
-// This module is meant to go inside the Load controller, where it can track which commands are currently
-// in flight and which are completed
-class DMAReadCommandTracker[T <: Data](val nCmds: Int, val maxBytes: Int, tag_t: => T) extends Module {
-  def cmd_id_t = UInt((log2Ceil(nCmds) max 1).W)
-
+class DMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
+  (implicit val p: Parameters) extends CoreModule {
+  import config._
+  //-------------------------------------------------------------------------
+  // I/O interface
+  //-------------------------------------------------------------------------
   val io = IO(new Bundle {
-    // TODO is there an existing decoupled interface in the standard library which matches this use-case?
-    val alloc = new Bundle {
-      val valid = Input(Bool())
-      val ready = Output(Bool())
-
-      class BitsT(tag_t: => T, cmd_id_t: UInt) extends Bundle {
-        // This was only spun off as its own class to resolve CloneType errors
-        val tag = Input(tag_t.cloneType)
-        val bytes_to_read = Input(UInt(log2Up(maxBytes+1).W))
-        val cmd_id = Output(cmd_id_t.cloneType)
-
-        override def cloneType: this.type = new BitsT(tag_t.cloneType, cmd_id_t.cloneType).asInstanceOf[this.type]
-      }
-
-      /*val bits = new Bundle {
-        val tag = Input(tag_t)
-        val bytes_to_read = Input(UInt(log2Up(maxBytes+1).W))
-        val cmd_id = Output(cmd_id_t)
-      }*/
-
-      val bits = new BitsT(tag_t.cloneType, cmd_id_t.cloneType)
-
-      def fire(dummy: Int = 0) = valid && ready
-    }
-
-    class RequestReturnedT(cmd_id_t: UInt) extends Bundle {
-      // This was only spun off as its own class to resolve CloneType errors
-      val bytes_read = UInt(log2Up(maxBytes+1).W)
-      val cmd_id = cmd_id_t.cloneType
-
-      override def cloneType: this.type = new RequestReturnedT(cmd_id_t.cloneType).asInstanceOf[this.type]
-    }
-
-    /*val request_returned = Flipped(Valid(new Bundle {
-      val bytes_read = UInt(log2Up(maxBytes+1).W)
-      val cmd_id = cmd_id_t
-    }))*/
-
-    val request_returned = Flipped(Valid(new RequestReturnedT(cmd_id_t.cloneType)))
-
-    class CmdCompletedT(cmd_id_t: UInt, tag_t: T) extends Bundle {
-      val cmd_id = cmd_id_t.cloneType
-      val tag = tag_t.cloneType
-
-      override def cloneType: this.type = new CmdCompletedT(cmd_id_t.cloneType, tag_t.cloneType).asInstanceOf[this.type]
-    }
-
-    /*val cmd_completed = Decoupled(new Bundle {
-      val cmd_id = cmd_id_t
-      val tag = tag_t
-    })*/
-
-    val cmd_completed = Decoupled(new CmdCompletedT(cmd_id_t.cloneType, tag_t.cloneType))
-
-    val busy = Output(Bool())
+    val alloc = Flipped(Decoupled(new Bundle {
+      val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+      val rows   = UInt(LOG2_MAX_MEM_OP_BYTES.W)
+    }))
+    val progress  = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
+    val completed = Decoupled(UInt(LOG2_ROB_ENTRIES.W))
+    val busy      = Output(Bool())
   })
 
-  class Entry extends Bundle {
-    val valid = Bool()
-    val tag = tag_t.cloneType
-    val bytes_left = UInt(log2Up(maxBytes+1).W)
+  // slots for outstanding commands
+  val cmds = Reg(Vec(ROB_ENTRIES, new Bundle {
+    val valid     = Bool()
+    val rows_left = UInt(LOG2_MAX_MEM_OP_BYTES.W)
+  }))
 
-    def init(dummy: Int = 0): Unit = {
-      valid := false.B
-    }
+  // when a new mem-op is allocated
+  val cmd_valids = cmds.map(_.valid)
+  io.alloc.ready := cmd_valids(io.alloc.bits.rob_id)
+  when (io.alloc.fire()) {
+    val rob_id = io.alloc.bits.rob_id
+    cmds(rob_id).valid     := true.B
+    cmds(rob_id).rows_left := io.alloc.bits.rows
   }
 
-  // val cmds = RegInit(VecInit(Seq.fill(nCmds)(entry_init)))
-  val cmds = Reg(Vec(nCmds, new Entry))
-  val cmd_valids = cmds.map(_.valid)
+  // when a new read/write progress of the mem-op is finished
+  when (io.progress.fire()) {
+    val rob_id = io.progress.bits.rob_id
+    cmds(rob_id).rows_left := cmds(rob_id).rows_left - 1.U
+  }
 
-  val next_empty_alloc = MuxCase(0.U, cmd_valids.zipWithIndex.map { case (v, i) => (!v) -> i.U })
+  // complete outstanding command logic
+  val cmd_completed_id = MuxCase(0.U, cmds.zipWithIndex.map { 
+    case (cmd, i) => (cmd.valid && cmd.rows_left === 0.U) -> i.U
+  })
+  io.cmd_completed.valid       := cmds(cmd_completed_id).valid
+  io.cmd_completed.bits.rob_id := cmd_completed_id
+  when (io.complete.fire()) {
+    cmds(io.complete.bits.rob_id).valid := false.B
+  }
 
-  io.alloc.ready := !cmd_valids.reduce(_ && _)
-  io.alloc.bits.cmd_id := next_empty_alloc
-
+  // busy logic 
   io.busy := cmd_valids.reduce(_ || _)
 
-  val cmd_completed_id = MuxCase(0.U, cmds.zipWithIndex.map { case (cmd, i) =>
-    (cmd.valid && cmd.bytes_left === 0.U) -> i.U
-  })
-  io.cmd_completed.valid := cmds.map(cmd => cmd.valid && cmd.bytes_left === 0.U).reduce(_ || _)
-  io.cmd_completed.bits.cmd_id := cmd_completed_id
-  io.cmd_completed.bits.tag := cmds(cmd_completed_id).tag
-
-  when (io.alloc.fire()) {
-    cmds(next_empty_alloc).valid := true.B
-    cmds(next_empty_alloc).tag := io.alloc.bits.tag
-    cmds(next_empty_alloc).bytes_left := io.alloc.bits.bytes_to_read
-  }
-
-  when (io.request_returned.fire()) {
-    val cmd_id = io.request_returned.bits.cmd_id
-    cmds(cmd_id).bytes_left := cmds(cmd_id).bytes_left - io.request_returned.bits.bytes_read
-
-    assert(cmds(cmd_id).valid)
-    assert(cmds(cmd_id).bytes_left >= io.request_returned.bits.bytes_read)
-  }
-
-  when (io.cmd_completed.fire()) {
-    cmds(io.cmd_completed.bits.cmd_id).valid := false.B
-  }
-
-
-
-
+  // reset logic
   when (reset.toBool()) {
-    cmds.foreach(_.init())
+    cmds.foreach(_.valid := false.B)
   }
 }
 

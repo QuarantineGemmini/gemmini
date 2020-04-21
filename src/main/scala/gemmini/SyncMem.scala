@@ -28,20 +28,23 @@ class SinglePortSyncMem[T <: Data](n: Int, t: T) extends Module {
   }
 }
 
+//===========================================================================
+// 1r1w SRAM (read data after clock edge)
+//===========================================================================
 class TwoPortSyncMem[T <: Data](n: Int, t: T, mask_len: Int) extends Module {
   val io = IO(new Bundle {
     val waddr = Input(UInt((log2Ceil(n) max 1).W))
     val raddr = Input(UInt((log2Ceil(n) max 1).W))
     val wdata = Input(t)
     val rdata = Output(t)
-    val wen = Input(Bool())
-    val ren = Input(Bool())
-    val mask = Input(Vec(mask_len, Bool()))
+    val wen   = Input(Bool())
+    val ren   = Input(Bool())
+    val mask  = Input(Vec(mask_len, Bool()))
   })
 
-  assert(!(io.wen && io.ren && io.raddr === io.waddr), "undefined behavior in dual-ported SRAM")
+  assert(!(io.wen && io.ren && io.raddr === io.waddr), 
+    "undefined behavior in dual-ported SRAM")
 
-  // val mem = SyncReadMem(n, t)
   val mask_elem = UInt((t.getWidth / mask_len).W)
   val mem = SyncReadMem(n, Vec(mask_len, mask_elem))
 
@@ -52,6 +55,9 @@ class TwoPortSyncMem[T <: Data](n: Int, t: T, mask_len: Int) extends Module {
   }
 }
 
+//===========================================================================
+// ???
+//===========================================================================
 class SplitSinglePortSyncMem[T <: Data](n: Int, t: T, splits: Int) extends Module {
   val io = IO(new Bundle {
     val waddr = Input(UInt((log2Ceil(n) max 1).W))

@@ -73,12 +73,12 @@ class FgGemminiModule2[T <: Data: Arithmetic]
   spad.module.io.acc.read    <> exec.io.acc.read
   spad.module.io.acc.write   <> exec.io.acc.write
 
-  val load = LoadController(outer.config)
+  val load = FgMemTransferController(outer.config)
   load.io.cmd             <> tiler.io.issue.load
   tiler.io.completed.load <> load.io.completed
   spad.module.io.dma.read <> load.io.dma
 
-  val store = StoreController(outer.config)
+  val store = FgMemTransferController(outer.config)
   store.io.cmd             <> tiler.io.issue.store
   tiler.io.completed.store <> store.io.completed
   spad.module.io.dma.write <> store.io.dma

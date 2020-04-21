@@ -11,9 +11,9 @@ sealed abstract trait GemminiMemCapacity
 case class CapacityInKilobytes(kilobytes: Int) extends GemminiMemCapacity
 case class CapacityInMatrices(matrices: Int) extends GemminiMemCapacity
 
-case class FgGemminiArrayConfig[T <: Data : Arithmetic](
-  fg_tile_rows: Int,  // rows/cols in a fine-grained systolic array
-  fg_tile_cols: Int,
+case class GemminiArrayConfig[T <: Data : Arithmetic](
+  tileRows: Int,
+  tileColumns: Int,
   meshRows: Int,
   meshColumns: Int,
   ld_queue_length: Int,
@@ -33,6 +33,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   inputType: T,
   outputType: T,
   accType: T,
+  headerFileName: String = "gemmini_params.h"
   fg_sa_div: Int,
 ) {
   val meshCols = meshColumns
@@ -67,14 +68,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def local_addr_t = new LocalAddr(sp_banks, sp_bank_entries, 
                                    acc_banks, acc_bank_entries)
 
-  def max_in_flight_reqs    = 16 // TODO calculate this somehow
-
-  def MAX_DMA_REQS          = 16
-  def LOG2_MAX_DMA_REQS     = log2Up(MAX_DMA_REQS) // used as index
-  def MAX_DMA_BYTES         = dma_maxbytes
-  def LOG2_MAX_DMA_BYTES    = log2Up(MAX_DMA_BYTES+1) // used as counter
-  def DMA_BUS_BITWIDTH      = dma_buswidth
-  def LOG2_DMA_BUS_BITWIDTH = log2Up(DMA_BUS_BITWIDTH) // used as index
+  def max_in_flight_reqs = 16 // TODO calculate this somehow
 
   def mvin_len_bits   = log2Up(((dma_maxbytes / (inputType.getWidth / 8)) max 
                                DIM) + 1)
@@ -82,16 +76,35 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def mvout_len_bits  = log2Up(DIM + 1)
   def mvout_rows_bits = log2Up(DIM + 1)
 
-  def BANK_IDX_BITS = 16
-  def ROW_COUNT_BITS = 16
-  def SQ_COL_START_BITS = 12
-
   // TODO: move this. was originally in Controller.scala
   def tagWidth = 32
 
   //==========================================================================
   // gemmini2 fine-grained-SA miscellaneous constants
   //==========================================================================
+  def FG_NUM = fg_sa_div * fg_sa_div
+  def FG_DIM = DIM / fg_sa_div
+
+  def SP_COLS_PER_ROW  = FG_DIM * FG_NUM
+
+  def SP_BITS_PER_ROW  = SP_COLS_PER_ROW * inputType.getWidth
+  def ACC_BITS_PER_ROW = SP_COLS_PER_ROW * accType.getWidth
+
+  // fg-tile squares that fit into a bank row
+  def SP_SQS_PER_ROW   = SP_COLS_PER_ROW / FG_NUM
+  def SP_SQ_BIT_WIDTH  = DIM * inputType.getWidth
+  def ACC_SQ_BIT_WIDTH = DIM * accType.getWidth
+
+  def SP_A_BANKS = FG_NUM
+  def SP_B_BANKS = 2
+  def ACC_BANKS  = FG_NUM
+
+  def SP_ROWS_PER_BANK = FG_DIM
+
+  def SP_A_ROWS = SP_A_BANKS * SP_ROWS_PER_BANK
+  def SP_B_ROWS = SP_B_BANKS * SP_ROWS_PER_BANK
+  def ACC_ROWS  = ACC_BANKS  * SP_ROWS_PER_BANK
+
   def fg_sp_width = DIM * inputType.getWidth
 
   //==========================================================================
@@ -118,25 +131,10 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def SP_ROWS         = SP_BANKS * SP_BANK_ROWS
   def LOG2_SP_ROWS    = log2Up(SP_ROWS)
 
-  def SP_ROW_BITS        = FG_NUM * FG_DIM * ITYPE_BITS
-  def SP_ROW_BYTES       = (SP_ROW_BITS +7 ) / 8
-  def ACC_ROW_BITS       = FG_NUM * FG_DIM * OTYPE_BITS
-  def ACC_ROW_BYTES      = (ACC_ROW_BITS +7 ) / 8
-  def LOG2_SP_ROW_BITS   = log2Up(SP_ROW_BITS)     // used as index
-  def LOG2_ACC_ROW_BITS  = log2Up(ACC_ROW_BITS)
-  def LOG2_SP_ROW_BYTES  = log2Up(SP_ROW_BYTES+1)  // used as counters
-  def LOG2_ACC_ROW_BYTES = log2Up(ACC_ROW_BYTES+1)
-
-  def MAX_MEM_OP_BYTES      = ACC_ROW_BYTES * FG_DIM
-  def LOG2_MAX_MEM_OP_BYTES = log2Up(MAX_MEM_OP_BYTES+1)
-
   def ACC_BANKS       = acc_banks
   def ACC_BANK_ROWS   = acc_bank_entries
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
-
-  def MAX_TRANSFER_ROWS       = FG_NUM * FG_DIM
-  def LOG2_MAX_TRANSFER_ROWS  = log2Up(MAX_TRANSFER_ROWS)
 
   def MNK_BYTES                   = Int.MaxValue / DIM  // TODO: upper bound?
   def LOG2_MNK_BYTES              = log2Up(MNK_BYTES)
@@ -144,9 +142,6 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def LOG2_MNK_BYTES_PER_TILE_ROW = log2Up(MNK_BYTES_PER_TILE_ROW)
   def TILE_IDX                    = MNK_BYTES / (DIM / 8)
   def LOG2_TILE_IDX               = log2Up(TILE_IDX)
-
-  // this just makes some internal logic simpler
-  require(ACC_ROW_BYTES >= MAX_DMA_BYTES, "ACC_ROW_BYTES < MAX_DMA_BYTES")
 
   //--------------------------------------------------------------------------
   def I_TILE_BYTE_WIDTH = DIM * ((inputType.getWidth+7) / 8)

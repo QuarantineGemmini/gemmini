@@ -4,12 +4,12 @@ import chisel3._
 import chisel3.util._
 import gemmini.Util.UDValid
 
-class XactTrackerEntry[T <: Data]
+class FgXactTrackerEntry[T <: Data]
   (config: GemminiArrayConfig[T])(implicit p: Parameters) extends Bundle {
   val shift         = UInt(LOG2_MAX_DMA_BYTES.W)
   val laddr         = new FgLocalAddr
   val lg_len_req    = UInt(log2Up(log2Up(maxReqBytes+1)+1).W)
-  val bytes_to_read = UInt(LOG2_MAX_DMA_BYTES.W)
+  val bytes_to_read = Int(LOG2_MAX_DMA_BYTES.W)
   val cmd_id        = UInt(LOG2_MAX_DMA_REQS.W)
 }
 
@@ -19,8 +19,8 @@ class XactTrackerAllocIO
   val valid = Output(Bool())
   val ready = Input(Bool())
 
-  val xactid = Input(UInt(log2Up(nXacts).W))
-  val entry = Output(new XactTrackerEntry(maxShift, spadWidth, accWidth, spadRows, accRows, maxReqBytes))
+  val xactid = Input(UInt(LOG2_MAX_DMA_REQS.W))
+  val entry  = Output(new FgXactTrackerEntry(maxShift, spadWidth, accWidth, spadRows, accRows, maxReqBytes))
 
   def fire(dummy: Int = 0) = valid && ready
 }
@@ -41,9 +41,10 @@ class XactTrackerPeekIO(val nXacts: Int, val maxShift: Int, val spadWidth: Int, 
 //  Removed:
 //    maxMatrices: the maximum number of rows from different matrices which 
 //                 can be packed into one request
-class XactTracker
-  (nXacts: Int, maxShift: Int, spadWidth: Int, accWidth: Int,
-   spadRows: Int, accRows: Int, maxReqBytes: Int) extends Module {
+class FgXactTracker[T <: Data](
+  config: GemminiArrayConfig[T])(implicit p: Parameters) extends LazyModule {
+  import config._
+
   val io = IO(new Bundle {
     val alloc = Flipped(new XactTrackerAllocIO(nXacts, maxShift, spadWidth, accWidth, spadRows, accRows, maxReqBytes))
     val peek = new XactTrackerPeekIO(nXacts, maxShift, spadWidth, accWidth, spadRows, accRows, maxReqBytes)

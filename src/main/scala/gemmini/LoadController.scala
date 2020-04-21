@@ -7,124 +7,104 @@ import Util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 
-// TODO deal with errors when reading scratchpad responses
-class LoadController[T <: Data](config: GemminiArrayConfig[T])
-  (implicit val p: Parameters) extends Module with HasCoreParameters {
+class FgMemTransferController[T <: Data](config: GemminiArrayConfig[T])
+  (implicit val p: Parameters) extends CoreModule {
   import config._
-
+  //=========================================================================
+  // I/O interface
+  //=========================================================================
   val io = IO(new Bundle {
-    val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
-    val dma = new ScratchpadReadMemIO(local_addr_t)
-    val completed = Decoupled(UInt(log2Up(rob_entries).W))
-    val busy = Output(Bool())
+    val cmd       = Flipped(Decoupled(new GemminiCmd(ROB_ENTRIES)))
+    val dma       = new FgScratchpadMemIO(config)
+    val completed = Decoupled(UInt(log2Up(ROB_ENTRIES).W))
+    val busy      = Output(Bool())
   })
 
-  val (waiting_for_command :: 
-       waiting_for_dma_req_ready :: 
-       sending_rows :: 
-       Nil) = Enum(3)
-  val control_state = RegInit(waiting_for_command)
-
-  val stride = RegInit((sp_width / 8).U(coreMaxAddrBits.W))
-  val block_rows = meshRows * tileRows
-  val block_cols = meshColumns * tileColumns
-  val row_counter = RegInit(0.U(log2Ceil(block_rows).W))
-
+  //=========================================================================
+  // queue up incoming commands
+  //=========================================================================
   val cmd = Queue(io.cmd, ld_queue_length)
-  val vaddr = cmd.bits.cmd.rs1
-  val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
-  val cols = cmd.bits.cmd.rs2(32 + mvin_len_bits - 1, 32) // TODO magic numbers
-  val rows = cmd.bits.cmd.rs2(48 + mvin_rows_bits, 48) // TODO magic numbers
+  val is_config_cmd = cmd.valid && cmd.bits.cmd.inst.funct === CONFIG_CMD
+  val is_load_cmd   = cmd.valid && cmd.bits.cmd.inst.funct === CONFIG_LOAD
+  val vaddr         = cmd.bits.cmd.rs1
   val config_stride = cmd.bits.cmd.rs2
-  val mstatus = cmd.bits.cmd.status
-
-  val localaddr_plus_row_counter = localaddr + row_counter
-
-  io.busy := cmd.valid
-
-  val DoConfig = cmd.bits.cmd.inst.funct === CONFIG_CMD
-  val DoLoad = !DoConfig // TODO change this if more commands are added
+  val item_rows     = cmd.bits.cmd.rs2(63, 48)
+  val item_cols     = cmd.bits.cmd.rs2(47, 32)
+  val is_acc        = cmd.bits.cmd.rs2(31)
+  val is_accum      = cmd.bits.cmd.rs2(30)
+  val sq_col_start  = cmd.bits.cmd.rs2(29,16)
+  val row_start     = cmd.bits.cmd.rs2(15,0)
+  val mstatus       = cmd.bits.cmd.status
+  val rob_id        = cmd.bits.rob_id
 
   cmd.ready := false.B
+  io.busy := cmd.valid
 
-  // Command tracker instantiation
-  val nCmds = 2 // TODO make this a config parameter
+  //=========================================================================
+  // Track Outstanding Requests
+  //=========================================================================
+  val cmd_tracker = Module(new DMACmdTracker(config))
 
-  val deps_t = new Bundle {
-    val rob_id = UInt(log2Up(rob_entries).W)
-  }
+  cmd_tracker.io.alloc.valid       := false.B
+  cmd_tracker.io.alloc.bits.rob_id := cmd.bits.rob_id
+  cmd_tracker.io.alloc.bits.rows   := item_rows
+  cmd_tracker.io.progress          <> io.dma.resp
+  cmd_tracker.io.completed         <> io.completed
 
-  val maxBytesInRowRequest = config.dma_maxbytes max (block_cols * config.inputType.getWidth / 8) max
-    (block_cols * config.accType.getWidth / 8)
-  val maxBytesInMatRequest = block_rows * maxBytesInRowRequest
+  //=========================================================================
+  // DMA request
+  //=========================================================================
+  val stride      = RegInit(0.U(coreMaxAddrBits.W))
+  val row_counter = RegInit(0.U(LOG2_MAX_TRANSFER_ROWS.W))
+  val lrange      = cmd.bits.cmd.rs2.asTypeOf[FgLocalRange]
 
-  val cmd_tracker = Module(new DMAReadCommandTracker(nCmds, maxBytesInMatRequest, deps_t))
+  // only request 1 row at a time
+  lrange.rows      := 1.U
+  lrange.row_start := row_start + row_counter
 
-  // DMA IO wiring
-  io.dma.req.valid := (control_state === waiting_for_command && cmd.valid && DoLoad && cmd_tracker.io.alloc.ready) ||
-    control_state === waiting_for_dma_req_ready ||
-    (control_state === sending_rows && row_counter =/= 0.U)
-  io.dma.req.bits.vaddr := vaddr + row_counter * stride
-  io.dma.req.bits.laddr := localaddr_plus_row_counter
-  io.dma.req.bits.len := cols
+  io.dma.req.valid       := false.B
+  io.dma.req.bits.vaddr  := vaddr + row_counter * stride
+  io.dma.req.bits.laddr  := current_laddr
+  io.dma.req.bits.len    := item_cols
   io.dma.req.bits.status := mstatus
 
-  // Command tracker IO
-  cmd_tracker.io.alloc.valid := control_state === waiting_for_command && cmd.valid && DoLoad
-  cmd_tracker.io.alloc.bits.bytes_to_read :=
-    Mux(localaddr.is_acc_addr, cols * rows * config.accType.getWidth.U, cols * rows * config.inputType.getWidth.U) / 8.U
-  cmd_tracker.io.alloc.bits.tag.rob_id := cmd.bits.rob_id
-  cmd_tracker.io.request_returned.valid := io.dma.resp.fire() // TODO use a bundle connect
-  cmd_tracker.io.request_returned.bits.cmd_id := io.dma.resp.bits.cmd_id // TODO use a bundle connect
-  cmd_tracker.io.request_returned.bits.bytes_read := io.dma.resp.bits.bytesRead
-  cmd_tracker.io.cmd_completed.ready := io.completed.ready
+  //==========================================================================
+  // Request FSM (only sends requests to the DMA engine)
+  //==========================================================================
+  val (s_IDLE :: s_TRANSFER_ROWS :: Nil) = Enum(2)
+  val state = RegInit(s_IDLE)
 
-  val cmd_id = RegEnableThru(cmd_tracker.io.alloc.bits.cmd_id, cmd_tracker.io.alloc.fire()) // TODO is this really better than a simple RegEnable?
-  io.dma.req.bits.cmd_id := cmd_id
-
-  io.completed.valid := cmd_tracker.io.cmd_completed.valid
-  io.completed.bits := cmd_tracker.io.cmd_completed.bits.tag.rob_id
-
-  // Row counter
-  when (io.dma.req.fire()) {
-    row_counter := wrappingAdd(row_counter, 1.U, rows)
-  }
-
-  // Control logic
-  switch (control_state) {
-    is (waiting_for_command) {
-      when (cmd.valid) {
-        // when(DoConfig && !cmd_tracker.io.cmd_completed.valid) {
-        when(DoConfig) {
-          stride := config_stride
-          cmd.ready := true.B
-        }
-
-        .elsewhen(DoLoad && cmd_tracker.io.alloc.fire()) {
-          control_state := Mux(io.dma.req.fire(), sending_rows, waiting_for_dma_req_ready)
-        }
-      }
-    }
-
-    is (waiting_for_dma_req_ready) {
-      when (io.dma.req.fire()) {
-        control_state := sending_rows
-      }
-    }
-
-    is (sending_rows) {
-      val last_row = row_counter === 0.U || (row_counter === rows-1.U && io.dma.req.fire())
-
-      when (last_row) {
-        control_state := waiting_for_command
+  switch (state) {
+    is (s_IDLE) {
+      row_counter := 0.U
+      when (is_config_cmd) {
         cmd.ready := true.B
+        stride    := config_stride
+      }
+      .elsewhen (is_load_cmd) {
+        cmd_tracker.io.alloc.valid := true.B
+        when (cmd_tracker.io.alloc.fire()) {
+          state := s_TRANSFER_ROWS
+        }
+        assert(item_rows =/= 0.U && item_cols =/= 0.U)
+      }
+    }
+    is (s_TRANSFER_ROWS) {
+      io.dma.req.valid := true.B
+      when (io.dma.req.fire()) {
+        when (row_counter === (item_rows - 1.U)) {
+          cmd.ready := true.B
+          state := s_IDLE
+        } .otherwise {
+          row_counter := row_counter + 1.U
+        }
       }
     }
   }
 }
 
-object LoadController {
+object FgMemTransferController {
   def apply[T <: Data: Arithmetic]
     (config: GemminiArrayConfig[T])(implicit p: Parameters)
-      = Module(new LoadController(config))
+      = Module(new FgMemTransferController(config))
 }
