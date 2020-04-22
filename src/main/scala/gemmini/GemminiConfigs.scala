@@ -69,12 +69,14 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
 
   def max_in_flight_reqs    = 16 // TODO calculate this somehow
 
-  def MAX_DMA_REQS          = 16
-  def LOG2_MAX_DMA_REQS     = log2Up(MAX_DMA_REQS) // used as index
-  def MAX_DMA_BYTES         = dma_maxbytes
-  def LOG2_MAX_DMA_BYTES    = log2Up(MAX_DMA_BYTES+1) // used as counter
-  def DMA_BUS_BITWIDTH      = dma_buswidth
-  def LOG2_DMA_BUS_BITWIDTH = log2Up(DMA_BUS_BITWIDTH) // used as index
+  def MAX_DMA_REQS            = 16
+  def DMA_BUS_BITS            = dma_buswidth
+  def DMA_BUS_BYTES           = dma_buswidth / 8
+  def MAX_DMA_BYTES           = dma_maxbytes
+  def LOG2_MAX_DMA_REQS       = log2Up(MAX_DMA_REQS) // used as index
+  def LOG2_DMA_BUS_BITS       = log2Up(DMA_BUS_BITS) // used as index
+  def LOG2_DMA_BUS_BYTES      = log2Up(DMA_BUS_BYTES) // used as ???
+  def LOG2_MAX_DMA_BYTES      = log2Up(MAX_DMA_BYTES+1) // used as counter
 
   def mvin_len_bits   = log2Up(((dma_maxbytes / (inputType.getWidth / 8)) max 
                                DIM) + 1)
@@ -135,6 +137,11 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
 
+  def MAX_TRANSFER_BYTES      = FG_NUM * FG_DIM * OTYPE_BYTES
+  def MAX_TRANSFER_BITS       = MAX_TRANSFER_BYTES * 8
+  def LOG2_MAX_TRANSFER_BYTES = log2Up(MAX_TRANSFER_BYTES+1) // count
+
+  def MAX_TRANSFER_ELEMS      = FG_NUM * FG_DIM
   def MAX_TRANSFER_ROWS       = FG_NUM * FG_DIM
   def LOG2_MAX_TRANSFER_ROWS  = log2Up(MAX_TRANSFER_ROWS)
 

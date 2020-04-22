@@ -1,141 +1,76 @@
+//===========================================================================
+// BeatMerger
+// - shifts/aligns and merges multiple beats from multiple transactions 
+// into a single buffer. used during DMA reads into scratchpad
+//===========================================================================
 package gemmini
 
 import chisel3._
 import chisel3.util._
-
 import Util._
 
-
-class BeatMergerOut(val spadWidth: Int, val accWidth: Int, val spadRows: Int, val accRows: Int,
-                    val alignedTo: Int) extends Bundle {
-  val data = UInt((spadWidth max accWidth).W)
-  val addr = UInt(log2Up(spadRows max accRows).W)
-  val is_acc = Bool()
-  val mask = Vec((spadWidth max accWidth)/(alignedTo*8) max 1, Bool())
-  val last = Bool()
-}
-
-//===========================================================================
-// BeatMerger.v2 
-//===========================================================================
-class FgBeatMerger(config: GemminiArrayConfig[T], max_bytes: Int)
+class FgBeatMerger[T <: Data](config: GemminiArrayConfig[T], max_bytes: Int)
   (implicit p: Parameters) extends Module {
   import config._
 
+  // I/O interface
   val io = IO(new Bundle {
-    val req = Flipped(Decoupled(new FgXactTrackerEntry(config)))
-    val in  = Flipped(Decoupled(UInt(DMA_BUS_BITWIDTH.W)))
-    val out = Decoupled(new BeatMergerOut(config))
+    val peek  = new FgXactTrackerPeekIO(config)
+    val beat  = Flipped(Decoupled(FgStreamBeatData(config)))
+    val resp  = Decoupled(new FgStreamReadResponse(max_bytes))
   })
 
-  //=========================================================================
-  // which req are we currently servicing
-  //=========================================================================
-  // TODO: what is the point of XactTracker if the BeatMerger can only service
-  // 1 outstanding req at a time? 
-  val req = Reg(UDValid(new FgXactTrackerEntry(config))
+  // internal logic/state
+  val buffer = RegInit(0.U((max_bytes*8).W))
+  val lrange = RegInit(0.U.asTypeOf[FgLocalRange])
+  val rob_id = RegInit(UInt(LOG2_ROB_ENTRIES.W))
 
-  //=========================================================================
-  //=========================================================================
-  val buflen = DMA_MAX_BYTES max SP_ROW_BYTES max ACC_ROW_BYTES 
-  val buffer = Reg(UInt((buflen*8).W))
+  io.peek.pop    := false.B
+  io.peek.xactid := io.beat.bits.xactid
 
-  val rowBytes = Mux(req.bits.is_acc, accWidthBytes.U, spadWidthBytes.U)
+  // TODO: possibly pipeline this massive barrel shifter if its too slow
+  val lrange_next  = io.peek.entry.lrange
+  val rob_id_next  = io.peek.entry.rob_id
+  val rshift_bytes = io.peek.entry.start_rshift
+  val lshift_bytes = io.beat.bits.beat_lshift + io.beat.bits.txn_lshift
+  val lshift_bits  = Cat(lshift_bytes - rshift_bytes, 0.U(3.W))
+  val shifted_data = io.beat.bits.data << lshfit_bits)
+  val buffer_next  = buffer | shifted_data
 
-  val bytesSent           = Reg(UInt(log2Up(buflen+1).W))
-  val bytesRead           = Reg(UInt(log2Up(buflen+1).W))
-  val bytesReadAfterShift = Mux(bytesRead > req.bits.shift, 
-                                bytesRead - req.bits.shift, 0.U)
-  val bytesDiscarded      = bytesRead - bytesReadAfterShift
-  val usefulBytesRead     = minOf(bytesReadAfterShift, req.bits.bytes_to_read)
+  // ready to merge in a new beat
+  io.beat.ready := false.B
 
-  val last_sending = rowBytes >= req.bits.bytes_to_read - bytesSent
-  val last_reading = beatBytes.U >= 
-                     (1.U << req.bits.lg_len_req).asUInt() - bytesRead
+  // output merged buffer
+  io.resp.valid  := false.B
+  io.resp.data   := buffer
+  io.resp.lrange := lrange
+  io.resp.rob_id := rob_id
 
-  io.req.ready := !req.valid
+  // FSM
+  val (s_MERGE_BEAT :: s_OUTPUT_DATA :: Nil) = Enum(2)
+  val state = RegInit(s_MERGE_BEAT)
 
-  io.in.ready := io.req.fire() || 
-        (req.valid && bytesRead =/= (1.U << req.bits.lg_len_req).asUInt())
-
-  //--------------------------------------------------------------------------
-  io.out.valid := req.valid && 
-                  usefulBytesRead > bytesSent && 
-                  (usefulBytesRead - bytesSent >= rowBytes ||
-                    usefulBytesRead === req.bits.bytes_to_read)
-  io.out.bits.data := (buffer >> (bytesSent * 8.U)) << 
-                      Mux(bytesSent === 0.U, 
-                          req.bits.spad_row_offset * 8.U, 0.U)
-  io.out.bits.mask := VecInit(
-    (0 until (spadWidthBytes max accWidthBytes) by alignedTo).map { i =>
-      val spad_row_offset = Mux(bytesSent === 0.U, 
-                                req.bits.spad_row_offset, 0.U)
-      i.U >= spad_row_offset &&
-        i.U < spad_row_offset +& (req.bits.bytes_to_read - bytesSent)
-  })
-  io.out.bits.addr := req.bits.addr + meshRows.U * {
-    val total_bytes_sent = req.bits.spad_row_offset + bytesSent
-    Mux(req.bits.is_acc,
-      if (total_bytes_sent.getWidth >= log2Up(accWidthBytes+1)) 
-        total_bytes_sent / accWidthBytes.U else 0.U,
-
-      if (total_bytes_sent.getWidth >= log2Up(spadWidthBytes+1)) 
-        total_bytes_sent / spadWidthBytes.U else 0.U)
-  }
-  io.out.bits.is_acc := req.bits.is_acc
-  io.out.bits.last := last_sending
-
-  //--------------------------------------------------------------------------
-  when (bytesRead === (1.U << req.bits.lg_len_req).asUInt() &&
-    bytesSent === req.bits.bytes_to_read) {
-    req.pop()
-  }
-
-  when (io.out.fire()) {
-    val spad_row_offset = Mux(bytesSent === 0.U, 
-                              req.bits.spad_row_offset, 0.U)
-    bytesSent := satAdd(bytesSent, rowBytes - spad_row_offset, 
-                        req.bits.bytes_to_read)
-
-    when (last_sending && 
-          bytesRead === (1.U << req.bits.lg_len_req).asUInt()) {
-      req.pop()
-      io.req.ready := true.B
+  switch (state) {
+    is (s_MERGE_BEAT) {
+      io.beat.ready := true.B
+      when (io.beat.fire()) {
+        assert(lshift_bytes >= rshift_bytes, 
+               "cannot rshift the beat data more than lshift")
+        buffer := buffer_next
+        lrange := lrange_next
+        rob_id := rob_id_next
+        io.peek.pop := io.beat.bits.is_last_beat
+        when (io.beat.bits.is_last_beat && io.beat.bits.is_last_txn) {
+          state := s_OUTPUT_DATA
+        }
+      }
     }
-  }
-
-  when (io.req.fire()) {
-    req.push(io.req.bits)
-    bytesRead := 0.U
-    bytesSent := 0.U
-  }
-
-  when (io.in.fire()) {
-    val current_bytesRead       = Mux(io.req.fire(), 0.U, bytesRead)
-    val current_bytesDiscarded  = Mux(io.req.fire(), 0.U, bytesDiscarded)
-    val current_usefulBytesRead = Mux(io.req.fire(), 0.U, usefulBytesRead)
-    val current_shift           = Mux(io.req.fire(), io.req.bits.shift, 
-                                                     req.bits.shift)
-    val current_lg_len_req      = Mux(io.req.fire(), io.req.bits.lg_len_req, 
-                                                     req.bits.lg_len_req)
-    val current_len_req = (1.U << current_lg_len_req).asUInt()
-
-    when (current_shift - current_bytesDiscarded <= beatBytes.U) {
-      val rshift = (current_shift - current_bytesDiscarded) * 8.U // in bits
-      val lshift = current_usefulBytesRead * 8.U // in bits
-      val mask = (~(((~0.U(beatBits.W)) >> rshift) << lshift)).asUInt()
-
-      buffer := (buffer & mask) | ((io.in.bits >> rshift) << lshift).asUInt()
+    is (s_OUTPUT_DATA) {
+      io.resp.valid := true.B
+      when (io.resp.fire()) {
+        buffer := 0.U
+        state := s_MERGE_BEAT
+      }
     }
-
-    bytesRead := satAdd(current_bytesRead, beatBytes.U, current_len_req)
-
-    when (!io.req.fire() && bytesSent === req.bits.bytes_to_read && last_reading) {
-      req.pop()
-    }
-  }
-
-  when (reset.toBool()) {
-    req.valid := false.B
   }
 }

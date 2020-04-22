@@ -56,7 +56,8 @@ object Util {
     (1.U << exp).asUInt()
   }
 
-  // This function will return "next" with a 0-cycle delay when the "enable" signal is high. It's like a queue with
+  // This function will return "next" with a 0-cycle delay when the 
+  // "enable" signal is high. It's like a queue with
   // the "pipe" and "flow" parameters set to "true"
   def RegEnableThru[T <: Data](next: T, enable: Bool): T = {
     val buf = RegEnable(next, enable)

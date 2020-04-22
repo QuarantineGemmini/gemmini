@@ -10,10 +10,11 @@ import freechips.rocketchip.tilelink.{TLIdentityNode, TLXbar}
 import Util._
 
 //===========================================================================
-// Scratchpad I/O Interfaces
+// Load/StoreController <-> Scratchpad Interfaces
 //===========================================================================
 class FgScratchpadMemRequest[T <: Data: Arithmetic]
   (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle 
+  import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
   val lrange = new FgLocalRange
   val status = new MStatus
@@ -22,14 +23,23 @@ class FgScratchpadMemRequest[T <: Data: Arithmetic]
     = new FgScratchpadMemRequest(config).asInstanceOf[this.type]
 }
 
+class FgScratchpadMemResponse[T <: Data: Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle 
+  import config._
+  val rob_id = Valid(UInt(LOG2_ROB_ENTRIES.W))
+}
+
 class FgScratchpadMemIO[T <: Data: Arithmetic]
   (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle {
   val req  = Decoupled(new FgScratchpadMemRequest(config))
-  val resp = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
+  val resp = Flipped(new FgScratchpadMemResponse(config))
   override def cloneType: this.type 
     = new FgScratchpadMemIO(config).asInstanceOf[this.type]
 }
 
+//===========================================================================
+// ExecController <-> Scratchpad Interfaces
+//===========================================================================
 class ScratchpadReadReq(val n: Int) extends Bundle {
   val addr = UInt(log2Ceil(n).W)
   val fromDMA = Bool()

@@ -64,9 +64,9 @@ class FgMemTransferController[T <: Data](config: GemminiArrayConfig[T])
 
   io.dma.req.valid       := false.B
   io.dma.req.bits.vaddr  := vaddr + row_counter * stride
-  io.dma.req.bits.laddr  := current_laddr
-  io.dma.req.bits.len    := item_cols
+  io.dma.req.bits.laddr  := lrange
   io.dma.req.bits.status := mstatus
+  io.dma.req.bits.rob_id := rob_id
 
   //==========================================================================
   // Request FSM (only sends requests to the DMA engine)

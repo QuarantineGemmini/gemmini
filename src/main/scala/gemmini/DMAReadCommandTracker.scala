@@ -17,7 +17,7 @@ class DMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
       val rob_id = UInt(LOG2_ROB_ENTRIES.W)
       val rows   = UInt(LOG2_MAX_MEM_OP_BYTES.W)
     }))
-    val progress  = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
+    val progress  = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
     val completed = Decoupled(UInt(LOG2_ROB_ENTRIES.W))
     val busy      = Output(Bool())
   })
@@ -41,6 +41,7 @@ class DMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
   when (io.progress.fire()) {
     val rob_id = io.progress.bits.rob_id
     cmds(rob_id).rows_left := cmds(rob_id).rows_left - 1.U
+    assert(cmds(rob_id).rows_left > 1.U)
   }
 
   // complete outstanding command logic
