@@ -7,7 +7,7 @@ testcases = {
   'template': 'generators/gemmini/software/gemmini-rocc-tests/build_hw_tiler/bareMetalC/template-pk',
   'cifar': 'generators/gemmini/software/gemmini-rocc-tests/build_hw_tiler/ee290/cifar_quant-pk',
   'mobilenet': 'generators/gemmini/software/gemmini-rocc-tests/build_hw_tiler/imagenet/mobilenet-pk', 
-  #'resnet50': 'generators/gemmini/software/gemmini-rocc-tests/build_hw_tiler/imagenet/resnet50-pk',
+  'resnet50': 'generators/gemmini/software/gemmini-rocc-tests/build_hw_tiler/imagenet/resnet50-pk',
 }
 
 resultfile = 'sizes.yml'
