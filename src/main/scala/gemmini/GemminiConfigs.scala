@@ -75,8 +75,11 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def MAX_DMA_BYTES           = dma_maxbytes
   def LOG2_MAX_DMA_REQS       = log2Up(MAX_DMA_REQS) // used as index
   def LOG2_DMA_BUS_BITS       = log2Up(DMA_BUS_BITS) // used as index
-  def LOG2_DMA_BUS_BYTES      = log2Up(DMA_BUS_BYTES) // used as ???
+  def LOG2_DMA_BUS_BYTES      = log2Up(DMA_BUS_BYTES) // used as index
   def LOG2_MAX_DMA_BYTES      = log2Up(MAX_DMA_BYTES+1) // used as counter
+
+  def MAX_DMA_BEATS = MAX_DMA_BYTES / DMA_BUS_BYTES
+  def LOG2_MAX_DMA_BEATS = log2Up(MAX_DMA_BEATS) // index
 
   def mvin_len_bits   = log2Up(((dma_maxbytes / (inputType.getWidth / 8)) max 
                                DIM) + 1)
