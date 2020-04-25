@@ -15,7 +15,7 @@ import Util._
 // DMA read interface (dram -> scratchpad)
 // - max_bytes: max bytes written to scratchpad in an operation
 //===========================================================================
-class FgStreamReadRequest[T <: Data](config: GemminiArrayConfig[T])
+class FgDMAReadRequest[T <: Data](config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
@@ -24,7 +24,7 @@ class FgStreamReadRequest[T <: Data](config: GemminiArrayConfig[T])
   val rob_id = UInt(LOG2_ROB_ENTRIES.W)
 }
 
-class FgStreamReadResponse[T <: Data]
+class FgDMAReadResponse[T <: Data]
   (config: GemminiArrayConfig[T], max_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
@@ -46,7 +46,7 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
     val (tl, edge) = node.out(0)
 
     val io = IO(new Bundle {
-      val req   = Flipped(Decoupled(new FgStreamReadRequest(config)))
+      val req   = Flipped(Decoupled(new FgDMAReadRequest(config)))
       val resp  = Decoupled(new FgDMAReadResponse(config, max_bytes))
       val tlb   = new FrontendTLBIO
       val busy  = Output(Bool())
@@ -117,7 +117,7 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
 // DMA write interface (scratchpad -> dram)
 // - max_bytes: max bytes written to dram in an operation
 //===========================================================================
-class FgStreamWriteRequest[T <: Data]
+class FgDMAWriteRequest[T <: Data]
   (config: GemminiArrayConfig[T], max_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
@@ -128,11 +128,11 @@ class FgStreamWriteRequest[T <: Data]
   val rob_id = UInt(LOG2_ROB_ENTRIES.W)
 }
 
-class FgStreamWriteResponse(implicit p: Parameters) extends CoreBundle {
+class FgDMAWriteResponse(implicit p: Parameters) extends CoreBundle {
   val rob_id = UInt(LOG2_ROB_ENTRIES.W)
 }
 
-class StreamWriter[T <: Data](config: GemminiArrayConfig[T], 
+class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T], 
   name: String = "stream-writer", max_bytes: Int)
   (implicit p: Parameters) extends LazyModule {
   import config._
@@ -145,7 +145,7 @@ class StreamWriter[T <: Data](config: GemminiArrayConfig[T],
     val (tl, edge) = node.out(0)
     
     val io = IO(new Bundle {
-      val req  = Flipped(Decoupled(new StreamWriteRequest(config,max_bytes)))
+      val req  = Flipped(Decoupled(new FgDMAWriteRequest(config,max_bytes)))
       val resp = Decoupled(new FgDMAWriteResponse)
       val tlb  = new FrontendTLBIO
       val busy = Output(Bool())

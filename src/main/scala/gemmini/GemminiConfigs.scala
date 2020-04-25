@@ -123,6 +123,11 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def SP_ROWS         = SP_BANKS * SP_BANK_ROWS
   def LOG2_SP_ROWS    = log2Up(SP_ROWS)
 
+  def SP_ROW_ELEMS       = FG_NUM * FG_DIM
+  def ACC_ROW_ELEMS      = FG_NUM * FG_DIM
+  def LOG2_SP_ROW_ELEMS  = log2Up(SP_ROW_ELEMS+1) // counter
+  def LOG2_ACC_ROW_ELEMS = log2Up(ACC_ROW_ELEMS+1) // counter
+
   def SP_ROW_BITS        = FG_NUM * FG_DIM * ITYPE_BITS
   def SP_ROW_BYTES       = (SP_ROW_BITS +7 ) / 8
   def ACC_ROW_BITS       = FG_NUM * FG_DIM * OTYPE_BITS
@@ -135,12 +140,15 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def MAX_MEM_OP_BYTES      = ACC_ROW_BYTES * FG_DIM
   def LOG2_MAX_MEM_OP_BYTES = log2Up(MAX_MEM_OP_BYTES+1)
 
-  def ACC_BANKS       = acc_banks
-  def ACC_BANK_ROWS   = acc_bank_entries
+  // TODO: force ACC_BANK_ROWS == FG_DIM when FG_NUM > 1
+  //def ACC_BANKS       = acc_banks
+  // bank this
+  //def ACC_BANK_ROWS   = acc_bank_entries
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
 
-  def MAX_TRANSFER_BYTES      = FG_NUM * FG_DIM * OTYPE_BYTES
+  def MAX_OTYPE_TRANSFER_BYTES = FG_NUM * FG_DIM * OTYPE_BYTES
+  def MAX_ITYPE_TRANSFER_BYTES = FG_NUM * FG_DIM * ITYPE_BYTES
   def MAX_TRANSFER_BITS       = MAX_TRANSFER_BYTES * 8
   def LOG2_MAX_TRANSFER_BYTES = log2Up(MAX_TRANSFER_BYTES+1) // count
 

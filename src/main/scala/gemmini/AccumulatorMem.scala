@@ -29,11 +29,12 @@ class AccumulatorReadIO[T <: Data: Arithmetic]
   override def cloneType: this.type = new AccumulatorReadIO(n, shift_width, rdataType.cloneType).asInstanceOf[this.type]
 }
 
-class AccumulatorWriteIO[T <: Data: Arithmetic](n: Int, t: Vec[Vec[T]]) extends Bundle {
-  val en = Output(Bool())
+class AccumulatorWriteIO[T <: Data: Arithmetic]
+  (n: Int, t: Vec[Vec[T]]) extends Bundle {
+  val en   = Output(Bool())
   val addr = Output(UInt(log2Ceil(n).W))
   val data = Output(t)
-  val acc = Output(Bool())
+  val acc  = Output(Bool())
   val mask = Output(Vec(t.getWidth / 8, Bool())) // TODO Use aligned_to here
 
   override def cloneType: this.type = new AccumulatorWriteIO(n, t).asInstanceOf[this.type]

@@ -7,8 +7,7 @@ import Util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 
-class FgMemOpController[T <: Data]
-  (config: GemminiArrayConfig[T], max_bytes: Int)
+class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
   (implicit val p: Parameters) extends CoreModule {
   import config._
   //=========================================================================
