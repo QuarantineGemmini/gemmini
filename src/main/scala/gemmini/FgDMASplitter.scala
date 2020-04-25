@@ -1,170 +1,16 @@
-//===========================================================================
-// BeatMerger
-// - shifts/aligns and merges multiple beats from multiple transactions 
-// into a single buffer. used during DMA reads into scratchpad
-//===========================================================================
 package gemmini
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.config._
 import Util._
 
-class FgDMAWriteResponder[T <: Data]
-  (config: GemminiArrayConfig[T], max_bytes: Int)
-  (implicit p: Parameters) extends Module {
-  import config._
-
-  // I/O interface
-  val io = IO(new Bundle {
-    val tl_d = Flipped(Decouple(new Bundle {
-      val xactid = UInt(LOG2_MAX_DMA_REQS.W)
-    }))
-    val peek = new FgXactTrackerPeekIO(config, max_bytes)
-    val pop  = Output(Valid(UInt(LOG2_MAX_DMA_REQS.W)))
-    val resp = Decoupled(new FgStreamWriteResponse)
-  })
-
-  // next-state logic
-  val total_bytes = io.peek.entry.total_bytes
-  val txn_bytes   = io.peek.entry.txn_bytes // useful bytes in this txn
-  val rob_id      = io.peek.entry.rob_id
-
-  val bytes_completed      = RegInit(0.U(LOG2_MAX_TRANSFER_BYTES.W))
-  val bytes_completed_next = bytes_completed + txn_bytes
-  val finished_all_bytes   = (bytes_completed_next === total_bytes)
-
-  val last_xactid    = RegInit(0.U(LOG2_MAX_DMA_REQS.W))
-  val changed_xactid = last_xactid =/= io.tl_d.xactid
-
-  // output-logic
-  io.peek.xactid := io.tl_d.xactid
-  io.tl_d.ready  := false.B
-  io.pop.valid   := false.B
-  io.pop.bits    := rob_id
-  io.resp.valid  := false.B
-  io.resp.rob_id := rob_id
-        
-  //---------------------------------
-  // FSM
-  //---------------------------------
-  val (s_IDLE :: s_ACCUMULATE :: s_WAIT_FOR_RESP :: Nil) = Enum(3)
-  val state = RegInit(s_IDLE)
-
-  def process_txn(first_txn: Boolean) = {
-    last_xactid := io.tl_d.bits.xactid
-    bytes_completed := bytes_completed_next
-    state := s_ACCUMULATE
-    when (finished_all_bytes) {
-      assert((first_txn.B || !changed_xactid), 
-        "xactid changed before all xacts in a DMA transfer finished!")
-      io.resp.valid := true.B
-      state := s_WAIT_FOR_RESP
-      when (io.resp.fire()) {
-        io.pop.valid := true.B
-        bytes_completed := 0.U
-        state := s_IDLE
-      }
-    }
-  }
-
-  switch (state) {
-    is (s_IDLE) {
-      bytes_completed := 0.U
-      io.tl_d.ready := true.B
-      when (io.tl_d.fire()) {
-        process_txn(true)
-      }
-    }
-    is (s_ACCUMULATE) {
-      io.tl_d.ready := true.B
-      when (io.tl_d.fire()) {
-        process_txn(false)
-      }
-    }
-    is (s_WAIT_FOR_RESP) {
-      io.resp.valid := true.B
-      when (io.resp.fire()) {
-        io.pop.valid := true.B
-        bytes_completed := 0.U
-        state := s_IDLE
-      }
-    }
-  }
-}
-
-class FgBeatMerger[T <: Data](config: GemminiArrayConfig[T], max_bytes: Int)
-  (implicit p: Parameters) extends Module {
-  import config._
-
-  // I/O interface
-  val io = IO(new Bundle {
-    val peek  = new FgXactTrackerPeekIO(config)
-    val pop   = Output(Valid(UInt(LOG2_MAX_DMA_REQS.W)))
-    val beat  = Flipped(Decoupled(FgStreamBeatData(config)))
-    val resp  = Decoupled(new FgStreamReadResponse(max_bytes))
-  })
-
-  // internal logic/state
-  val buffer = RegInit(0.U((max_bytes*8).W))
-  val lrange = RegInit(0.U.asTypeOf[FgLocalRange])
-  val rob_id = RegInit(UInt(LOG2_ROB_ENTRIES.W))
-
-  io.pop.valid   := false.B
-  io.pop.xactid  := io.beat.bits.xactid
-  io.peek.xactid := io.beat.bits.xactid
-
-  // TODO: possibly pipeline this massive barrel shifter if its too slow
-  val lrange_next  = io.peek.entry.lrange
-  val rob_id_next  = io.peek.entry.rob_id
-  val rshift_bytes = io.peek.entry.start_rshift
-  val lshift_bytes = io.beat.bits.beat_lshift + io.beat.bits.txn_lshift
-  val lshift_bits  = Cat(lshift_bytes - rshift_bytes, 0.U(3.W))
-  val shifted_data = io.beat.bits.data << lshfit_bits)
-  val buffer_next  = buffer | shifted_data
-
-  // ready to merge in a new beat
-  io.beat.ready := false.B
-
-  // output merged buffer
-  io.resp.valid  := false.B
-  io.resp.data   := buffer
-  io.resp.lrange := lrange
-  io.resp.rob_id := rob_id
-
-  // FSM
-  val (s_MERGE_BEAT :: s_OUTPUT_DATA :: Nil) = Enum(2)
-  val state = RegInit(s_MERGE_BEAT)
-
-  switch (state) {
-    is (s_MERGE_BEAT) {
-      io.beat.ready := true.B
-      when (io.beat.fire()) {
-        assert(lshift_bytes >= rshift_bytes, 
-               "cannot rshift the beat data more than lshift")
-        buffer := buffer_next
-        lrange := lrange_next
-        rob_id := rob_id_next
-        io.peek.pop := io.beat.bits.is_last_beat
-        when (io.beat.bits.is_last_beat && io.peek.entry.is_last_txn) {
-          state := s_OUTPUT_DATA
-        }
-      }
-    }
-    is (s_OUTPUT_DATA) {
-      io.resp.valid := true.B
-      when (io.resp.fire()) {
-        buffer := 0.U
-        state := s_MERGE_BEAT
-      }
-    }
-  }
-}
-
 //============================================================================
-// FgTxnSplitter
+// FgDMASplitter
 // - splits a write request into transactions and transactions into TL-A beats
+// - achieves max throughput of 1 tl-A request/cycle
 //============================================================================
-class FgTxnSplitter[T <: Data](config: GemminiArrayConfig[T], max_bytes: Int)
+class FgDMASplitter[T <: Data](config: GemminiArrayConfig[T], max_bytes: Int)
   (implicit p: Parameters) extends Module {
   import config._
   //---------------------------------
@@ -241,7 +87,7 @@ class FgTxnSplitter[T <: Data](config: GemminiArrayConfig[T], max_bytes: Int)
                       << start_mask_offset))
  
   //---------------------------------
-  // output-logic
+  // outputs
   //---------------------------------
   io.tl_a.valid          := false.B
   io.tl_a.bits.is_full   := is_full
