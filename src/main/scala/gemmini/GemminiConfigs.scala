@@ -128,6 +128,14 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def LOG2_SP_ROW_ELEMS  = log2Up(SP_ROW_ELEMS+1) // counter
   def LOG2_ACC_ROW_ELEMS = log2Up(ACC_ROW_ELEMS+1) // counter
 
+  def SQ_COL_ELEMS  = FG_NUM
+  def SQ_COL_IBYTES = 
+  def SQ_COL_OBYTES = 
+  def SQ_COL_IBITS  = 
+  def SQ_COL_OBITS  = 
+
+  def SP_ROW_ELEMS = FG_NUM * FG_DIM
+
   def SP_ROW_BITS        = FG_NUM * FG_DIM * ITYPE_BITS
   def SP_ROW_BYTES       = (SP_ROW_BITS +7 ) / 8
   def ACC_ROW_BITS       = FG_NUM * FG_DIM * OTYPE_BITS
@@ -182,7 +190,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def USABLE_SP_TILES = (SP_ROWS / DIM) - 2
   def TOTAL_ACC_TILES = (ACC_ROWS / DIM)
   def SQRT_ACC_TILES = sqrt(TOTAL_ACC_TILES).toInt
-  assert(USABLE_SP_TILES >= TOTAL_ACC_TILES, 
+  require(USABLE_SP_TILES >= TOTAL_ACC_TILES, 
     s"SP_TILES($USABLE_SP_TILES) + 2 < ACC_TILES($TOTAL_ACC_TILES)")
 
   // prioritize sizes that cause the output-group to be further from square
@@ -190,8 +198,9 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
     (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs
   })
 
-  def FG_NUM = fs_sa_div
-  def FG_DIM = DIM / FG_NUM
+  def FG_NUM = fs_sa_div * fs_sa_div
+  def FG_DIM = DIM / fs_sa_div
+  require(DIM % fs_sa_div == 0, "invalid DIM and fs_sa_div combo")
 
   def OG__MAP = (1 to TOTAL_ACC_TILES).sortWith((h1, h2) => {
     (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs

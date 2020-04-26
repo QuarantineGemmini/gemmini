@@ -33,6 +33,7 @@ class FgScratchpadBankReadIO[T <: Data](config: GemminiArrayConfig[T])
 class FgScratchpadBankWriteReq[T <: Data](config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
+  val en           = Output(Bool())
   val row          = Output(UInt(LOG2_FG_DIM.W))
   val cols         = Output(UInt(LOG2_SP_ROW_ELEMS.W))
   val sq_col_start = Output(UInt(LOG2_FG_NUM.W))
@@ -53,11 +54,16 @@ class FgScratchpadBank[T <: Data](config: GemminiArrayConfig[T])
     val write = Flipped(new FgScratchpadBankWriteReq(config))
   })
 
-  val mem = SyncReadMem(n, Vec(mask_len, mask_elem))
+  val mem = SyncReadMem(n, Vec(SP_ROW_ELEMS, inputType.getType))
 
+  val wr_row          = io.write.row
+  val wr_cols         = io.write.cols
+  val wr_data         = io.write.data
+  val wr_sq_col_start = io.write.sq_col_start
+  val wr_data = io.write.data.asTypeOf(Vec(SP_ROW_ELEMS, inputType.getType))
+  val wr_mask = ((1.U << wr_cols) - 1.U) << (wr_sq_col_start * SQ_COL_ELEMS)
   when (io.write.en) {
-    mem.write(io.write.addr, 
-      io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
+    mem.write(wr_row, wr_data, wr_mask
   }
 
   val raddr = io.read.req.bits.row
