@@ -225,7 +225,8 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
              write_issue_q.io.deq.valid
 
   {
-    val banks = Seq.fill(FG_DIM) { Module( new FgScratchpadBank(config) }
+    // A-banks
+    val banks = Seq.fill(FG_DIM) { Module( new FgScratchpadBank(config)) }
     val bank_ios = VecInit(banks.map(_.io))
 
     //======================================================================
@@ -242,8 +243,7 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
 
     // the queue to maintain back-pressure
     val memq = RegNext(io.exec.readA.req)
-    io.exec.readA.resp.data RegNext(new FgMemUnitReadResp(config))
-    io.exec.readA.resp <> outq.deq
+    val outq = RegNext(new FgMemUnitReadResp(config))
 
     // datapath into scratchpads
     val mem_blocked = !outq.enq.ready
@@ -302,6 +302,148 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
     }
   }
 
+  {
+    // B-banks
+    val banks = Seq.fill(2) { Module( new FgScratchpadBank(config) }
+    val bank_ios = VecInit(banks.map(_.io))
+
+    //======================================================================
+    // read-datapath
+    //======================================================================
+    // exec reads can read from 1+ banks at a time
+    val ex_rd_req     = io.exec.readB.req
+    val rd_row_idx    = ex_rd_req.bits.row_idx    
+    val rd_bank_start = ex_rd_req.bits.bank_start 
+    val rd_banks      = ex_rd_req.bits.banks      
+    val rd_sq_col_idx = ex_rd_req.bits.sq_col_idx 
+    val rd_cols       = ex_rd_req.bits.cols       
+    assert(rd_banks === 1.U && rd_bank_start < 2.U)
+
+    // the queue to maintain back-pressure
+    val memq = RegNext(io.exec.readA.req.bits)
+    val outq = RegNext(new FgMemUnitExecReadResp(config))
+
+    // datapath into scratchpads
+    val mem_blocked = !outq.enq.ready
+    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+      bio.read.req.en := !mem_blocked
+      bio.read.req.row := row
+    }
+
+    // read datapath out of scratchpads: 2-level mux
+    val rd_data_shifted = bank_ios.map { bio => 
+      bio.read.resp.data >> (sp_col_idx * SQ_COL_IBITS)
+    }
+    val rd_data = rd_data_shifted(memq.bank_start)
+   
+    // finish hooking up the read path
+    outq.data := rd_data
+
+    //======================================================================
+    // write-datapath
+    //======================================================================
+    // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
+    // dma-writes only do 1 row max (so it won't write to 2+ banks at once
+    val dma_wr_fire     = readerB.io.resp.fire()
+    val dma_wr_data     = readerB.io.resp.data
+    val dma_wr_lrange   = readerB.io.resp.lrange
+    val wr_rows         = dma_wr_lrange.rows
+    val wr_cols         = dma_wr_lrange.cols
+    val wr_sq_col_start = dma_wr_lrange.sq_col_start
+    val wr_row_start    = dma_wr_lrange.row_start
+    assert(wr_rows === 1.U, "dma cannot write >1 row at a time")
+
+    val wr_real_bank = wr_row_start(15,LOG2_FG_DIM)
+    val wr_real_row  = wr_row_start(LOG2_FG_DIM-1,0)
+    assert(wr_real_bank < 2.U)
+
+    val mask = ((wr_cols*ITYPE_BITS.U) - 1.U) << (sp_col_idx * SQ_COL_IBITS)
+    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+      bio.write.req.en           := dma_wr_fire
+      bio.write.req.row          := 1.U
+      bio.write.req.cols         := wr_cols
+      bio.write.req.sq_col_start := wr_sq_col_start
+      bio.write.req.data         := dma_wr_data
+    }
+  }
+
+  {
+    // C/D-banks
+    val banks = Seq.fill(FG_DIM) { Module( new FgScratchpadBank(config)) }
+    val bank_ios = VecInit(banks.map(_.io))
+
+    //======================================================================
+    // read-datapath
+    //======================================================================
+    // exec reads can read from 1+ banks at a time
+    val ex_rd_req     = io.exec.readA.req
+    val rd_row_idx    = ex_rd_req.bits.row_idx    
+    val rd_bank_start = ex_rd_req.bits.bank_start 
+    val rd_banks      = ex_rd_req.bits.banks      
+    val rd_sq_col_idx = ex_rd_req.bits.sq_col_idx 
+    val rd_cols       = ex_rd_req.bits.cols       
+    assert((bank_start & (bank_start-1.U)) === 0.U, "bank_start not aligned")
+
+    // the queue to maintain back-pressure
+    val memq = RegNext(io.exec.readA.req)
+    val outq = RegNext(new FgMemUnitReadResp(config))
+
+    // datapath into scratchpads
+    val mem_blocked = !outq.enq.ready
+    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+      bio.read.req.en := !mem_blocked
+      bio.read.req.row := row
+    }
+
+    // read datapath out of scratchpads: 2-level mux
+    val rd_data_shifted = bank_ios.map { bio => 
+      bio.read.resp.data >> (sp_col_idx * SQ_COL_IBITS)
+    }
+    val rd_data = Mux1H((0 to log2Up(FG_NUM)).map { log2banks => 
+      val my_banks = scala.math.pow(2, log2banks)
+      val is_selected = (my_banks === banks)
+      (is_selected -> {
+        val bit_per_bank = ITYPE_BITS * FG_DIM * (FG_NUM >> log2banks)
+        Mux1H((0 to (FG_NUM-1) by my_banks).map { my_bank_start =>
+          val my_bank_end = my_bank_start + my_banks - 1
+          val is_selected = (my_bank_start === bank_start)
+          (is_selected -> Cat((my_bank_start to my_bank_end).map {bank_idx =>
+            rd_data_shifted(bank_idx)((bits_per_bank-1).U, 0.U)
+          }))
+        })
+      })
+    })
+
+    // finish hooking up the read path
+    memq.deq.ready     := outq.enq.ready
+    outq.enq.valid     := memq.deq.valid
+    outq.enq.bits.data := rd_data
+
+    //======================================================================
+    // write-datapath
+    //======================================================================
+    // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
+    // dma-writes only do 1 row max (so it won't write to 2+ banks at once
+    val dma_wr_fire   = readerA.io.resp.fire()
+    val dma_wr_data   = readerA.io.resp.data
+    val dma_wr_lrange = readerA.io.resp.lrange
+    val wr_rows       = dma_wr_lrange.rows
+    val wr_cols       = dma_wr_lrange.cols
+    val wr_sq_col_start = dma_wr_lrange.sq_col_start
+    val wr_row_start    = dma_wr_lrange.row_start
+    assert(wr_rows === 1.U, "dma cannot write >1 row at a time")
+
+    val wr_real_bank = wr_row_start(15,LOG2_FG_DIM)
+    val wr_real_row  = wr_row_start(LOG2_FG_DIM-1,0)
+    val mask = ((wr_cols*ITYPE_BITS.U) - 1.U) << (sp_col_idx * SQ_COL_IBITS)
+    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+      bio.write.req.en           := dma_wr_fire
+      bio.write.req.row          := 1.U
+      bio.write.req.cols         := wr_cols
+      bio.write.req.sq_col_start := wr_sq_col_start
+      bio.write.req.data         := dma_wr_data
+    }
+  }
   //=======================================================================
   // B-tile scratchpad banks
   // - NOTE: byte-aligned, so inputType % 8 must == 0 for exec-controller

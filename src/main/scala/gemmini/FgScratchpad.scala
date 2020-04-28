@@ -37,7 +37,7 @@ class FgScratchpadBankWriteReq[T <: Data](config: GemminiArrayConfig[T])
   val row          = Output(UInt(LOG2_FG_DIM.W))
   val cols         = Output(UInt(LOG2_SP_ROW_ELEMS.W))
   val sq_col_start = Output(UInt(LOG2_FG_NUM.W))
-  val data         = Output(UInt(ACC_ROW_BITS.W))
+  val data         = Output(UInt(SP_ROW_BITS.W))
 }
 
 //============================================================================
@@ -54,7 +54,7 @@ class FgScratchpadBank[T <: Data](config: GemminiArrayConfig[T])
     val write = Flipped(new FgScratchpadBankWriteReq(config))
   })
 
-  val mem = SyncReadMem(n, Vec(SP_ROW_ELEMS, inputType.getType))
+  val mem = SyncReadMem(FG_DIM, Vec(SP_ROW_ELEMS, inputType))
 
   val wr_row          = io.write.row
   val wr_cols         = io.write.cols
