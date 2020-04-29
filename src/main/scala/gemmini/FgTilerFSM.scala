@@ -176,23 +176,6 @@ class TilerFSM[T <: Data : Arithmetic]
   val loop4_C_mem_addr = Reg(UInt(xLen.W))
   val loop4_D_mem_addr = Reg(UInt(xLen.W))
 
-  // TODO TODO
-  gbl_B_alt_row_addr 
-  
-  // the following are in terms of tiles, regarless of the tile shape!!!!
-  gbl_tile_row
-  gbl_tile_col
-
-  // the following are derived from the tile row/col idx and the tile shape!
-  gbl_row_addr        := 0.U
-  gbl_CD_fg_col_start := 0.U
-  gbl_A_fg_col_start  := 0.U
-
-  // determined during config by matrix size, and tile-size 
-  g_TILE_COLS_PER_GROUP1
-  g_TILE_ROW_END
-  g_TILE_COL_END
-
   //=========================================================================
   // utilies used by FSM core
   //=========================================================================
@@ -200,11 +183,11 @@ class TilerFSM[T <: Data : Arithmetic]
   // continuous assigns (only added in the switch-cases that call this!)
   def update_tile_dims(dummy: Int = 0) = {
     gbl_item_rows     := Mux(gbl_tile_row_n === g_TILE_ROW_END, 
-                             g_LAST_M_ITEMS, DIM.U)
+                             g_LAST_M_ITEMS, g_ITEM_ROWS_PER_TILE)
     gbl_item_cols     := Mux(gbl_tile_col_n === g_TILE_COL_END, 
-                             g_LAST_N_ITEMS, DIM.U)
+                             g_LAST_N_ITEMS, g_ITEM_COLS_PER_TILE)
     loop2_k_item_dims := Mux(loop2_k_tile_col_n === g_K_TILE_COL_END,
-                             g_LAST_K_ITEMS, DIM.U)
+                             g_LAST_K_ITEMS, FG_DIM.U)
   }
 
   def MIN(a: UInt, b: UInt) = Mux(a < b, a, b)
@@ -290,7 +273,7 @@ class TilerFSM[T <: Data : Arithmetic]
           w => (g_FG_TILE_COL_END < w) -> FG_NUM/w
         }))
 
-      val l_IS_SQUARE_TILE          = (g_FG_TILE_COLS_PER_TILE === SQ_FG_NUM.U)
+      val l_IS_SQUARE_TILE          = (g_FG_TILE_COLS_PER_TILE===SQ_FG_NUM.U)
       val l_IS_SKINNY_AND_TALL_TILE = (g_FG_TILE_COLS_PER_TILE < SQ_FG_NUM.U)
       val l_IS_WIDE_AND_SHORT_TILE  = (g_FG_TILE_COLS_PER_TILE > SQ_FG_NUM.U)
 
@@ -303,6 +286,9 @@ class TilerFSM[T <: Data : Arithmetic]
                                l_SQ_TILE_ROWS_PER_TILE
       g_TILE_COLS_PER_GROUP := l_SQ_TILE_COLS_PER_GROUP / 
                                l_SQ_TILE_COLS_PER_TILE
+
+      g_TILE_ROWS_PER_GROUP1 := g_TILE_ROWS_PER_GROUP - 1.U
+      g_TILE_COLS_PER_GROUP1 := g_TILE_COLS_PER_GROUP - 1.U
 
       g_FG_TILE_ROWS_PER_GROUP := g_TILE_ROWS_PER_GROUP * 
                                   g_FG_TILE_ROWS_PER_TILE 
@@ -345,8 +331,17 @@ class TilerFSM[T <: Data : Arithmetic]
       g_D_BYTES_PER_TILE_ROW  := l_D_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
 
       //-------------------------------------------------------------------
+      // the last tile indexes
+      // - TODO: don't use modulus or division here
+      //-------------------------------------------------------------------
+      g_TILE_ROW_END   := (cmd.m/g_ITEM_ROWS_PER_TILE) + l_extra_m_elems.orR
+      g_TILE_COL_END   := (cmd.n/g_ITEM_COLS_PER_TILE) + l_extra_n_elems.orR
+      g_K_TILE_COL_END := (cmd.k/FG_DIM.U)             + l_extra_k_elems.orR
+
+      //-------------------------------------------------------------------
       // update interface signals. we are only ready when an input cmd is
       // ready AND the output queue has 2 slots available to write to
+      //-------------------------------------------------------------------
       io.cmd_in.ready := (sched.ready >= 2.U)
 
       // issue gemmini commands
@@ -376,8 +371,8 @@ class TilerFSM[T <: Data : Arithmetic]
       // define mutable gbl state, persist across all ogs
       gbl_tile_row_n     := 0.U
       gbl_tile_col_n     := 0.U
-      gbl_B_cur_row_addr := GBL_B_SP_ROW_ADDR_1.U
-      gbl_B_alt_row_addr := GBL_B_SP_ROW_ADDR_2.U
+      gbl_B_cur_row_addr := 0.U
+      gbl_B_alt_row_addr := FG_DIM.U
       update_tile_dims()
 
       // define mutable gbl state, reset after each og
@@ -406,7 +401,9 @@ class TilerFSM[T <: Data : Arithmetic]
       loop2_k_tile_col_n  := 0.U
       gbl_tile_row_n      := loop1_tile_row_start
       gbl_tile_col_n      := loop1_tile_col_start
-      gbl_CD_acc_row_addr := 0.U
+      gbl_row_addr        := 0.U
+      gbl_A_fg_col_start  := 0.U
+      gbl_CD_fg_col_start := 0.U
       update_tile_dims()
 
       loop2_A_mem_addr := loop1_A_mem_addr
