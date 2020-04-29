@@ -148,10 +148,15 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def MAX_MEM_OP_BYTES      = ACC_ROW_BYTES * FG_DIM
   def LOG2_MAX_MEM_OP_BYTES = log2Up(MAX_MEM_OP_BYTES+1)
 
+  def SQRT_FG_NUM       = fg_sa_div
+  def FG_COL_START_BITS = log2Up(SQRT_FG_NUM) // index
+
   // TODO: force ACC_BANK_ROWS == FG_DIM when FG_NUM > 1
   //def ACC_BANKS       = acc_banks
   // bank this
   //def ACC_BANK_ROWS   = acc_bank_entries
+  def ACC_BANKS       = FG_NUM
+  def ACC_BANK_ROWS   = FG_DIM
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
 
@@ -164,7 +169,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def MAX_TRANSFER_ROWS       = FG_NUM * FG_DIM
   def LOG2_MAX_TRANSFER_ROWS  = log2Up(MAX_TRANSFER_ROWS)
 
-  def MNK_BYTES                   = Int.MaxValue / DIM  // TODO: upper bound?
+  def MNK_BYTES                   = Int.MaxValue / DIM
   def LOG2_MNK_BYTES              = log2Up(MNK_BYTES)
   def MNK_BYTES_PER_TILE_ROW      = MNK_BYTES * DIM
   def LOG2_MNK_BYTES_PER_TILE_ROW = log2Up(MNK_BYTES_PER_TILE_ROW)
