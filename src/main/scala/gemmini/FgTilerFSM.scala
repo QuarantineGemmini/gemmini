@@ -111,29 +111,6 @@ class TilerFSM[T <: Data : Arithmetic]
   val g_K_TILE_COL_END        = Reg(UInt(LOG2_TILE_IDX.W))
 
   //------------------------------------------------------------------------
-  // combinational calculation of optimal output-groups. this is updated at
-  // the s_IDLE -> s_RESET_OUTPUT_GROUP state transition
-  //------------------------------------------------------------------------
-  val g_OG_DIM_SELECT = OG_HEIGHT_MAP.zipWithIndex.map{ case(h,i) => 
-    val w = TOTAL_ACC_TILES/h
-    if (h < w)      WireDefault(g_TILE_ROW_END < h.U)
-    else if(h > w)  WireDefault(g_TILE_COL_END < w.U)
-    else            WireDefault((i == (OG_HEIGHT_MAP.size-1)).asBool)
-  }
-  val g_TILE_ROWS_PER_GROUP = MuxCase(
-    OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1).U,
-    OG_HEIGHT_MAP.zipWithIndex.map{
-      case(h,i) => (g_OG_DIM_SELECT(i) -> h.U)
-    })
-  val g_TILE_COLS_PER_GROUP = MuxCase(
-    (TOTAL_ACC_TILES / OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1)).U,
-    OG_HEIGHT_MAP.zipWithIndex.map{
-      case(h,i) => (g_OG_DIM_SELECT(i) -> (TOTAL_ACC_TILES/h).U)
-    })
-  val g_I_BYTE_COLS_PER_GROUP = g_TILE_COLS_PER_GROUP <<I_TILE_BYTE_WIDTH_LOG2
-  val g_O_BYTE_COLS_PER_GROUP = g_TILE_COLS_PER_GROUP <<O_TILE_BYTE_WIDTH_LOG2
-
-  //------------------------------------------------------------------------
   // global state persistent across all loops
   //------------------------------------------------------------------------
   // current output-group tile (y,x)
@@ -199,6 +176,23 @@ class TilerFSM[T <: Data : Arithmetic]
   val loop4_C_mem_addr = Reg(UInt(xLen.W))
   val loop4_D_mem_addr = Reg(UInt(xLen.W))
 
+  // TODO TODO
+  gbl_B_alt_row_addr 
+  
+  // the following are in terms of tiles, regarless of the tile shape!!!!
+  gbl_tile_row
+  gbl_tile_col
+
+  // the following are derived from the tile row/col idx and the tile shape!
+  gbl_row_addr        := 0.U
+  gbl_CD_fg_col_start := 0.U
+  gbl_A_fg_col_start  := 0.U
+
+  // determined during config by matrix size, and tile-size 
+  g_TILE_COLS_PER_GROUP1
+  g_TILE_ROW_END
+  g_TILE_COL_END
+
   //=========================================================================
   // utilies used by FSM core
   //=========================================================================
@@ -239,24 +233,118 @@ class TilerFSM[T <: Data : Arithmetic]
       g_C_MEM_ADDR            := cmd.addr_c
       g_D_MEM_ADDR            := cmd.addr_d
 
-      g_A_BYTES_PER_TILE_ROW  := l_A_BYTE_WIDTH  << LOG2_DIM.U
-      g_B_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH << LOG2_DIM.U
-      g_C_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH << LOG2_DIM.U
-      g_D_BYTES_PER_TILE_ROW  := l_D_BYTE_WIDTH  << LOG2_DIM.U
-
       g_A_BYTES_PER_ROW       := l_A_BYTE_WIDTH
       g_B_BYTES_PER_ROW       := l_BC_BYTE_WIDTH
       g_C_BYTES_PER_ROW       := l_BC_BYTE_WIDTH
       g_D_BYTES_PER_ROW       := l_D_BYTE_WIDTH
 
-      g_LAST_M_ITEMS := Mux(cmd.m(LOG2_DIM-1,0).orR,cmd.m(LOG2_DIM-1,0),DIM.U)
-      g_LAST_N_ITEMS := Mux(cmd.n(LOG2_DIM-1,0).orR,cmd.n(LOG2_DIM-1,0),DIM.U)
-      g_LAST_K_ITEMS := Mux(cmd.k(LOG2_DIM-1,0).orR,cmd.k(LOG2_DIM-1,0),DIM.U)
+      //-------------------------------------------------------------------
+      // need shape of tile to determine this!
+      //-------------------------------------------------------------------
+      g_FG_TILE_ROW_END   := (cmd.m >> LOG2_FG_DIM) + 
+                              cmd.m(LOG2_FG_DIM-1,0).orR - 1.U
+      g_FG_TILE_COL_END   := (cmd.n >> LOG2_FG_DIM) + 
+                              cmd.n(LOG2_FG_DIM-1,0).orR - 1.U
+      g_FG_K_TILE_COL_END := (cmd.k >> LOG2_FG_DIM) + 
+                              cmd.k(LOG2_FG_DIM-1,0).orR - 1.U
 
-      g_TILE_ROW_END   := (cmd.m >> LOG2_DIM) + cmd.m(LOG2_DIM-1,0).orR - 1.U 
-      g_TILE_COL_END   := (cmd.n >> LOG2_DIM) + cmd.n(LOG2_DIM-1,0).orR - 1.U
-      g_K_TILE_COL_END := (cmd.k >> LOG2_DIM) + cmd.k(LOG2_DIM-1,0).orR - 1.U
+      //-------------------------------------------------------------------
+      // set tile shape and output-group shape (both in terms of fg-tiles)
+      //-------------------------------------------------------------------
+      val l_SQ_TILE_ROW_END   = (cmd.m >> LOG2_DIM) + 
+                                 cmd.m(LOG2_DIM-1,0).orR - 1.U
+      val l_SQ_TILE_COL_END   = (cmd.n >> LOG2_FG_DIM) + 
+                                 cmd.n(LOG2_DIM-1,0).orR - 1.U
+      val l_K_SQ_TILE_COL_END = (cmd.k >> LOG2_FG_DIM) + 
+                                 cmd.k(LOG2_DIM-1,0).orR - 1.U
+      val l_OG_DIM_SELECT = OG_HEIGHT_MAP.zipWithIndex.map{ case(h,i) => 
+        val w = TOTAL_ACC_TILES/h
+        if (h < w)      WireDefault(l_SQ_TILE_ROW_END < h.U)
+        else if(h > w)  WireDefault(l_SQ_TILE_COL_END < w.U)
+        else            WireDefault((i == (OG_HEIGHT_MAP.size-1)).asBool)
+      }
+      val l_SQ_TILE_ROWS_PER_GROUP = MuxCase(
+        OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1).U,
+        OG_HEIGHT_MAP.zipWithIndex.map{
+          case(h,i) => (l_OG_DIM_SELECT(i) -> h.U)
+        })
+      val l_SQ_TILE_COLS_PER_GROUP = MuxCase(
+        (TOTAL_ACC_TILES / OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1)).U,
+        OG_HEIGHT_MAP.zipWithIndex.map{
+          case(h,i) => (l_OG_DIM_SELECT(i) -> (TOTAL_ACC_TILES/h).U)
+        })
 
+      // set the number of fg-tiles per row/col of the tile 
+      g_FG_TILE_COLS_PER_TILE := MuxCase(SQ_FG_NUM,
+        (g_FG_TILE_ROW_END < SQ_FG_NUM) -> Mux1H(FG_DIMS_LE_SQ_FG_NUM.map { 
+          h => (g_FG_TILE_ROW_END < h) -> FG_NUM/h 
+        }),
+        (g_FG_TILE_COL_END < SQ_FG_NUM) -> Mux1H(FG_DIMS_LE_SQ_FG_NUM.map { 
+          w => (g_FG_TILE_COL_END < w) -> w
+        }))
+      g_FG_TILE_ROWS_PER_TILE := MuxCase(SQ_FG_NUM,
+        (g_FG_TILE_ROW_END < SQ_FG_NUM) -> Mux1H(FG_DIMS_LE_SQ_FG_NUM.map { 
+          h => (g_FG_TILE_ROW_END < h) -> h 
+        }),
+        (g_FG_TILE_COL_END < SQ_FG_NUM) -> Mux1H(FG_DIMS_LE_SQ_FG_NUM.map { 
+          w => (g_FG_TILE_COL_END < w) -> FG_NUM/w
+        }))
+
+      val l_IS_SQUARE_TILE          = (g_FG_TILE_COLS_PER_TILE === SQ_FG_NUM.U)
+      val l_IS_SKINNY_AND_TALL_TILE = (g_FG_TILE_COLS_PER_TILE < SQ_FG_NUM.U)
+      val l_IS_WIDE_AND_SHORT_TILE  = (g_FG_TILE_COLS_PER_TILE > SQ_FG_NUM.U)
+
+      val l_SQ_TILE_COLS_PER_TILE = Mux(l_IS_SKINNY_AND_TALL_TILE, 1.U,
+                                      g_FG_TILE_COLS_PER_TILE / SQ_FG_NUM.U)
+      val l_SQ_TILE_ROWS_PER_TILE = Mux(g_IS_WIDE_AND_SHORT_TILE, 1.U,
+                                      g_FG_TILE_ROWS_PER_TILE / SQ_FG_NUM.U)
+
+      g_TILE_ROWS_PER_GROUP := l_SQ_TILE_ROWS_PER_GROUP / 
+                               l_SQ_TILE_ROWS_PER_TILE
+      g_TILE_COLS_PER_GROUP := l_SQ_TILE_COLS_PER_GROUP / 
+                               l_SQ_TILE_COLS_PER_TILE
+
+      g_FG_TILE_ROWS_PER_GROUP := g_TILE_ROWS_PER_GROUP * 
+                                  g_FG_TILE_ROWS_PER_TILE 
+      g_FG_TILE_COLS_PER_GROUP := g_TILE_COLS_PER_GROUP *
+                                  g_FG_TILE_COLS_PER_TILE 
+
+      //-------------------------------------------------------------------
+      // set derived item/byte dimensions of tiles/output-groups
+      //-------------------------------------------------------------------
+      g_ITEM_COLS_PER_GROUP   := g_FG_TILE_COLS_PER_GROUP * FG_DIM.U
+      g_ITEM_ROWS_PER_GROUP   := g_FG_TILE_ROWS_PER_GROUP * FG_DIM.U
+      g_I_BYTE_COLS_PER_GROUP := g_ITEM_COLS_PER_GROUP * ITYPE_BYTES.U
+      g_O_BYTE_COLS_PER_GROUP := g_ITEM_COLS_PER_GROUP * OTYPE_BYTES.U
+
+      g_ITEM_COLS_PER_TILE    := g_FG_TILE_COLS_PER_TILE * FG_DIM.U
+      g_ITEM_ROWS_PER_TILE    := g_FG_TILE_ROWS_PER_TILE * FG_DIM.U
+      g_I_BYTE_COLS_PER_TILE  := g_ITEM_COLS_PER_TILE * ITYPE_BYTES.U
+      g_O_BYTE_COLS_PER_TILE  := g_ITEM_COLS_PER_TILE * OTYPE_BYTES.U
+
+      //-------------------------------------------------------------------
+      // how many items on last iteration
+      // - TODO: don't use modulus here
+      //-------------------------------------------------------------------
+      val l_extra_m_elems = cmd.m % g_ITEM_ROWS_PER_TILE
+      val l_extra_n_elems = cmd.n % g_ITEM_COLS_PER_TILE
+      val l_extra_k_elems = cmd.k % FG_DIM.U
+      g_LAST_M_ITEMS := Mux(l_extra_m_elems.orR, l_extra_m_elems, 
+                            g_ITEM_ROWS_PER_TILE)
+      g_LAST_N_ITEMS := Mux(l_extra_n_elems.orR, l_extra_n_elems, 
+                            g_ITEM_COLS_PER_TILE)
+      g_LAST_K_ITEMS := Mux(l_extra_k_elems.orR, l_extra_k_elems, 
+                            FG_DIM.U)
+
+      //-------------------------------------------------------------------
+      // for calculating DRAM addresses each iteration
+      //-------------------------------------------------------------------
+      g_A_BYTES_PER_TILE_ROW  := l_A_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
+      g_B_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * g_ITEM_ROWS_PER_TILE 
+      g_C_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * g_ITEM_ROWS_PER_TILE 
+      g_D_BYTES_PER_TILE_ROW  := l_D_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
+
+      //-------------------------------------------------------------------
       // update interface signals. we are only ready when an input cmd is
       // ready AND the output queue has 2 slots available to write to
       io.cmd_in.ready := (sched.ready >= 2.U)
@@ -286,20 +374,22 @@ class TilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_RESET_OUTPUT_GROUP) {
       // define mutable gbl state, persist across all ogs
-      gbl_tile_row_n        := 0.U
-      gbl_tile_col_n        := 0.U
-      gbl_B_cur_sp_row_addr := GBL_B_SP_ROW_ADDR_1.U
-      gbl_B_alt_sp_row_addr := GBL_B_SP_ROW_ADDR_2.U
+      gbl_tile_row_n     := 0.U
+      gbl_tile_col_n     := 0.U
+      gbl_B_cur_row_addr := GBL_B_SP_ROW_ADDR_1.U
+      gbl_B_alt_row_addr := GBL_B_SP_ROW_ADDR_2.U
       update_tile_dims()
 
       // define mutable gbl state, reset after each og
-      gbl_CD_acc_row_addr := 0.U
+      gbl_row_addr        := 0.U
+      gbl_A_fg_col_start  := 0.U
+      gbl_CD_fg_col_start := 0.U
 
       loop1_tile_col_start := gbl_tile_col_n
-      loop1_tile_col_end   := MIN(gbl_tile_col_n + g_TILE_COLS_PER_GROUP-1.U,
+      loop1_tile_col_end   := MIN(gbl_tile_col_n + g_TILE_COLS_PER_GROUP1.U,
                                   g_TILE_COL_END)
       loop1_tile_row_start := gbl_tile_row_n
-      loop1_tile_row_end   := MIN(gbl_tile_row_n + g_TILE_ROWS_PER_GROUP-1.U,
+      loop1_tile_row_end   := MIN(gbl_tile_row_n + g_TILE_ROWS_PER_GROUP1.U,
                                   g_TILE_ROW_END)
 
       // derived pointers to matrices in memory for this og
@@ -333,21 +423,30 @@ class TilerFSM[T <: Data : Arithmetic]
       val B_mem_addr    = loop2_B_mem_addr
       val B_mem_stride  = g_B_BYTES_PER_ROW
 
-      val B_sp_row_addr = Wire(UInt(32.W))
-      val B_item_rows   = Wire(UInt(16.W))
-      val B_item_cols   = Wire(UInt(16.W))
-      B_sp_row_addr := gbl_B_cur_sp_row_addr
-      B_item_rows   := loop2_k_item_dims
-      B_item_cols   := gbl_item_cols
+      val configB = Wire(new FgConfigRs1) {
+      configB.garbage := 0.U
+      configB.is_acc  := false.B
+      configB.is_B_sp := true.B
+      configB.cfgtype := CONFIG_LOAD
+
+      val rangeB = Wire(new FgLocalRange(config))
+      rangeB.rows         := loop2_k_item_dims
+      rangeB.cols         := gbl_item_cols
+      rangeB.is_acc       := false.B
+      rangeB.is_accum     := false.B
+      rangeB.is_B_sp      := true.B
+      rangeB.garbage      := false.B
+      rangeB.fg_col_start := gbl_phys_B_cur_row_addr
+      rangeB.row_start    := gbl_phys_row_addr
 
       // issue gemmini commands
       when(sched.ready >= 2.U) {
-        sched.push          := 2.U
-        sched.bits(0).rs1   := CONFIG_LOAD
-        sched.bits(0).rs2   := B_mem_stride
+        sched.push               := 2.U
+        sched.bits(0).rs1        := configB.asUInt()
+        sched.bits(0).rs2        := B_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := B_mem_addr
-        sched.bits(1).rs2   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
+        sched.bits(1).rs1        := B_mem_addr
+        sched.bits(1).rs2        := rangeB.asUInt()
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -370,25 +469,36 @@ class TilerFSM[T <: Data : Arithmetic]
       val B_mem_addr    = loop3_B_mem_addr + I_TILE_BYTE_WIDTH.U
       val B_mem_stride  = g_B_BYTES_PER_ROW
 
-      val B_sp_row_addr = Wire(UInt(32.W))
-      val B_item_rows   = Wire(UInt(16.W))
-      val B_item_cols   = Wire(UInt(16.W))
-      B_sp_row_addr := gbl_B_alt_sp_row_addr
-      B_item_rows   := loop2_k_item_dims
-      B_item_cols   := Mux(gbl_tile_col === g_TILE_COL_END-1.U,
-                           g_LAST_N_ITEMS, DIM.U)
+      val configB = Wire(new FgConfigRs1) {
+      configB.garbage := 0.U
+      configB.is_acc  := false.B
+      configB.is_B_sp := true.B
+      configB.cfgtype := CONFIG_LOAD
+
+      val rangeB = Wire(new FgLocalRange(config))
+      rangeB.rows         := loop2_k_item_dims
+      rangeB.cols         := Mux(gbl_tile_col === g_TILE_COL_END-1.U,
+                              g_LAST_N_ITEMS, 
+                              g_ITEM_COLS_PER_TILE)
+      rangeB.is_acc       := false.B
+      rangeB.is_accum     := false.B
+      rangeB.is_B_sp      := true.B
+      rangeB.garbage      := false.B
+      rangeB.fg_col_start := gbl_phys_B_alt_row_addr
+      rangeB.row_start    := gbl_phys_row_addr
+
 
       // can't load next B-tile if we are already on the last one
       when (gbl_tile_col === loop1_tile_col_end) {
         state := s_RESET_A_TILE_SUBROW_IN_SUBCOL
       }
       .elsewhen (sched.ready >= 2.U) {
-        sched.push          := 2.U
-        sched.bits(0).rs1   := CONFIG_LOAD
-        sched.bits(0).rs2   := B_mem_stride
+        sched.push               := 2.U
+        sched.bits(0).rs1        := configB.asUInt()
+        sched.bits(0).rs2        := B_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := B_mem_addr
-        sched.bits(1).rs2   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
+        sched.bits(1).rs1        := B_mem_addr
+        sched.bits(1).rs2        := rangeB.asUInt()
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -412,27 +522,33 @@ class TilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_MAYBE_MOVE_A_TILE_INTO_SP) {
       // calculate mvin parameters
-      val A_mem_addr    = loop4_A_mem_addr
-      val A_mem_stride  = g_A_BYTES_PER_ROW
+      val configA = Wire(new FgConfigRs1) {
+      configA.garbage := 0.U
+      configA.is_acc  := false.B
+      configA.is_B_sp := false.B
+      configA.cfgtype := CONFIG_LOAD
 
-      val A_sp_row_addr = Wire(UInt(32.W))
-      val A_item_rows   = Wire(UInt(16.W))
-      val A_item_cols   = Wire(UInt(16.W))
-      A_sp_row_addr := loop4_A_sp_row_addr
-      A_item_rows   := gbl_item_rows
-      A_item_cols   := loop2_k_item_dims
+      val rangeA = Wire(new FgLocalRange(config))
+      rangeA.rows         := gbl_item_rows
+      rangeA.cols         := loop2_k_item_dims
+      rangeA.is_acc       := true.B
+      rangeA.is_accum     := false.B
+      rangeA.is_B_sp      := false.B
+      rangeA.garbage      := false.B
+      rangeA.fg_col_start := gbl_phys_A_fg_col_start
+      rangeA.row_start    := gbl_phys_row_addr
 
       // only move A-tiles in during first column of tiles in the og
       when (gbl_tile_col =/= loop1_tile_col_start) {
         state := s_MAYBE_MOVE_D_TILE_INTO_ACC
       }
       .elsewhen (sched.ready >= 2.U) {
-        sched.push          := 2.U
-        sched.bits(0).rs1   := CONFIG_LOAD
-        sched.bits(0).rs2   := A_mem_stride
+        sched.push               := 2.U
+        sched.bits(0).rs1        := configA.asUInt()
+        sched.bits(0).rs2        := A_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := A_mem_addr
-        sched.bits(1).rs2   := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
+        sched.bits(1).rs1        := A_mem_addr
+        sched.bits(1).rs2        := rangeA.asUInt()
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -442,27 +558,37 @@ class TilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_MAYBE_MOVE_D_TILE_INTO_ACC) {
       // calculate mvin parameters (NOTE: we know D is valid at this point)
-      val D_mem_addr     = loop4_D_mem_addr
-      val D_mem_stride   = Mux(g_REPEATING_BIAS, 0.U, g_D_BYTES_PER_ROW)
+      val D_mem_addr   = loop4_D_mem_addr
+      val D_mem_stride = Mux(g_REPEATING_BIAS, 0.U, g_D_BYTES_PER_ROW)
 
-      val D_acc_row_addr = Wire(UInt(32.W))
-      val D_item_rows    = Wire(UInt(16.W))
-      val D_item_cols    = Wire(UInt(16.W))
-      D_acc_row_addr := "h80000000".U | gbl_CD_acc_row_addr
-      D_item_rows    := gbl_item_rows
-      D_item_cols    := gbl_item_cols
+      val configD = Wire(new FgConfigRs1) {
+      configD.garbage := 0.U
+      configD.is_acc  := true.B
+      configD.is_B_sp := false.B
+      configD.cfgtype := CONFIG_LOAD
+
+      val rangeD = Wire(new FgLocalRange(config))
+      rangeD.rows         := gbl_item_rows
+      rangeD.cols         := gbl_item_cols
+      rangeD.is_acc       := true.B
+      rangeD.is_accum     := false.B
+      rangeD.is_B_sp      := false.B
+      rangeD.garbage      := false.B
+      rangeD.fg_col_start := gbl_phys_CD_fg_col_start
+      rangeD.row_start    := gbl_phys_row_addr
+
 
       // only move D-tiles in during first partial-sum in an output-group
       when((loop2_k_tile_col =/= 0.U) || !g_HAS_BIAS) {
         state := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
       }
       .elsewhen (sched.ready >= 2.U) {
-        sched.push          := 2.U
-        sched.bits(0).rs1   := CONFIG_LOAD
-        sched.bits(0).rs2   := D_mem_stride
+        sched.push               := 2.U
+        sched.bits(0).rs1        := configD.asUInt()
+        sched.bits(0).rs2        := D_mem_stride
         sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1   := D_mem_addr
-        sched.bits(1).rs2   := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
+        sched.bits(1).rs1        := D_mem_addr
+        sched.bits(1).rs2        := rangeD.asUInt()
         sched.bits(1).inst.funct := LOAD_CMD
 
         // update next state
@@ -473,31 +599,33 @@ class TilerFSM[T <: Data : Arithmetic]
     is (s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC) {
       // on first tile in 4th loop: preload this B-tile
       // else:                      preload garbage B-tile (no spad load)
-      val B_sp_row_addr = Wire(UInt(32.W))
-      val B_item_rows   = Wire(UInt(16.W))
-      val B_item_cols   = Wire(UInt(16.W))
-      B_sp_row_addr := Mux(gbl_tile_row === loop1_tile_row_start,
-                           gbl_B_cur_sp_row_addr,
-                           GARBAGE_ADDR)
-      B_item_rows   := loop2_k_item_dims
-      B_item_cols   := gbl_item_cols
+      val rangeB = Wire(new FgLocalRange(config))
+      rangeB.rows         := loop2_k_item_dims
+      rangeB.cols         := gbl_item_cols
+      rangeB.is_acc       := false.B
+      rangeB.is_accum     := false.B
+      rangeB.is_B_sp      := true.B
+      rangeB.garbage      := (gbl_tile_row =/= loop1_tile_row_start)
+      rangeB.fg_col_start := 0.U
+      rangeB.row_start    := gbl_phys_B_cur_row_addr
 
       // if has D-bias already loaded: accumulate c in accumulator
       // elif first k-col in 2nd loop: overwrite c in accumulator
       // else:                         accumulate c in accumulator
-      val C_acc_row_addr = Wire(UInt(32.W))
-      val C_item_rows    = Wire(UInt(16.W))
-      val C_item_cols    = Wire(UInt(16.W))
-      C_acc_row_addr := Mux(g_HAS_BIAS || (loop2_k_tile_col > 0.U),
-                            "hC0000000".U | gbl_CD_acc_row_addr,
-                            "h80000000".U | gbl_CD_acc_row_addr)
-      C_item_rows    := gbl_item_rows
-      C_item_cols    := gbl_item_cols
+      val rangeC = Wire(new FgLocalRange(config))
+      rangeC.rows         := gbl_item_rows
+      rangeC.cols         := gbl_item_cols
+      rangeC.is_acc       := true.B
+      rangeC.is_accum     := (g_HAS_BIAS || (loop2_k_tile_col > 0.U))
+      rangeC.is_B_sp      := false.B
+      rangeC.garbage      := false.B
+      rangeC.fg_col_start := gbl_phys_CD_fg_col_start
+      rangeC.row_start    := gbl_phys_row_addr
 
       when (sched.ready >= 1.U) {
-        sched.push          := 1.U
-        sched.bits(0).rs1   := Cat(B_item_rows,B_item_cols,B_sp_row_addr)
-        sched.bits(0).rs2   := Cat(C_item_rows,C_item_cols,C_acc_row_addr)
+        sched.push               := 1.U
+        sched.bits(0).rs1        := rangeB.asUInt()
+        sched.bits(0).rs2        := rangeC.asUInt()
         sched.bits(0).inst.funct := PRELOAD_CMD
 
         // update next state
@@ -507,31 +635,29 @@ class TilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_DO_MATMUL) {
       // calculate compute parameters
-      val A_sp_row_addr = Wire(UInt(32.W))
-      val A_item_rows   = Wire(UInt(16.W))
-      val A_item_cols   = Wire(UInt(16.W))
-      A_sp_row_addr := loop4_A_sp_row_addr
-      A_item_rows   := gbl_item_rows
-      A_item_cols   := loop2_k_item_dims
+      val rangeA = Wire(new FgLocalRange(config))
+      rangeA.rows         := gbl_item_rows
+      rangeA.cols         := loop2_k_item_dims
+      rangeA.is_acc       := false.B
+      rangeA.is_accum     := false.B
+      rangeA.is_B_sp      := false.B
+      rangeA.garbage      := false.B
+      rangeA.fg_col_start := gbl_phys_fg_col_start
+      rangeA.row_start    := gbl_phys_row_addr
 
-      val D_acc_row_addr = GARBAGE_ADDR
-      val D_item_rows    = Wire(UInt(16.W))
-      val D_item_cols    = Wire(UInt(16.W))
-      D_item_rows    := gbl_item_rows
-      D_item_cols    := gbl_item_cols
+      // don't care about D
+      val rangeD = Wire(new FgLocalRange(config))
+      rangeD := DontCare
 
       // on first tile in 4th loop: compute_preloaded
       // else: compute_accumulated
       when (sched.ready >= 1.U) {
-        sched.push          := 1.U
-        sched.bits(0).rs1   := Cat(A_item_rows,A_item_cols,A_sp_row_addr)
-        sched.bits(0).rs2   := Cat(D_item_rows,D_item_cols,D_acc_row_addr)
-        when (gbl_tile_row === loop1_tile_row_start) {
-          sched.bits(0).inst.funct := COMPUTE_AND_FLIP_CMD
-        }
-        .otherwise {
-          sched.bits(0).inst.funct := COMPUTE_AND_STAY_CMD
-        }
+        sched.push               := 1.U
+        sched.bits(0).rs1        := rangeA.asUInt()
+        sched.bits(0).rs2        := rangeD.asUInt()
+        sched.bits(0).inst.funct := Mux(gbl_tile_row === loop1_tile_row_start,
+                                        COMPUTE_AND_FLIP_CMD,
+                                        COMPUTE_AND_STAY_CMD)
         // update next state
         state := s_MAYBE_MOVE_C_TILE_INTO_MEM
       }
@@ -569,20 +695,23 @@ class TilerFSM[T <: Data : Arithmetic]
         state := s_NEXT_B_TILE_SUBCOL_IN_SUBROW
       }
       .otherwise {
+        val gbl_phys_row_addr_next = gbl_phys_row_addr + g_BYTE_ROWS_PER_TILE
+
         // modify global state
-        gbl_tile_row_n      := gbl_tile_row        + 1.U
-        gbl_CD_acc_row_addr := gbl_CD_acc_row_addr + BYTE_ROWS_PER_TILE.U
+        gbl_tile_row_n    := gbl_tile_row + 1.U
+        gbl_phys_row_addr := gbl_phys_row_addr_next
+        when (gbl_phys_row_addr_next === 0.U) {
+          gbl_phys_fg_col_start := gbl_phys_fg_col_start + SQ_FG_NUM.U
+        }
         update_tile_dims()
 
         // modify loop4-local state
-        loop4_A_mem_addr    := loop4_A_mem_addr + g_A_BYTES_PER_TILE_ROW
-        loop4_B_mem_addr    := loop4_B_mem_addr
-        loop4_C_mem_addr    := loop4_C_mem_addr + g_C_BYTES_PER_TILE_ROW
-        loop4_D_mem_addr    := loop4_D_mem_addr +
-                                Mux(g_HAS_BIAS && !g_REPEATING_BIAS,
-                                    g_D_BYTES_PER_TILE_ROW, 0.U)
-
-        loop4_A_sp_row_addr := loop4_A_sp_row_addr + BYTE_ROWS_PER_TILE.U
+        loop4_A_mem_addr := loop4_A_mem_addr + g_A_BYTES_PER_TILE_ROW
+        loop4_B_mem_addr := loop4_B_mem_addr
+        loop4_C_mem_addr := loop4_C_mem_addr + g_C_BYTES_PER_TILE_ROW
+        loop4_D_mem_addr := loop4_D_mem_addr +
+                             Mux(g_HAS_BIAS && !g_REPEATING_BIAS,
+                                 g_D_BYTES_PER_TILE_ROW, 0.U)
 
         // update next state
         state := s_MAYBE_MOVE_A_TILE_INTO_SP
@@ -651,20 +780,21 @@ class TilerFSM[T <: Data : Arithmetic]
       }
       .otherwise {
         when (gbl_tile_col === g_TILE_COL_END) {
+          l_did_row_incr := true.B
           gbl_tile_row_n := gbl_tile_row + 1.U
           gbl_tile_col_n := 0.U
           update_tile_dims()
-          l_did_row_incr := true.B
-        }
-        .otherwise {
+        } .otherwise {
+          l_did_col_incr := true.B
           gbl_tile_row_n := gbl_tile_row
           gbl_tile_col_n := gbl_tile_col + 1.U
           update_tile_dims()
-          l_did_col_incr := true.B
         }
    
         // reset global state that resets for each new output-group
-        gbl_CD_acc_row_addr := 0.U
+        phys_row_addr        := 0.U
+        phys_A_fg_col_start  := 0.U
+        phys_CD_fg_col_start := 0.U
 
         // update the start/end tiles for this output-group (inclusive)
         val l_tile_col_start = gbl_tile_col_n
@@ -679,7 +809,6 @@ class TilerFSM[T <: Data : Arithmetic]
                                 
         loop1_tile_row_start := l_tile_row_start
         loop1_tile_row_end   := l_tile_row_end
-                                
          
         // update all derived pointers to matrices in memory
         when(l_did_row_incr) {

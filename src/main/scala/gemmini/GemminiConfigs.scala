@@ -198,9 +198,22 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
     (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs
   })
 
-  def FG_NUM = fs_sa_div * fs_sa_div
-  def FG_DIM = DIM / fs_sa_div
-  require(DIM % fs_sa_div == 0, "invalid DIM and fs_sa_div combo")
+  def FG_DIM_EQ_SQ_TILE  = fg_sa_div
+  def FG_DIMS_LT_SQ_TILE = (0 until log2Up(fg_sa_div)).map {
+                              e=>math.pow(2,e) }
+  def FG_DIMS_GT_SQ_TILE = (log2Up(fg_sa_div)+1, log2Up(FG_NUM)).map {
+                              e=>math.pow(2,e) }.reverse
+
+  def FG_DIMS_LT_SQ_TILE = (0 until log2Up(fg_sa_div)).map {e=>math.pow(2,e)}
+  def FG_PER_SQ_TILE_DIM = fg_sa_div
+  def FG_NUM = fg_sa_div * fg_sa_div
+  def FG_DIM = DIM / fg_sa_div
+  require(DIM % fg_sa_div == 0, "invalid DIM and fs_sa_div combo")
+  require( FG_NUM is a power of 2, ..........)
+  def FG_TILES_PER_TILE_DIM = (0 to log2Up(FG_NUM)).map { 
+    e => scala.math.pow(2, e)
+  }
+
 
   def OG__MAP = (1 to TOTAL_ACC_TILES).sortWith((h1, h2) => {
     (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs

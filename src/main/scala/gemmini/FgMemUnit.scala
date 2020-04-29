@@ -86,6 +86,29 @@ class FgMemUnitExecReadIO[T <: Data](config: GemminiArrayConfig[T])
 class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends LazyModule with HasCoreParameters {
   import config._
+
+  val id_node = TLIdentityNode()
+  val xbar_node = TLXbar()
+
+  val readerA = LazyModule(new FgDMAReader(config, "readerA", SP_ROW_BYTES))
+  val readerB = LazyModule(new FgDMAReader(config, "readerB", SP_ROW_BYTES))
+  val readerD = LazyModule(new FgDMAReader(config, "readerD", ACC_ROW_BYTES))
+  val writerC = LazyModule(new FgDMAWriter(config, "writerC", SP_ROW_BYTES))
+
+  xbar_node := readerA.node
+  xbar_node := readerB.node
+  xbar_node := readerD.node
+  xbar_node := writerC.node
+  id_node   := xbar_node
+
+  override lazy val module = new FgMemUnitModule(this, config)
+}
+
+class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
+  (implicit p: Parameters)
+  extends LazyModuleImp(outer) with HasCoreParameters {
+  import outer.config
+  import config._
   //------------------------------------------
   // I/O interface
   //------------------------------------------
@@ -114,20 +137,6 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
   //--------------------------------------------
   // setup tile-link DMA reader/writers
   //--------------------------------------------
-  val id_node = TLIdentityNode()
-  val xbar_node = TLXbar()
-
-  val readerA = LazyModule(new FgDMAReader(config, "readerA", SP_ROW_BYTES))
-  val readerB = LazyModule(new FgDMAReader(config, "readerB", SP_ROW_BYTES))
-  val readerD = LazyModule(new FgDMAReader(config, "readerD", ACC_ROW_BYTES))
-  val writerC = LazyModule(new FgDMAWriter(config, "writerC", SP_ROW_BYTES))
-
-  xbar_node := readerA.node
-  xbar_node := readerB.node
-  xbar_node := readerD.node
-  xbar_node := writerC.node
-  id_node   := xbar_node
-
   readerA.io.req <> io.dma.readA.req
   readerB.io.req <> io.dma.readB.req
   readerD.io.req <> io.dma.readD.req

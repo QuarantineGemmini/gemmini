@@ -110,8 +110,8 @@ class TilerScheduler[T <: Data: Arithmetic]
     val is_cfg_loadD  = is_cfg_load  && rs1_cfg.is_acc
     val is_cfg_storeC = is_cfg_store
     // if load cmd, what subcmd is it
-    val rs1_laddr     = cmd.rs1.asTypeOf(new FgLocalAddr(config))
-    val rs2_laddr     = cmd.rs2.asTypeOf(new FgLocalAddr(config))
+    val rs1_laddr     = cmd.rs1.asTypeOf(new FgLocalRange(config))
+    val rs2_laddr     = cmd.rs2.asTypeOf(new FgLocalRange(config))
     val is_loadA      = is_load && !rs2_laddr.is_acc && !rs2_laddr.is_B_sp
     val is_loadB      = is_load && !rs2_laddr.is_acc && rs2_laddr.is_B_sp
     val is_loadD      = is_load && rs2_laddr.is_acc

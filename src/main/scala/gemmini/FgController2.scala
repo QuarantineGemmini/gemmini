@@ -24,33 +24,33 @@ class FgGemmini2[T <: Data : Arithmetic]
   Files.write(Paths.get(config.headerFilePath),
               config.generateHeader().getBytes(StandardCharsets.UTF_8))
 
-  override lazy val module = new FgGemminiModule2(this, config)
+  override lazy val module = new FgGemminiModule2(this)
 
-  // diplomatic scratchpad
-  val spad = LazyModule(new Scratchpad(config))
-  override val tlNode = spad.id_node
+  val mem = LazyModule(new FgMemUnit(config))
+  override val tlNode = mem.id_node
 }
 
-class FgGemminiModule2[T <: Data: Arithmetic]
-  (outer: FgGemmini2[T], config: GemminiArrayConfig[T])(implicit p: Parameters)
+class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
+  (implicit p: Parameters)
   extends LazyRoCCModuleImp(outer) with HasCoreParameters {
-  import outer.config._
-  import outer.spad
+  import outer.config
+  import config._
+  import outer.mem
 
   //=========================================================================
   // TLB (2-clients, 4 entries)
   //=========================================================================
-  val tlb = FrontendTLB(2, 4, dma_maxbytes, outer.tlNode.edges.out.head)
-  tlb.io.clients(0)    <> outer.spad.module.io.tlb(0)
-  tlb.io.clients(1)    <> outer.spad.module.io.tlb(1)
-  io.ptw.head          <> tlb.io.ptw
-  io.interrupt         := tlb.io.exp.interrupt
-  spad.module.io.flush := tlb.io.exp.flush()
-
-  dontTouch(outer.spad.module.io.tlb)
+  val tlb = FrontendTLB(4, 8, dma_maxbytes, outer.tlNode.edges.out.head)
+  tlb.io.clients(0)   <> mem.module.io.tlb.readA
+  tlb.io.clients(1)   <> mem.module.io.tlb.readB
+  tlb.io.clients(2)   <> mem.module.io.tlb.readD
+  tlb.io.clients(3)   <> mem.module.io.tlb.writeC
+  io.ptw.head         <> tlb.io.ptw
+  io.interrupt        := tlb.io.exp.interrupt
+  mem.module.io.flush := tlb.io.exp.flush()
 
   //=========================================================================
-  // OoO Issuing
+  // Dispatch/Issue
   //=========================================================================
   val raw_cmd = Queue(io.cmd)
 
@@ -63,32 +63,43 @@ class FgGemminiModule2[T <: Data: Arithmetic]
   tiler.io.cmd_in <> cmd_fsm.io.tiler
 
   //=========================================================================
-  // OoO Execution
+  // Execution
   //=========================================================================
   val exec = FgExecuteController(outer.config)
-  exec.io.cmd                <> tiler.io.issue.exec
-  tiler.io.completed.exec    := exec.io.completed
-  spad.module.io.srams.read  <> exec.io.srams.read
-  spad.module.io.srams.write <> exec.io.srams.write
-  spad.module.io.acc.read    <> exec.io.acc.read
-  spad.module.io.acc.write   <> exec.io.acc.write
+  exec.io.cmd               <> tiler.io.issue.exec
+  tiler.io.completed.exec   := exec.io.completed
+  mem.module.io.exec.readA  <> exec.io.readA
+  mem.module.io.exec.readB  <> exec.io.readB
+  mem.module.io.exec.readD  <> exec.io.readD
+  mem.module.io.exec.writeC <> exec.io.writeC
 
-  val load = FgMemTransferController(outer.config)
-  load.io.cmd             <> tiler.io.issue.load
-  tiler.io.completed.load <> load.io.completed
-  spad.module.io.dma.read <> load.io.dma
+  val loadA = FgMemTransferController(outer.config)
+  loadA.io.cmd             <> tiler.io.issue.loadA
+  tiler.io.completed.loadA <> loadA.io.completed
+  mem.module.io.dma.readA  <> loadA.io.dma
 
-  val store = FgMemTransferController(outer.config)
-  store.io.cmd             <> tiler.io.issue.store
-  tiler.io.completed.store <> store.io.completed
-  spad.module.io.dma.write <> store.io.dma
+  val loadB = FgMemTransferController(outer.config)
+  loadB.io.cmd             <> tiler.io.issue.loadB
+  tiler.io.completed.loadB <> loadB.io.completed
+  mem.module.io.dma.readB  <> loadB.io.dma
+
+  val loadD = FgMemTransferController(outer.config)
+  loadD.io.cmd             <> tiler.io.issue.loadD
+  tiler.io.completed.loadD <> loadD.io.completed
+  mem.module.io.dma.readD  <> loadD.io.dma
+
+  val storeC = FgMemTransferController(outer.config)
+  storeC.io.cmd             <> tiler.io.issue.storeC
+  tiler.io.completed.storeC <> storeC.io.completed
+  mem.module.io.dma.writeC  <> storeC.io.dma
 
   //=========================================================================
   // Busy Signal (used by RocketCore during fence insn)
   //=========================================================================
   val is_computing = cmd_fsm.io.busy || tiler.io.busy ||
-                     spad.module.io.busy ||
-                     load.io.busy || store.io.busy || exec.io.busy
+                     mem.module.io.busy ||
+                     loadA.io.busy || loadB.io.busy || loadD.io.busy || 
+                     storeC.io.busy || exec.io.busy
 
   io.busy := raw_cmd.valid || is_computing
 

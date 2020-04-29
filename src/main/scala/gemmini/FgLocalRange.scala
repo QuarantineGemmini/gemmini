@@ -41,7 +41,7 @@ class FgLocalRange[T <: Data](config: GemminiArrayConfig[T])
 }
 
 //===========================================================================
-// represents a 2-D array of rows/cols in a scratchpad/accumulator
+// when CONFIG_LOAD is used, specifies if loadA, loadB, or loadD
 //===========================================================================
 class FgConfigRs1 extends Bundle {
   val garbage      = UInt(60.W)
