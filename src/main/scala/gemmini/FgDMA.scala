@@ -123,7 +123,7 @@ class FgDMAWriteRequest[T <: Data]
   import config._
   val data   = UInt((max_bytes*8).W)
   val vaddr  = UInt(coreMaxAddrBits.W)
-  val lrange = new FgLocalRange(config)
+  val len    = UInt(max_bytes.W)
   val status = new MStatus
   val rob_id = UInt(LOG2_ROB_ENTRIES.W)
 }
