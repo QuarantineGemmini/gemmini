@@ -45,39 +45,47 @@ class FgMemUnitMemIO[T <: Data](config: GemminiArrayConfig[T])
 //===========================================================================
 // ExecController <-> MemUnit
 //===========================================================================
-class FgMemUnitExecReadReq[T <: Data](config: GemminiArrayConfig[T])
-  (implicit p: Parameters) extends CoreBundle {
-  import config._
-  val row          = Output(UInt(LOG2_FG_DIM.W))
-  val bank_start   = Output(UInt(LOG2_FG_NUM.W))
-  val banks        = Output(UInt(LOG2_FG_NUM.W))
-  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
-  val cols         = Output(UInt(LOG2_SP_ROW_ELEMS.W))
-}
-
-class FgMemUnitExecReadResp[T <: Data](config: GemminiArrayConfig[T])
-  (implicit p: Parameters) extends CoreBundle {
-  import config._
-  val data = Input(UInt(SP_ROW_BITS.W))
-}
-
-class FgMemUnitExecWriteReq[T <: Data](config: GemminiArrayConfig[T])
+class FgMemUnitExecReadReq[T <: Data]
+  (config: GemminiArrayConfig[T], fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
   val row          = Output(UInt(LOG2_FG_DIM.W))
+  val fg_col_start = Output(UInt(log2Up(fg_cols).W))
   val bank_start   = Output(UInt(LOG2_FG_NUM.W))
   val banks        = Output(UInt(LOG2_FG_NUM.W))
-  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
-  val cols         = Output(UInt(LOG2_ACC_ROW_ELEMS.W))
-  val is_accum     = Output(Bool())
-  val data         = Output(UInt(ACC_ROW_BITS.W))
 }
 
-class FgMemUnitExecReadIO[T <: Data](config: GemminiArrayConfig[T])
+class FgMemUnitExecReadResp[T <: Data]
+  (config: GemminiArrayConfig[T], port_fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
-  val req  = new FgMemUnitExecReadReq(config)
-  val resp = new FgMemUnitExecReadResp(config)
+  import config._
+  val PORT_ELEMS = port_fg_cols * FG_DIM
+  val PORT_BITS = PORT_ELEMS * ITYPE_BITS
+  val data = Output(UInt(PORT_BITS.W))
+}
+
+class FgMemUnitExecReadIO[T <: Data]
+  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (implicit p: Parameters) extends CoreBundle {
+  val req  = new FgMemUnitExecReadReq(config, fg_cols)
+  val resp = Flipped(new FgMemUnitExecReadResp(config, port_fg_cols))
+}
+
+class FgMemUnitExecWriteReq[T <: Data]
+  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (implicit p: Parameters) extends CoreBundle {
+  import config._
+  val PORT_ELEMS = port_fg_cols * FG_DIM
+  val PORT_BITS = PORT_ELEMS * OTYPE_BITS
+  val en           = Output(Bool())
+  val is_accum     = Output(Bool())
+  val row          = Output(UInt(LOG2_FG_DIM.W))
+  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
+  val cols         = Output(UInt(log2Up(PORT_ELEMS + 1).W))
+  val bank_start   = Output(UInt(LOG2_FG_NUM.W))
+  val banks        = Output(UInt(LOG2_FG_NUM.W))
+  val data         = Output(UInt(PORT_BITS.W))
 }
 
 //============================================================================
@@ -127,9 +135,9 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
       val writeC = new FrontendTLBIO
     }
     val exec = new Bundle {
-      val readA  = Flipped(new FgMemUnitExecReadIO(config))
-      val readB  = Flipped(new FgMemUnitExecReadIO(config))
-      val writeC = Flipped(new FgMemUnitExecWriteReq(config))
+      val readA  = Flipped(new FgMemUnitExecReadIO(config, SQRT_FG_NUM, 1))
+      val readB  = Flipped(new FgMemUnitExecReadIO(config, FG_NUM, FG_NUM))
+      val writeC = Flipped(new FgMemUnitExecWriteReq(config, FG_NUM, FG_NUM))
     }
     val busy = Output(Bool())
     val flush = Input(Bool())
@@ -196,20 +204,6 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val rd_data_shifted = bank_ios.map { bio => 
       bio.read.resp.data >> (sp_col_idx * SQ_COL_IBITS)
     }
-    val rd_data = Mux1H((0 to log2Up(FG_NUM)).map { log2banks => 
-      val my_banks = scala.math.pow(2, log2banks)
-      val is_selected = (my_banks === banks)
-      (is_selected -> {
-        val bit_per_bank = ITYPE_BITS * FG_DIM * (FG_NUM >> log2banks)
-        Mux1H((0 to (FG_NUM-1) by my_banks).map { my_bank_start =>
-          val my_bank_end = my_bank_start + my_banks - 1
-          val is_selected = (my_bank_start === bank_start)
-          (is_selected -> Cat((my_bank_start to my_bank_end).map {bank_idx =>
-            rd_data_shifted(bank_idx)((bits_per_bank-1).U, 0.U)
-          }))
-        })
-      })
-    })
 
     // finish hooking up the read path
     memq.deq.ready     := outq.enq.ready
@@ -243,9 +237,9 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
   }
 
   {
-    // B-banks
-    val banks = Seq.fill(2) { 
-      Module(new FgScratchpadBank(config, SQRT_FG_NUM)) 
+    // A-banks
+    val banks = Seq.fill(FG_NUM) { 
+      Module(new FgScratchpadBank(config, FG_NUM, FG_NUM)) 
     }
     val bank_ios = VecInit(banks.map(_.io))
 
@@ -253,33 +247,100 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     // read-datapath
     //======================================================================
     // exec reads can read from 1+ banks at a time
-    val ex_rd_req     = io.exec.readB.req
-    val rd_row_idx    = ex_rd_req.bits.row_idx    
-    val rd_bank_start = ex_rd_req.bits.bank_start 
-    val rd_banks      = ex_rd_req.bits.banks      
-    val rd_sq_col_idx = ex_rd_req.bits.sq_col_idx 
-    val rd_cols       = ex_rd_req.bits.cols       
+    val ex_rd_req       = io.exec.readA.req
+    val rd_en           = ex_rd_req.en
+    val rd_row          = ex_rd_req.row
+    val rd_fg_col_start = ex_rd_req.fg_col_start
+    val rd_bank_start   = ex_rd_req.bank_start 
+    val rd_banks        = ex_rd_req.banks      
+    assert((rd_bank_start & (rd_bank_start-1.U)) === 0.U, 
+      "bank_start not aligned")
+
+    // the queue to maintain back-pressure
+    val memq = RegNext(io.exec.readA.req)
+    val outq = RegNext(new FgMemUnitExecReadResp(config, FG_NUM))
+
+    // datapath into scratchpads
+    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+      bio.read.req.en           := rd_en
+      bio.read.req.row          := row
+      bio.read.req.fg_col_start := rd_fg_col_start
+    }
+
+    // read datapath out of scratchpads and output data (2 cycle latency)
+    val rd_datas = bank_ios.map { bio => bio.read.resp.data }
+    outq.data = Mux1H((0 to log2Up(FG_NUM)).map { log2banks => 
+      val my_banks = scala.math.pow(2, log2banks)
+      val is_selected = (my_banks === banks)
+      (is_selected -> Mux1H((0 to (FG_NUM-1) by my_banks).map{my_bank_start =>
+        val my_bank_end = my_bank_start + my_banks - 1
+        val is_selected = (my_bank_start === bank_start)
+        (is_selected -> Cat((my_bank_start to my_bank_end).map{bank_idx =>
+          rd_datas(bank_idx)
+        }))
+      }))
+    })
+
+    //======================================================================
+    // write-datapath
+    //======================================================================
+    // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
+    // dma-writes only do 1 row max (so it won't write to 2+ banks at once
+    val dma_wr_fire     = readerA.io.resp.fire()
+    val dma_wr_data     = readerA.io.resp.data
+    val dma_wr_lrange   = readerA.io.resp.lrange
+    val wr_rows         = dma_wr_lrange.rows
+    val wr_cols         = dma_wr_lrange.cols
+    val wr_fg_col_start = dma_wr_lrange.fg_col_start
+    val wr_row_start    = dma_wr_lrange.row_start
+    assert(wr_rows === 1.U, "dma cannot write >1 row at a time")
+
+    val wr_real_bank = wr_row_start(15,LOG2_FG_DIM)
+    val wr_real_row  = wr_row_start(LOG2_FG_DIM-1,0)
+    assert(wr_real_bank < 2.U)
+
+    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+      bio.write.req.en           := (dma_wr_fire && (wr_real_bank === i))
+      bio.write.req.row          := wr_real_row
+      bio.write.req.cols         := wr_cols
+      bio.write.req.fg_col_start := wr_fg_col_start
+      bio.write.req.data         := dma_wr_data
+    }
+  }
+
+  {
+    // B-banks
+    val banks = Seq.fill(2) { 
+      Module(new FgScratchpadBank(config, SQRT_FG_NUM, 1)) 
+    }
+    val bank_ios = VecInit(banks.map(_.io))
+
+    //======================================================================
+    // read-datapath
+    //======================================================================
+    // exec reads can read from 1+ banks at a time
+    val ex_rd_req       = io.exec.readB.req
+    val rd_en           = ex_rd_req.en
+    val rd_row          = ex_rd_req.row
+    val rd_fg_col_start = ex_rd_req.fg_col_start
+    val rd_bank_start   = ex_rd_req.bank_start 
+    val rd_banks        = ex_rd_req.banks      
     assert(rd_banks === 1.U && rd_bank_start < 2.U)
 
     // the queue to maintain back-pressure
-    val memq = RegNext(io.exec.readA.req.bits)
-    val outq = RegNext(new FgMemUnitExecReadResp(config))
+    val memq = RegNext(io.exec.readB.req)
+    val outq = RegNext(new FgMemUnitExecReadResp(config, 1))
 
     // datapath into scratchpads
-    val mem_blocked = !outq.enq.ready
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.read.req.en := !mem_blocked
-      bio.read.req.row := row
+      bio.read.req.en           := rd_en
+      bio.read.req.row          := row
+      bio.read.req.fg_col_start := rd_fg_col_start
     }
 
-    // read datapath out of scratchpads: 2-level mux
-    val rd_data_shifted = bank_ios.map { bio => 
-      bio.read.resp.data >> (sp_col_idx * SQ_COL_IBITS)
-    }
-    val rd_data = rd_data_shifted(memq.bank_start)
-   
-    // finish hooking up the read path
-    outq.data := rd_data
+    // read datapath out of scratchpads and output data (2 cycle latency)
+    val rd_datas = bank_ios.map { bio => bio.read.resp.data }
+    outq.data = rd_datas(memq.bank_start)
 
     //======================================================================
     // write-datapath
@@ -291,7 +352,7 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_wr_lrange   = readerB.io.resp.lrange
     val wr_rows         = dma_wr_lrange.rows
     val wr_cols         = dma_wr_lrange.cols
-    val wr_sq_col_start = dma_wr_lrange.sq_col_start
+    val wr_fg_col_start = dma_wr_lrange.fg_col_start
     val wr_row_start    = dma_wr_lrange.row_start
     assert(wr_rows === 1.U, "dma cannot write >1 row at a time")
 
@@ -299,12 +360,11 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val wr_real_row  = wr_row_start(LOG2_FG_DIM-1,0)
     assert(wr_real_bank < 2.U)
 
-    val mask = ((wr_cols*ITYPE_BITS.U) - 1.U) << (sp_col_idx * SQ_COL_IBITS)
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.write.req.en           := dma_wr_fire
-      bio.write.req.row          := 1.U
+      bio.write.req.en           := (dma_wr_fire && (wr_real_bank === i))
+      bio.write.req.row          := wr_real_row
       bio.write.req.cols         := wr_cols
-      bio.write.req.sq_col_start := wr_sq_col_start
+      bio.write.req.fg_col_start := wr_fg_col_start
       bio.write.req.data         := dma_wr_data
     }
   }

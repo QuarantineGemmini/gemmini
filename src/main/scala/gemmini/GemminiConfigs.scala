@@ -128,6 +128,13 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   //==========================================================================
   // fine-grained SA: gemmini2 hw-specific compile-time global constants
   //==========================================================================
+  def FG_NUM      = fg_sa_div * fg_sa_div
+  def LOG2_FG_NUM = log2Up(FG_NUM) // counter
+  def FG_DIM      = DIM / fg_sa_div
+  def LOG2_FG_DIM = log2Up(FG_DIM) // index
+
+  def A_SP_BUSWIDTH
+
   def SP_ROW_ELEMS       = FG_NUM * FG_DIM
   def ACC_ROW_ELEMS      = FG_NUM * FG_DIM
   def LOG2_SP_ROW_ELEMS  = log2Up(SP_ROW_ELEMS+1)  // counter
@@ -209,8 +216,6 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
 
   def FG_DIMS_LT_SQ_TILE = (0 until log2Up(fg_sa_div)).map {e=>math.pow(2,e)}
   def FG_PER_SQ_TILE_DIM = fg_sa_div
-  def FG_NUM = fg_sa_div * fg_sa_div
-  def FG_DIM = DIM / fg_sa_div
   require(DIM % fg_sa_div == 0, "invalid DIM and fs_sa_div combo")
   require( FG_NUM is a power of 2, ..........)
   def FG_TILES_PER_TILE_DIM = (0 to log2Up(FG_NUM)).map { 
