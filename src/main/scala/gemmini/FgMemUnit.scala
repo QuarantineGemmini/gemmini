@@ -15,10 +15,10 @@ import Util._
 class FgMemUnitDMAReadReq[T <: Data](config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val row_idx    = UInt(LOG2_FG_DIM.W))
-  val bank       = UInt(LOG2_FG_NUM.W))
-  val sq_col_idx = UInt(LOG2_FG_NUM.W))
-  val cols       = UInt(LOG2_SP_ROW_ELEMS.W))
+  val bank         = UInt(LOG2_FG_NUM.W))
+  val row          = UInt(LOG2_FG_DIM.W))
+  val fg_col_start = UInt(LOG2_FG_NUM.W))
+  val cols         = UInt(LOG2_SP_ROW_ELEMS.W))
 }
 
 class FgMemUnitDMAReq[T <: Data](config: GemminiArrayConfig[T])
@@ -48,11 +48,11 @@ class FgMemUnitMemIO[T <: Data](config: GemminiArrayConfig[T])
 class FgMemUnitExecReadReq[T <: Data](config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val row_idx    = Output(UInt(LOG2_FG_DIM.W))
-  val bank_start = Output(UInt(LOG2_FG_NUM.W))
-  val banks      = Output(UInt(LOG2_FG_NUM.W))
-  val sq_col_idx = Output(UInt(LOG2_FG_NUM.W))
-  val cols       = Output(UInt(LOG2_SP_ROW_ELEMS.W))
+  val row          = Output(UInt(LOG2_FG_DIM.W))
+  val bank_start   = Output(UInt(LOG2_FG_NUM.W))
+  val banks        = Output(UInt(LOG2_FG_NUM.W))
+  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
+  val cols         = Output(UInt(LOG2_SP_ROW_ELEMS.W))
 }
 
 class FgMemUnitExecReadResp[T <: Data](config: GemminiArrayConfig[T])
@@ -65,11 +65,12 @@ class FgMemUnitExecWriteReq[T <: Data](config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
-  val row_idx      = Output(UInt(LOG2_FG_DIM.W))
+  val row          = Output(UInt(LOG2_FG_DIM.W))
   val bank_start   = Output(UInt(LOG2_FG_NUM.W))
   val banks        = Output(UInt(LOG2_FG_NUM.W))
-  val sq_col_start = Output(UInt(LOG2_FG_NUM.W))
+  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
   val cols         = Output(UInt(LOG2_ACC_ROW_ELEMS.W))
+  val is_accum     = Output(Bool())
   val data         = Output(UInt(ACC_ROW_BITS.W))
 }
 
@@ -90,10 +91,10 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
   val id_node = TLIdentityNode()
   val xbar_node = TLXbar()
 
-  val readerA = LazyModule(new FgDMAReader(config, "readerA", SP_ROW_BYTES))
-  val readerB = LazyModule(new FgDMAReader(config, "readerB", SP_ROW_BYTES))
-  val readerD = LazyModule(new FgDMAReader(config, "readerD", ACC_ROW_BYTES))
-  val writerC = LazyModule(new FgDMAWriter(config, "writerC", SP_ROW_BYTES))
+  val readerA = LazyModule(new FgDMAReader(config,"readerA",A_SP_ROW_BYTES))
+  val readerB = LazyModule(new FgDMAReader(config,"readerB",B_SP_ROW_BYTES))
+  val readerD = LazyModule(new FgDMAReader(config,"readerD",D_ACC_ROW_BYTES))
+  val writerC = LazyModule(new FgDMAWriter(config,"writerC",C_SP_ROW_BYTES))
 
   xbar_node := readerA.node
   xbar_node := readerB.node
@@ -107,7 +108,7 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
 class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
   (implicit p: Parameters)
   extends LazyModuleImp(outer) with HasCoreParameters {
-  import outer.config
+  import outer.{config,readerA,readerB,readerD,writerC}
   import config._
   //------------------------------------------
   // I/O interface
@@ -162,77 +163,7 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
   io.busy := readerA.io.busy || readerB.io.busy || 
              readerD.io.busy || writerC.io.busy
 
-  //------------------------------------------
-  // TODO: frontend dispatch stuff...
-  //------------------------------------------
-  val write_dispatch_q = Queue(io.dma.write.req)
-
-  write_dispatch_q.ready := false.B
-
-  val write_issue_q = Module(new Queue(
-    new MemUnitMemWriteRequest(local_addr_t), mem_pipeline+1, pipe=true))
-
-  write_issue_q.io.enq.valid := false.B
-  write_issue_q.io.enq.bits := write_dispatch_q.bits
-
-  val writeq_deq = write_issue_q.io.deq
-  val writer_req = writer.module.io.req
-
-  val writeData = Wire(Valid(UInt((spad_w max acc_w).W)))
-  writeData.valid := false.B
-  writeData.bits  := DontCare
-
-  writeq_deq.ready       := writer_req.ready && writeData.valid
-  writer_req.valid       := writeq_deq.valid && writeData.valid
-  writer_req.bits.vaddr  := writeq_deq.bits.vaddr
-  writer_req.bits.len    := writeq_deq.bits.len * ITYPE_BYTES.U
-  writer_req.bits.data   := writeData.bits
-  writer_req.bits.status := writeq_deq.bits.status
-
-  io.dma.write.resp.valid := false.B
-  io.dma.write.resp.bits.cmd_id := write_dispatch_q.bits.cmd_id
-
   //========================================================================
-  // LoadCmd datapath (dram->spad) 
-  //========================================================================
-  val read_issue_q = Module(new Queue(
-    new ScratchpadMemReadRequest(local_addr_t), mem_pipeline+1, pipe=true))
-
-  read_issue_q.io.enq <> io.dma.read.req
-
-  val readq_deq   = read_issue_q.io.deq
-  val reader_resp = reader.module.io.resp
-  val reader_req  = reader.module.io.req
-
-  read_issue_q.io.deq.ready := reader_req.ready
-  reader_req.valid          := readq_deq.valid
-  reader_req.bits.vaddr     := readq_deq.bits.vaddr
-  reader_req.bits.spaddr    := Mux(readq_deq.bits.laddr.is_acc_addr,
-                                   readq_deq.bits.laddr.full_acc_addr(), 
-                                   readq_deq.bits.laddr.full_sp_addr())
-  reader_req.bits.len       := readq_deq.bits.len
-  reader_req.bits.is_acc    := readq_deq.bits.laddr.is_acc_addr
-  reader_req.bits.status    := readq_deq.bits.status
-  reader_req.bits.cmd_id    := readq_deq.bits.cmd_id
-
-  reader_resp.ready := false.B
-
-  io.dma.read.resp.valid          := reader_resp.fire() && 
-                                     reader_resp.bits.last
-  io.dma.read.resp.bits.cmd_id    := reader_resp.bits.cmd_id
-  io.dma.read.resp.bits.bytesRead := reader_resp.bits.bytes_read
-
-  io.tlb(0) <> writer.module.io.tlb
-  io.tlb(1) <> reader.module.io.tlb
-
-  //========================================================================
-  writer.module.io.flush := io.flush
-  reader.module.io.flush := io.flush
-
-  io.busy := writer.module.io.busy || 
-             reader.module.io.busy || 
-             write_issue_q.io.deq.valid
-
   {
     // A-banks
     val banks = Seq.fill(FG_DIM) { Module( new FgScratchpadBank(config)) }
@@ -313,7 +244,9 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
 
   {
     // B-banks
-    val banks = Seq.fill(2) { Module( new FgScratchpadBank(config) }
+    val banks = Seq.fill(2) { 
+      Module(new FgScratchpadBank(config, SQRT_FG_NUM)) 
+    }
     val bank_ios = VecInit(banks.map(_.io))
 
     //======================================================================

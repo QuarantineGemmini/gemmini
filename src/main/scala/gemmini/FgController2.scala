@@ -70,7 +70,6 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   tiler.io.completed.exec   := exec.io.completed
   mem.module.io.exec.readA  <> exec.io.readA
   mem.module.io.exec.readB  <> exec.io.readB
-  mem.module.io.exec.readD  <> exec.io.readD
   mem.module.io.exec.writeC <> exec.io.writeC
 
   val loadA = FgMemTransferController(outer.config)

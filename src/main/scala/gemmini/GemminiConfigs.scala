@@ -103,29 +103,34 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   // gemmini2 miscellaneous constants (some redundant with above)
   //==========================================================================
   def ROB_ENTRIES      = rob_entries
-  def LOG2_ROB_ENTRIES = log2Up(rob_entries)
+  def LOG2_ROB_ENTRIES = log2Up(rob_entries) //index
 
   //==========================================================================
   // gemmini2 hardware-specific compile-time global constants
   //==========================================================================
+  def ITYPE_BITS         = inputType.getWidth
+  def ITYPE_BYTES        = (inputType.getWidth+7) / 8
+  def OTYPE_BITS         = accType.getWidth
+  def OTYPE_BYTES        = (accType.getWidth+7) / 8
 
-  def ITYPE_BITS       = inputType.getWidth
-  def ITYPE_BYTES      = (inputType.getWidth+7) / 8
-  def LOG2_ITYPE_BYTES = if(ITYPE_BYTES <= 1) 0 else log2Up(ITYPE_BYTES)
+  def LOG2_ITYPE_BITS    = log2Up(ITYPE_BITS)       //index
+  def LOG2_OTYPE_BITS    = log2Up(OTYPE_BITS)       //index
+  def LOG2_ITYPE_BYTES   = if (ITYPE_BYTES <= 1) 0  // index
+                           else log2Up(ITYPE_BYTES)
+  def LOG2_OTYPE_BYTES   = if(OTYPE_BYTES <= 1) 0   // index
+                           else log2Up(OTYPE_BYTES)
 
-  def OTYPE_BITS       = accType.getWidth
-  def LOG2_OTYPE_BITS  = log2Up(OTYPE_BITS)
-  def OTYPE_BYTES      = (accType.getWidth+7) / 8
-  def LOG2_OTYPE_BYTES = if(OTYPE_BYTES <= 1) 0 else log2Up(OTYPE_BYTES)
+  def SP_BANKS           = sp_banks
+  def SP_BANK_ROWS       = sp_bank_entries
+  def SP_ROWS            = SP_BANKS * SP_BANK_ROWS
+  def LOG2_SP_ROWS       = log2Up(SP_ROWS)
 
-  def SP_BANKS        = sp_banks
-  def SP_BANK_ROWS    = sp_bank_entries
-  def SP_ROWS         = SP_BANKS * SP_BANK_ROWS
-  def LOG2_SP_ROWS    = log2Up(SP_ROWS)
-
+  //==========================================================================
+  // fine-grained SA: gemmini2 hw-specific compile-time global constants
+  //==========================================================================
   def SP_ROW_ELEMS       = FG_NUM * FG_DIM
   def ACC_ROW_ELEMS      = FG_NUM * FG_DIM
-  def LOG2_SP_ROW_ELEMS  = log2Up(SP_ROW_ELEMS+1) // counter
+  def LOG2_SP_ROW_ELEMS  = log2Up(SP_ROW_ELEMS+1)  // counter
   def LOG2_ACC_ROW_ELEMS = log2Up(ACC_ROW_ELEMS+1) // counter
 
   def SQ_COL_ELEMS  = FG_NUM
@@ -168,13 +173,6 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def MAX_TRANSFER_ELEMS      = FG_NUM * FG_DIM
   def MAX_TRANSFER_ROWS       = FG_NUM * FG_DIM
   def LOG2_MAX_TRANSFER_ROWS  = log2Up(MAX_TRANSFER_ROWS)
-
-  def MNK_BYTES                   = Int.MaxValue / DIM
-  def LOG2_MNK_BYTES              = log2Up(MNK_BYTES)
-  def MNK_BYTES_PER_TILE_ROW      = MNK_BYTES * DIM
-  def LOG2_MNK_BYTES_PER_TILE_ROW = log2Up(MNK_BYTES_PER_TILE_ROW)
-  def TILE_IDX                    = MNK_BYTES / (DIM / 8)
-  def LOG2_TILE_IDX               = log2Up(TILE_IDX)
 
   // this just makes some internal logic simpler
   require(ACC_ROW_BYTES >= MAX_DMA_BYTES, "ACC_ROW_BYTES < MAX_DMA_BYTES")

@@ -3,6 +3,7 @@
 //===========================================================================
 package gemmini
 
+import scala.math.{pow,sqrt}
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
@@ -79,10 +80,23 @@ class TilerFSM[T <: Data : Arithmetic]
     (reg, wire)
   }
 
-  val MAX_I_BYTE_COLS_PER_TILE = FG_DIM * FG_NUM * ITYPE_BYTES
-  val MAX_O_BYTE_COLS_PER_TILE = FG_DIM * FG_NUM * OTYPE_BYTES
+  //------------------------------------------------------------------------
+  // fg-tiler-fsm hardwired constants
+  //------------------------------------------------------------------------
+  val MAX_I_BYTE_COLS_PER_TILE  = FG_DIM * FG_NUM * ITYPE_BYTES
+  val MAX_O_BYTE_COLS_PER_TILE  = FG_DIM * FG_NUM * OTYPE_BYTES
   val MAX_I_BYTE_COLS_PER_GROUP = MAX_I_BYTE_COLS_PER_TILE * FG_NUM
   val MAX_O_BYTE_COLS_PER_GROUP = MAX_O_BYTE_COLS_PER_TILE * FG_NUM
+
+  val MAX_BYTES_PER_ROW           = Int.MaxValue / DIM
+  val LOG2_MAX_BYTES              = log2Up(MAX_BYTES_PER_ROW+1) //counter
+  val MAX_BYTES_PER_TILE_ROW      = MAX_BYTES_PER_ROW * DIM
+  val LOG2_MAX_BYTES_PER_TILE_ROW = log2Up(MAX_BYTES_PER_TILE_ROW+1) //counter
+  val TILE_IDX                    = MAX_BYTES_PER_ROW / ITYPE_BYTES / (DIM/2)
+  val LOG2_TILE_IDX               = log2Up(TILE_IDX) //index
+
+  val MAX_DIM_PER_TILE       = FG_DIM * FG_NUM
+  val LOG2_MAX_DIM_PER_TILE  = log2Up(MAX_DIM_PER_TILE+1) // index
 
   //------------------------------------------------------------------------
   // input data-specific constants BEFORE TILE-SIZE CALCULATION
@@ -101,10 +115,10 @@ class TilerFSM[T <: Data : Arithmetic]
   val g_C_MEM_ADDR            = Reg(UInt(xLen.W))
   val g_D_MEM_ADDR            = Reg(UInt(xLen.W))
   // bytes in A-matrix row
-  val g_A_BYTES_PER_ROW       = Reg(UInt(LOG2_MNK_BYTES.W))
-  val g_B_BYTES_PER_ROW       = Reg(UInt(LOG2_MNK_BYTES.W))
-  val g_C_BYTES_PER_ROW       = Reg(UInt(LOG2_MNK_BYTES.W))
-  val g_D_BYTES_PER_ROW       = Reg(UInt(LOG2_MNK_BYTES.W))
+  val g_A_BYTES_PER_ROW       = Reg(UInt(LOG2_MAX_BYTES.W))
+  val g_B_BYTES_PER_ROW       = Reg(UInt(LOG2_MAX_BYTES.W))
+  val g_C_BYTES_PER_ROW       = Reg(UInt(LOG2_MAX_BYTES.W))
+  val g_D_BYTES_PER_ROW       = Reg(UInt(LOG2_MAX_BYTES.W))
   // last (x,y,x) tile idx in (C,C,A) matrix
   val g_FG_TILE_ROW_END       = Reg(UInt(LOG2_TILE_IDX.W))
   val g_FG_TILE_COL_END       = Reg(UInt(LOG2_TILE_IDX.W))
@@ -120,8 +134,8 @@ class TilerFSM[T <: Data : Arithmetic]
   //------------------------------------------------------------------------
   val g_TILE_ROWS_PER_GROUP = Reg(UInt(log2Up(FG_NUM+1).W))
   val g_TILE_COLS_PER_GROUP = Reg(UInt(log2Up(FG_NUM+1).W)) 
-  val g_ITEM_COLS_PER_TILE  = Reg(UInt(log2Up(FG_NUM+FG_DIM+1).W))
-  val g_ITEM_ROWS_PER_TILE  = Reg(UInt(log2Up(FG_NUM+FG_DIM+1).W))
+  val g_ITEM_COLS_PER_TILE  = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
+  val g_ITEM_ROWS_PER_TILE  = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
   //------------------------------------------------------------------------
   // input data-specific constants AFTER TILE-SIZE CALCULATION (cycle 3)
   //------------------------------------------------------------------------
@@ -133,18 +147,18 @@ class TilerFSM[T <: Data : Arithmetic]
   // input data-specific constants AFTER TILE-SIZE CALCULATION (cycle 4)
   //------------------------------------------------------------------------
   // needed for 0-padding last rows/cols
-  val g_LAST_M_ITEMS          = Reg(UInt(LOG2_DIM_COUNT.W))
-  val g_LAST_N_ITEMS          = Reg(UInt(LOG2_DIM_COUNT.W))
-  val g_LAST_K_ITEMS          = Reg(UInt(LOG2_DIM_COUNT.W))
+  val g_LAST_M_ITEMS          = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
+  val g_LAST_N_ITEMS          = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
+  val g_LAST_K_ITEMS          = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
   // last (x,y,x) tile idx in (C,C,A) matrix
   val g_TILE_ROW_END          = Reg(UInt(LOG2_TILE_IDX.W))
   val g_TILE_COL_END          = Reg(UInt(LOG2_TILE_IDX.W))
   val g_K_TILE_COL_END        = Reg(UInt(LOG2_TILE_IDX.W))
   // bytes in A-matrix row * rows-per-tile
-  val g_A_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MNK_BYTES_PER_TILE_ROW.W))
-  val g_B_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MNK_BYTES_PER_TILE_ROW.W))
-  val g_C_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MNK_BYTES_PER_TILE_ROW.W))
-  val g_D_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MNK_BYTES_PER_TILE_ROW.W))
+  val g_A_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MAX_BYTES_PER_TILE_ROW.W))
+  val g_B_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MAX_BYTES_PER_TILE_ROW.W))
+  val g_C_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MAX_BYTES_PER_TILE_ROW.W))
+  val g_D_BYTES_PER_TILE_ROW  = Reg(UInt(LOG2_MAX_BYTES_PER_TILE_ROW.W))
 
   //------------------------------------------------------------------------
   // global state persistent across all loops
@@ -153,11 +167,11 @@ class TilerFSM[T <: Data : Arithmetic]
   val (gbl_tile_row, gbl_tile_row_n) = regwire(LOG2_TILE_IDX)
   val (gbl_tile_col, gbl_tile_col_n) = regwire(LOG2_TILE_IDX)
   // how many elements (tall,wide) is this tile
-  val gbl_item_rows = Reg(UInt(LOG2_DIM_COUNT.W))
-  val gbl_item_cols = Reg(UInt(LOG2_DIM_COUNT.W))
+  val gbl_item_rows = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
+  val gbl_item_cols = Reg(UInt(LOG2_MAX_DIM_PER_TILE.W))
   // which tmp-slot in sp being used now, and which is the alternate
-  val gbl_B_cur_row_addr = Reg(UInt(LOG2_SP_ROWS.W))
-  val gbl_B_alt_row_addr = Reg(UInt(LOG2_SP_ROWS.W))
+  val gbl_B_cur_row_addr = Reg(UInt(log2up(FG_DIM+1).W))
+  val gbl_B_alt_row_addr = Reg(UInt(log2up(FG_DIM+1).W))
 
   //------------------------------------------------------------------------
   // global state that is reset for each output-group
@@ -209,8 +223,6 @@ class TilerFSM[T <: Data : Arithmetic]
   //------------------------------------------------------------------------
   // loop4-local state
   //------------------------------------------------------------------------
-  // where in the sp is the next A tile
-  val loop4_A_sp_row_addr = Reg(UInt(LOG2_SP_ROWS.W))
   // initialized from loop3 values
   val loop4_A_mem_addr = Reg(UInt(xLen.W))
   val loop4_B_mem_addr = Reg(UInt(xLen.W))
@@ -788,8 +800,8 @@ class TilerFSM[T <: Data : Arithmetic]
         }
         update_tile_dims()
 
-        gbl_B_cur_sp_row_addr := gbl_B_alt_sp_row_addr
-        gbl_B_alt_sp_row_addr := gbl_B_cur_sp_row_addr
+        gbl_B_cur_row_addr := gbl_B_alt_row_addr
+        gbl_B_alt_row_addr := gbl_B_cur_row_addr
 
         // modify loop3-local state
         loop3_A_mem_addr := loop3_A_mem_addr + 0.U
@@ -819,8 +831,8 @@ class TilerFSM[T <: Data : Arithmetic]
         loop2_D_mem_addr := loop2_D_mem_addr + 0.U
 
         // swap current/alternate B-tile scratchpad addrs
-        gbl_B_cur_sp_row_addr := gbl_B_alt_sp_row_addr
-        gbl_B_alt_sp_row_addr := gbl_B_cur_sp_row_addr
+        gbl_B_cur_row_addr := gbl_B_alt_row_addr
+        gbl_B_alt_row_addr := gbl_B_cur_row_addr
 
         // update next state
         state := s_MOVE_FIRST_B_TILE_INTO_SP

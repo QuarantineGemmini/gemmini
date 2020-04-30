@@ -18,19 +18,22 @@ class FgScratchpadBankReadReq[T <: Data](config: GemminiArrayConfig[T])
   val sq_col_start = UInt(LOG2_FG_NUM.W)
 }
 
-class FgScratchpadBankReadResp[T <: Data](config: GemminiArrayConfig[T])
+class FgScratchpadBankReadResp[T <: Data]
+  (config: GemminiArrayConfig[T], fg_col_width: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val data = UInt(SP_ROW_BITS.W)
+  val data = UInt((fg_col_width * FG_DIM * j.W)
 }
 
-class FgScratchpadBankReadIO[T <: Data](config: GemminiArrayConfig[T])
+class FgScratchpadBankReadIO[T <: Data]
+  (config: GemminiArrayConfig[T], fg_col_width: Int)
   (implicit p: Parameters) extends CoreBundle {
   val req = FgScratchpadBankReadReq(config)
   val resp = Flipped(FgScratchpadBankReadResp(config))
 }
 
-class FgScratchpadBankWriteReq[T <: Data](config: GemminiArrayConfig[T])
+class FgScratchpadBankWriteReq[T <: Data]
+  (config: GemminiArrayConfig[T], fg_col_width: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -43,15 +46,16 @@ class FgScratchpadBankWriteReq[T <: Data](config: GemminiArrayConfig[T])
 //============================================================================
 // scratchpad bank
 //============================================================================
-class FgScratchpadBank[T <: Data](config: GemminiArrayConfig[T])
+class FgScratchpadBank[T <: Data]
+  (config: GemminiArrayConfig[T], fg_col_width: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   //-------------------------------------
   // I/O interface
   //-------------------------------------
   val io = IO(new Bundle {
-    val read = Flipped(new FgScratchpadBankReadIO(config))
-    val write = Flipped(new FgScratchpadBankWriteReq(config))
+    val read = Flipped(new FgScratchpadBankReadIO(config, fg_col_width))
+    val write = Flipped(new FgScratchpadBankWriteReq(config, fg_col_width))
   })
 
   val mem = SyncReadMem(FG_DIM, Vec(SP_ROW_ELEMS, inputType))

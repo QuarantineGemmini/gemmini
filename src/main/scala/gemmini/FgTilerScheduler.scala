@@ -244,7 +244,7 @@ class TilerScheduler[T <: Data: Arithmetic]
       e.valid && 
       e.bits.dst.valid &&
       new_entry.dst.valid &&
-      new_entry.dst.bits.overlaps(e.bits.dst.bits)
+      new_entry.dst.bits.conflicts(e.bits.dst.bits)
     )}
 
     val older_in_same_q = entries.map { e => 
