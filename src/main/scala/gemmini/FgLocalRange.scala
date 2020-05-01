@@ -9,7 +9,7 @@ import Util._
 //===========================================================================
 // represents a 2-D array of rows/cols in a scratchpad/accumulator
 //===========================================================================
-class FgLocalRange[T <: Data](config: GemminiArrayConfig[T])
+class FgLocalRange[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val rows         = UInt(16.W)
@@ -30,12 +30,12 @@ class FgLocalRange[T <: Data](config: GemminiArrayConfig[T])
   def row_end(dummy: Int = 0)   = row_start + rows - 1.U
 
   // which bank does this start/end read/write to
-  def bank_start(dummy: Int = 0)  = row_start(15, LOG2_FG_DIM)
-  def bank_end(dummy: Int = 0)    = row_end(15, LOG2_FG_DIM)
+  def bank_start(dummy: Int = 0)  = row_start(15, FG_DIM_IDX)
+  def bank_end(dummy: Int = 0)    = row_end(15, FG_DIM_IDX)
   def total_banks(dummy: Int = 0) = bank_end - bank_start + 1.U
 
   // NOTE: this should always be 0...
-  def row_start_within_bank(dummy: Int = 0) = row_start(LOG2_FG_DIM-1,0)
+  def row_start_within_bank(dummy: Int = 0) = row_start(FG_DIM_IDX-1,0)
 
   // do two ranges have data range overlap (one read and one write)
   def overlaps(other: FgLocalRange[T])

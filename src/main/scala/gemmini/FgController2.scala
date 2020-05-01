@@ -1,8 +1,5 @@
 //============================================================================
-// this file contains the top-level Gemmini2 controller
-// - it uses a CmdController to parse the input RoCC commands
-// - it uses a TilerController to drive tiled matmul in hardware
-// - it has DMA engines that do im2col on the fly
+// this file contains the top-level fine-grained-array Gemmini2 controller
 //============================================================================
 package gemmini
 
@@ -17,7 +14,7 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 
 class FgGemmini2[T <: Data : Arithmetic]
-  (opcodes: OpcodeSet, val config: GemminiArrayConfig[T])
+  (opcodes: OpcodeSet, val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters)
   extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1) {
 
@@ -40,11 +37,11 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   //=========================================================================
   // TLB (2-clients, 4 entries)
   //=========================================================================
-  val tlb = FrontendTLB(4, 8, dma_maxbytes, outer.tlNode.edges.out.head)
-  tlb.io.clients(0)   <> mem.module.io.tlb.readA
-  tlb.io.clients(1)   <> mem.module.io.tlb.readB
-  tlb.io.clients(2)   <> mem.module.io.tlb.readD
-  tlb.io.clients(3)   <> mem.module.io.tlb.writeC
+  val tlb = FrontendTLB(4, 8, DMA_TXN_BYTES, outer.tlNode.edges.out.head)
+  tlb.io.clients(0)   <> mem.module.io.tlb.loadA
+  tlb.io.clients(1)   <> mem.module.io.tlb.loadB
+  tlb.io.clients(2)   <> mem.module.io.tlb.loadD
+  tlb.io.clients(3)   <> mem.module.io.tlb.storeC
   io.ptw.head         <> tlb.io.ptw
   io.interrupt        := tlb.io.exp.interrupt
   mem.module.io.flush := tlb.io.exp.flush()
@@ -52,45 +49,45 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   //=========================================================================
   // Dispatch/Issue
   //=========================================================================
-  val raw_cmd = Queue(io.cmd)
+  val raw_cmd = Queue(io.cmd, 4)
 
-  val cmd_fsm = CmdFSM(outer.config)
+  val cmd_fsm = FgCmdFSM(config)
   cmd_fsm.io.cmd         <> raw_cmd
   tlb.io.exp.flush_retry := cmd_fsm.io.flush_retry
   tlb.io.exp.flush_skip  := cmd_fsm.io.flush_skip
 
-  val tiler = TilerController(outer.config)
+  val tiler = TilerController(config)
   tiler.io.cmd_in <> cmd_fsm.io.tiler
 
   //=========================================================================
   // Execution
   //=========================================================================
-  val exec = FgExecuteController(outer.config)
+  val exec = FgExecuteController(config)
   exec.io.cmd               <> tiler.io.issue.exec
   tiler.io.completed.exec   := exec.io.completed
   mem.module.io.exec.readA  <> exec.io.readA
   mem.module.io.exec.readB  <> exec.io.readB
   mem.module.io.exec.writeC <> exec.io.writeC
 
-  val loadA = FgMemTransferController(outer.config)
+  val loadA = FgMemOpController(config)
   loadA.io.cmd             <> tiler.io.issue.loadA
   tiler.io.completed.loadA <> loadA.io.completed
-  mem.module.io.dma.readA  <> loadA.io.dma
+  mem.module.io.dma.loadA  <> loadA.io.dma
 
-  val loadB = FgMemTransferController(outer.config)
+  val loadB = FgMemOpController(config)
   loadB.io.cmd             <> tiler.io.issue.loadB
   tiler.io.completed.loadB <> loadB.io.completed
-  mem.module.io.dma.readB  <> loadB.io.dma
+  mem.module.io.dma.loadB  <> loadB.io.dma
 
-  val loadD = FgMemTransferController(outer.config)
+  val loadD = FgMemOpController(config)
   loadD.io.cmd             <> tiler.io.issue.loadD
   tiler.io.completed.loadD <> loadD.io.completed
-  mem.module.io.dma.readD  <> loadD.io.dma
+  mem.module.io.dma.loadD  <> loadD.io.dma
 
-  val storeC = FgMemTransferController(outer.config)
+  val storeC = FgMemOpController(config)
   storeC.io.cmd             <> tiler.io.issue.storeC
   tiler.io.completed.storeC <> storeC.io.completed
-  mem.module.io.dma.writeC  <> storeC.io.dma
+  mem.module.io.dma.storeC  <> storeC.io.dma
 
   //=========================================================================
   // Busy Signal (used by RocketCore during fence insn)

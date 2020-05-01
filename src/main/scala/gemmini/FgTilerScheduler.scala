@@ -10,8 +10,8 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 import Util._
 
-class TilerScheduler[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit val p: Parameters) 
+class FgTilerScheduler[T <: Data: Arithmetic]
+  (config: FgGemminiArrayConfig[T])(implicit val p: Parameters) 
   extends Module with HasCoreParameters {
   import config._
 
@@ -21,13 +21,13 @@ class TilerScheduler[T <: Data: Arithmetic]
   val io = IO(new Bundle {
     val cmd_in = Flipped(Decoupled(new RoCCCommand))
     val issue = new Bundle {
-      val loadA  = Decoupled(new GemminiCmd(ROB_ENTRIES))
-      val loadB  = Decoupled(new GemminiCmd(ROB_ENTRIES))
-      val loadD  = Decoupled(new GemminiCmd(ROB_ENTRIES))
-      val storeC = Decoupled(new GemminiCmd(ROB_ENTRIES))
-      val exec   = Decoupled(new GemminiCmd(ROB_ENTRIES))
+      val loadA  = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
+      val loadB  = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
+      val loadD  = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
+      val storeC = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
+      val exec   = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
     }
-    val completed = Flipped(Decoupled(UInt(LOG2_ROB_ENTRIES.W)))
+    val completed = Flipped(Decoupled(UInt(ROB_ENTRIES_IDX.W)))
     val busy = Output(Bool())
   })
   io.completed.ready := true.B
@@ -453,7 +453,8 @@ class TilerScheduler[T <: Data: Arithmetic]
   val packed_deps = VecInit(entries.map(e => Cat(e.bits.deps)))
   dontTouch(packed_deps)
 
-  val pop_count_packed_deps = VecInit(entries.map(e => Mux(e.valid, PopCount(e.bits.deps), 0.U)))
+  val pop_count_packed_deps = VecInit(entries.map(e => 
+                                Mux(e.valid, PopCount(e.bits.deps), 0.U)))
   val min_pop_count = pop_count_packed_deps.reduce((acc, d) => minOf(acc, d))
   // assert(min_pop_count < 2.U)
   dontTouch(pop_count_packed_deps)
@@ -489,8 +490,8 @@ class TilerScheduler[T <: Data: Arithmetic]
   }
 }
 
-object TilerScheduler {
+object FgTilerScheduler {
   def apply[T <: Data: Arithmetic]
-    (config: GemminiArrayConfig[T])(implicit p: Parameters)
-      = Module(new TilerScheduler(config))
+    (config: FgGemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new FgTilerScheduler(config))
 }

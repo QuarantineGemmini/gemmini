@@ -2,40 +2,39 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
-import GemminiISA._
-import Util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
+import GemminiISA._
+import Util._
 
-class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
+class FgMemOpController[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends CoreModule {
   import config._
   //=========================================================================
   // I/O interface
   //=========================================================================
   val io = IO(new Bundle {
-    val cmd       = Flipped(Decoupled(new GemminiCmd(ROB_ENTRIES)))
-    val dma       = new FgScratchpadMemIO(config)
-    val completed = Decoupled(UInt(log2Up(ROB_ENTRIES).W))
+    val cmd       = Flipped(Decoupled(new GemminiCmd(ROB_ENTRIES_IDX)))
+    val dma       = new FgMemUnitMemIO(config)
+    val completed = Decoupled(UInt(ROB_ENTRIES_IDX.W))
     val busy      = Output(Bool())
   })
 
   //=========================================================================
   // queue up incoming commands
   //=========================================================================
-  val cmd = Queue(io.cmd, ld_queue_length)
-  val is_config_cmd = cmd.valid && cmd.bits.cmd.inst.funct === CONFIG_CMD
-  val is_load_cmd   = cmd.valid && cmd.bits.cmd.inst.funct === CONFIG_LOAD
+  val cmd = Queue(io.cmd, MEM_OP_QUEUE_LENGTH)
+  val is_config_cmd = cmd.valid && (cmd.bits.cmd.inst.funct === CONFIG_CMD)
+  val is_load_cmd   = cmd.valid && (cmd.bits.cmd.inst.funct === CONFIG_LOAD)
+  val is_store_cmd  = cmd.valid && (cmd.bits.cmd.inst.funct === CONFIG_STORE)
+  val rob_id        = cmd.bits.rob_id
+  val mstatus       = cmd.bits.cmd.status
   val vaddr         = cmd.bits.cmd.rs1
   val config_stride = cmd.bits.cmd.rs2
-  val item_rows     = cmd.bits.cmd.rs2(63, 48)
-  val item_cols     = cmd.bits.cmd.rs2(47, 32)
-  val is_acc        = cmd.bits.cmd.rs2(31)
-  val is_accum      = cmd.bits.cmd.rs2(30)
-  val sq_col_start  = cmd.bits.cmd.rs2(29,16)
-  val row_start     = cmd.bits.cmd.rs2(15,0)
-  val mstatus       = cmd.bits.cmd.status
-  val rob_id        = cmd.bits.rob_id
+  val lrange        = cmd.bits.cmd.rs2.asTypeOf(new FgLocalRange(config))
+  val item_rows     = lrange.rows
+  val item_cols     = lrange.cols
+  val row_start     = lrange.row_start
 
   cmd.ready := false.B
   io.busy := cmd.valid
@@ -43,7 +42,7 @@ class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
   //=========================================================================
   // Track Outstanding Requests
   //=========================================================================
-  val cmd_tracker = Module(new DMACmdTracker(config))
+  val cmd_tracker = Module(new FgMemOpTracker(config))
 
   cmd_tracker.io.alloc.valid       := false.B
   cmd_tracker.io.alloc.bits.rob_id := cmd.bits.rob_id
@@ -55,16 +54,16 @@ class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
   // DMA request
   //=========================================================================
   val stride      = RegInit(0.U(coreMaxAddrBits.W))
-  val row_counter = RegInit(0.U(LOG2_MAX_TRANSFER_ROWS.W))
-  val lrange      = cmd.bits.cmd.rs2.asTypeOf[FgLocalRange]
+  val row_counter = RegInit(0.U(MEM_OP_ROWS_CTR.W))
+  val cur_lrange  = WireDefault(lrange)
 
   // only request 1 row at a time
-  lrange.rows      := 1.U
-  lrange.row_start := row_start + row_counter
+  cur_lrange.rows      := 1.U
+  cur_lrange.row_start := row_start + row_counter
 
   io.dma.req.valid       := false.B
-  io.dma.req.bits.vaddr  := vaddr + row_counter * stride
-  io.dma.req.bits.laddr  := lrange
+  io.dma.req.bits.vaddr  := vaddr + (row_counter * stride)
+  io.dma.req.bits.lrange := cur_lrange
   io.dma.req.bits.status := mstatus
   io.dma.req.bits.rob_id := rob_id
 
@@ -81,7 +80,7 @@ class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
         cmd.ready := true.B
         stride    := config_stride
       }
-      .elsewhen (is_load_cmd) {
+      .elsewhen (is_load_cmd || is_store_cmd) {
         cmd_tracker.io.alloc.valid := true.B
         when (cmd_tracker.io.alloc.fire()) {
           state := s_TRANSFER_ROWS
@@ -95,6 +94,7 @@ class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
         when (row_counter === (item_rows - 1.U)) {
           cmd.ready := true.B
           state := s_IDLE
+          assert(cmd.fire())
         } .otherwise {
           row_counter := row_counter + 1.U
         }
@@ -105,6 +105,6 @@ class FgMemOpController[T <: Data](config: GemminiArrayConfig[T])
 
 object FgMemOpController {
   def apply[T <: Data: Arithmetic]
-    (config: GemminiArrayConfig[T])(implicit p: Parameters)
+    (config: FgGemminiArrayConfig[T])(implicit p: Parameters)
       = Module(new FgMemOpController(config))
 }

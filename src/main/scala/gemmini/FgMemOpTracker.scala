@@ -1,12 +1,12 @@
 //===========================================================================
-// DMACmdTracker tracks outstanding mem-ops from Load/Store Controller
+// tracks outstanding mem-ops from FgMemOpController
 //===========================================================================
 package gemmini
 
 import chisel3._
 import chisel3.util._
 
-class FgDMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
+class FgMemOpTracker[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends CoreModule {
   import config._
   //-------------------------------------------------------------------------
@@ -14,18 +14,18 @@ class FgDMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
   //-------------------------------------------------------------------------
   val io = IO(new Bundle {
     val alloc = Flipped(Decoupled(new Bundle {
-      val rob_id = UInt(LOG2_ROB_ENTRIES.W)
-      val rows   = UInt(LOG2_MAX_MEM_OP_BYTES.W)
+      val rob_id = UInt(ROB_ENTRIES_IDX.W)
+      val rows   = UInt(MEM_OP_ROWS_CTR.W)
     }))
-    val progress  = Flipped(Valid(UInt(LOG2_ROB_ENTRIES.W)))
-    val completed = Decoupled(UInt(LOG2_ROB_ENTRIES.W))
+    val progress  = Flipped(Decoupled(new FgMemUnitMemOpResp(config)))
+    val completed = Decoupled(UInt(ROB_ENTRIES_IDX.W))
     val busy      = Output(Bool())
   })
 
   // slots for outstanding commands
   val cmds = Reg(Vec(ROB_ENTRIES, new Bundle {
     val valid     = Bool()
-    val rows_left = UInt(LOG2_MAX_MEM_OP_BYTES.W)
+    val rows_left = UInt(MEM_OP_ROWS_CTR.W)
   }))
 
   // when a new mem-op is allocated
@@ -38,6 +38,7 @@ class FgDMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
   }
 
   // when a new read/write progress of the mem-op is finished
+  io.progress.ready := true.B
   when (io.progress.fire()) {
     val rob_id = io.progress.bits.rob_id
     cmds(rob_id).rows_left := cmds(rob_id).rows_left - 1.U
@@ -48,10 +49,11 @@ class FgDMACmdTracker[T <: Data](config: GemminiArrayConfig[T])
   val cmd_completed_id = MuxCase(0.U, cmds.zipWithIndex.map { 
     case (cmd, i) => (cmd.valid && cmd.rows_left === 0.U) -> i.U
   })
-  io.cmd_completed.valid       := cmds(cmd_completed_id).valid
-  io.cmd_completed.bits.rob_id := cmd_completed_id
-  when (io.complete.fire()) {
-    cmds(io.complete.bits.rob_id).valid := false.B
+  io.completed.valid := cmds(cmd_completed_id).valid &&
+                        cmds(cmd_completed_id).rows_left === 0.U
+  io.completed.bits.rob_id := cmd_completed_id
+  when (io.completed.fire()) {
+    cmds(io.completed.bits.rob_id).valid := false.B
   }
 
   // busy logic 

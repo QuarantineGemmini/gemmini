@@ -12,16 +12,16 @@ import Util._
 //===========================================================================
 // MemOpController <-> MemUnit Interfaces
 //===========================================================================
-class FgMemUnitDMAReadReq[T <: Data](config: GemminiArrayConfig[T])
-  (implicit p: Parameters) extends CoreBundle {
-  import config._
-  val bank         = UInt(LOG2_FG_NUM.W))
-  val row          = UInt(LOG2_FG_DIM.W))
-  val fg_col_start = UInt(LOG2_FG_NUM.W))
-  val cols         = UInt(LOG2_SP_ROW_ELEMS.W))
-}
+//class FgMemUnitDMAReadReq[T <: Data](config: FgGemminiArrayConfig[T])
+//  (implicit p: Parameters) extends CoreBundle {
+//  import config._
+//  val bank         = UInt(LOG2_FG_NUM.W))
+//  val row          = UInt(LOG2_FG_DIM.W))
+//  val fg_col_start = UInt(LOG2_FG_NUM.W))
+//  val cols         = UInt(LOG2_SP_ROW_ELEMS.W))
+//}
 
-class FgMemUnitDMAReq[T <: Data](config: GemminiArrayConfig[T])
+class FgMemUnitMemOpReq[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
@@ -30,23 +30,23 @@ class FgMemUnitDMAReq[T <: Data](config: GemminiArrayConfig[T])
   val rob_id = UInt(LOG2_ROB_ENTRIES.W)
 }
 
-class FgMemUnitDMAResp[T <: Data](config: GemminiArrayConfig[T])
+class FgMemUnitMemOpResp[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgMemUnitMemIO[T <: Data](config: GemminiArrayConfig[T])
+class FgMemUnitMemOpIO[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
-  val req  = Decoupled(new FgMemUnitDMAReq(config))
-  val resp = Flipped(Decoupled(new FgMemUnitDMAResp(config)))
+  val req  = Decoupled(new FgMemUnitMemOpReq(config))
+  val resp = Flipped(Decoupled(new FgMemUnitMemOpResp(config)))
 }
 
 //===========================================================================
 // ExecController <-> MemUnit
 //===========================================================================
 class FgMemUnitExecReadReq[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int)
+  (config: FgGemminiArrayConfig[T], fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -57,35 +57,29 @@ class FgMemUnitExecReadReq[T <: Data]
 }
 
 class FgMemUnitExecReadResp[T <: Data]
-  (config: GemminiArrayConfig[T], port_fg_cols: Int)
+  (config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val PORT_ELEMS = port_fg_cols * FG_DIM
-  val PORT_BITS = PORT_ELEMS * ITYPE_BITS
-  val data = Output(UInt(PORT_BITS.W))
+  val data = Output(UInt(FG_DIM * FG_NUM * ITYPE_BITS.W))
 }
 
-class FgMemUnitExecReadIO[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+class FgMemUnitExecReadIO[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
-  val req  = new FgMemUnitExecReadReq(config, fg_cols)
-  val resp = Flipped(new FgMemUnitExecReadResp(config, port_fg_cols))
+  val req  = new FgMemUnitExecReadReq(config)
+  val resp = Flipped(new FgMemUnitExecReadResp(config))
 }
 
-class FgMemUnitExecWriteReq[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+class FgMemUnitExecWriteReq[T <: Data](config: FgGemminiArrayConfig[T]) 
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val PORT_ELEMS = port_fg_cols * FG_DIM
-  val PORT_BITS = PORT_ELEMS * OTYPE_BITS
   val en           = Output(Bool())
-  val row          = Output(UInt(LOG2_FG_DIM.W))
-  val cols         = Output(UInt(log2Up(PORT_ELEMS + 1).W))
-  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
-  val bank_start   = Output(UInt(LOG2_FG_NUM.W))
-  val banks        = Output(UInt(LOG2_FG_NUM.W))
+  val row          = Output(UInt(FG_DIM_IDX.W))
+  val cols         = Output(UInt(ACC_ROW_ELEMS_CTR.W))
+  val fg_col_start = Output(UInt(FG_NUM_IDX.W))
+  val bank_start   = Output(UInt(FG_NUM_IDX.W))
+  val banks        = Output(UInt(FG_NUM_CTR.W))
   val accum        = Output(Bool())
-  val data         = Output(UInt(PORT_BITS.W))
+  val data         = Output(UInt(ACC_ROW_BITS.W))
 }
 
 //============================================================================
@@ -123,16 +117,16 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
   //------------------------------------------
   val io = IO(new Bundle {
     val dma = new Bundle {
-      val readA  = Flipped(new FgMemUnitMemIO(config))
-      val readB  = Flipped(new FgMemUnitMemIO(config))
-      val readD  = Flipped(new FgMemUnitMemIO(config))
-      val writeC = Flipped(new FgMemUnitMemIO(config))
+      val loadA  = Flipped(new FgMemUnitMemOpIO(config))
+      val loadB  = Flipped(new FgMemUnitMemOpIO(config))
+      val loadD  = Flipped(new FgMemUnitMemOpIO(config))
+      val storeC = Flipped(new FgMemUnitMemOpIO(config))
     }
     val tlb = new Bundle {
-      val readA  = new FrontendTLBIO
-      val readB  = new FrontendTLBIO
-      val readD  = new FrontendTLBIO
-      val writeC = new FrontendTLBIO
+      val loadA  = new FrontendTLBIO
+      val loadB  = new FrontendTLBIO
+      val loadD  = new FrontendTLBIO
+      val storeC = new FrontendTLBIO
     }
     val exec = new Bundle {
       val readA  = Flipped(new FgMemUnitExecReadIO(config, SQRT_FG_NUM, 1))
