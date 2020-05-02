@@ -160,6 +160,19 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def CD_ACC_FG_COLS_IDX      = log2Up(CD_ACC_FG_COLS)
   def CD_ACC_FG_COLS_CTR      = log2Up(CD_ACC_FG_COLS+1)
   //==========================================================================
+  // scratchpad/accumulator bank port widths
+  //==========================================================================
+  def A_SP_PORT_FG_COLS     = 1
+  def A_SP_PORT_FG_COLS_IDX = log2Up(A_SP_PORT_FG_COLS)
+  def A_SP_PORT_FG_COLS_CTR = log2Up(A_SP_PORT_FG_COLS+1)
+
+  def B_SP_PORT_FG_COLS     = FG_NUM
+  def B_SP_PORT_FG_COLS_IDX = log2Up(B_SP_PORT_FG_COLS)
+  def B_SP_PORT_FG_COLS_CTR = log2Up(B_SP_PORT_FG_COLS+1)
+
+  def AB_EXEC_PORT_FG_COLS  = FG_NUM
+  def AB_EXEC_PORT_BITS     = AB_EXEC_PORT_FG_COLS * FG_DIM * ITYPE_BITS
+  //==========================================================================
   // DMA-related constants
   //==========================================================================
   def DMA_REQS          = 16 // max outstanding tilelink reqs per client

@@ -11,38 +11,37 @@ import Util._
 // internal scratchpad bank interfaces (all non-decoupled)
 //===========================================================================
 class FgScratchpadBankReadReq[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int)
+  (config: FgGemminiArrayConfig[T], fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
-  val row          = Output(UInt(LOG2_FG_DIM.W))
+  val row          = Output(UInt(FG_DIM_IDX.W))
   val fg_col_start = Output(UInt(log2Up(fg_cols).W))
 }
 
 class FgScratchpadBankReadResp[T <: Data]
-  (config: GemminiArrayConfig[T], port_fg_cols: Int)
+  (config: FgGemminiArrayConfig[T], port_fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val PORT_ELEMS = port_fg_cols * FG_DIM
-  val PORT_BITS = PORT_ELEMS * ITYPE_BITS
+  val PORT_BITS = port_fg_cols * FG_DIM * ITYPE_BITS
   val data = Output(UInt(PORT_BITS.W))
 }
 
 class FgScratchpadBankReadIO[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (config: FgGemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   val req  = new FgScratchpadBankReadReq(config, fg_cols)
   val resp = Flipped(new FgScratchpadBankReadResp(config, port_fg_cols))
 }
 
 class FgScratchpadBankWriteReq[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (config: FgGemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val PORT_ELEMS = port_fg_cols * FG_DIM
-  val PORT_BITS = PORT_ELEMS * ITYPE_BITS
+  val PORT_BITS  = PORT_ELEMS * ITYPE_BITS
   val en           = Output(Bool())
-  val row          = Output(UInt(LOG2_FG_DIM.W))
+  val row          = Output(UInt(FG_DIM_IDX.W))
   val cols         = Output(UInt(log2Up(PORT_ELEMS + 1).W))
   val fg_col_start = Output(UInt(log2Up(fg_cols).W))
   val data         = Output(UInt(PORT_BITS.W))
@@ -51,9 +50,10 @@ class FgScratchpadBankWriteReq[T <: Data]
 //============================================================================
 // scratchpad bank
 // - 2-cycle latency hardcoded!
+// - fg_col_start shifts for reads/writes done WITHIN THE BANK!
 //============================================================================
 class FgScratchpadBank[T <: Data]
-  (config: GemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (config: FgGemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val PORT_BITS = port_fg_cols * FG_DIM * ITYPE_BITS
@@ -89,12 +89,12 @@ class FgScratchpadBank[T <: Data]
   // read path
   //--------------------------------------
   val rd_row          = RegNext(io.read.req.row)
-  val rd_cols         = RegNext(io.write.cols)
-  val rd_fg_col_start = RegNext(io.write.fg_col_start)
+  val rd_cols         = RegNext(io.read.cols)
+  val rd_fg_col_start = RegNext(io.read.fg_col_start)
   val rd_en           = io.read.req.en
-  val rd_data         = mem.read(row, ren).asUInt()
+  val rd_data         = mem.read(rd_row, rd_en).asUInt()
   val rd_bitshift     = (rd_fg_col_start * FG_DIM * ITYPE_BITS)
-  val data_shifted    = (rd_data >> rd_bitshift)(PORT_BITS-1,0)
-  io.reqd.resp.data  := RegNext(data_shifted)
+  val data_shifted    = (rd_data >> rd_bitshift)
+  io.read.resp.data  := RegNext(data_shifted(PORT_BITS-1,0))
 }
 

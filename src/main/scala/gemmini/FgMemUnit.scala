@@ -43,15 +43,15 @@ class FgMemUnitExecReadReq[T <: Data]
   val en           = Output(Bool())
   val row          = Output(UInt(LOG2_FG_DIM.W))
   val fg_col_start = Output(UInt(log2Up(fg_cols).W))
-  val bank_start   = Output(UInt(LOG2_FG_NUM.W))
-  val banks        = Output(UInt(LOG2_FG_NUM.W))
+  val bank_start   = Output(UInt(FG_NUM_IDX.W))
+  val banks        = Output(UInt(FG_NUM_CTR.W))
 }
 
 class FgMemUnitExecReadResp[T <: Data]
   (config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val data = Output(UInt(FG_DIM * FG_NUM * ITYPE_BITS.W))
+  val data = Output(UInt(AB_EXEC_PORT_BITS.W))
 }
 
 class FgMemUnitExecReadIO[T <: Data](config: FgGemminiArrayConfig[T])
@@ -65,12 +65,12 @@ class FgMemUnitExecWriteReq[T <: Data](config: FgGemminiArrayConfig[T])
   import config._
   val en           = Output(Bool())
   val row          = Output(UInt(FG_DIM_IDX.W))
-  val cols         = Output(UInt(ACC_ROW_ELEMS_CTR.W))
+  val cols         = Output(UInt(CD_ACC_ROW_ELEMS_CTR.W))
   val fg_col_start = Output(UInt(FG_NUM_IDX.W))
   val bank_start   = Output(UInt(FG_NUM_IDX.W))
   val banks        = Output(UInt(FG_NUM_CTR.W))
   val accum        = Output(Bool())
-  val data         = Output(UInt(ACC_ROW_BITS.W))
+  val data         = Output(UInt(C_STORE_ROW_BITS.W))
 }
 
 //============================================================================
@@ -120,10 +120,13 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
       val storeC = new FrontendTLBIO
     }
     val exec = new Bundle {
-      val readA  = Flipped(new FgMemUnitExecReadIO(config, SQRT_FG_NUM, 1))
-      val readB  = Flipped(new FgMemUnitExecReadIO(config, FG_NUM, FG_NUM))
-      val storeC = Flipped(new FgMemUnitExecWriteReq(config, FG_NUM, FG_NUM))
+      val readA = Flipped(new FgMemUnitExecReadIO(
+                          config, A_SP_FG_COLS, A_SP_PORT_FG_COLS))
+      val readB = Flipped(new FgMemUnitExecReadIO(
+                          config, B_SP_FG_COLS, B_SP_PORT_FG_COLS))
+      val storeC = Flipped(new FgMemUnitExecWriteReq(config))
     }
+    val acc_config = Flipped(new FgAccumulatorBankConfigIO(config))
     val busy = Output(Bool())
     val flush = Input(Bool())
   })
@@ -156,48 +159,39 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   //========================================================================
   {
     // A-banks
-    val banks = Seq.fill(FG_NUM) { 
-      Module(new FgScratchpadBank(config, FG_NUM, FG_NUM)) 
+    val banks = Seq.fill(A_SP_BANKS) { 
+      Module(new FgScratchpadBank(config, A_SP_FG_COLS, A_SP_PORT_FG_COLS)) 
     }
     val bank_ios = VecInit(banks.map(_.io))
 
     //--------------------------------------
-    // read-datapath
+    // read-datapath (2-cycle non-decoupled)
+    // - exec reads can read from 1+ banks at a time
     //--------------------------------------
-    // exec reads can read from 1+ banks at a time
-    val ex_rd_req       = io.exec.readA.req
-    val rd_en           = ex_rd_req.en
-    val rd_row          = ex_rd_req.row
-    val rd_fg_col_start = ex_rd_req.fg_col_start
-    val rd_bank_start   = ex_rd_req.bank_start 
-    val rd_banks        = ex_rd_req.banks      
-    assert((rd_bank_start & (rd_bank_start-1.U)) === 0.U, 
-      "bank_start not aligned")
+    val ex_rd_req          = io.exec.readA.req
+    val ex_rd_en           = ex_rd_req.en
+    val ex_rd_row          = ex_rd_req.row
+    val ex_rd_fg_col_start = ex_rd_req.fg_col_start
+    val ex_rd_bank_start   = ex_rd_req.bank_start 
+    val ex_rd_bank_end     = ex_rd_req.bank_end
+    val ex_rd_banks        = ex_rd_req.banks      
+    assert(ex_rd_bank_start % ex_rd_banks === 0, "bank_start not aligned")
 
-    // the queue to maintain back-pressure
-    val memq = RegNext(io.exec.readA.req)
-    val outq = RegNext(new FgMemUnitExecReadResp(config, FG_NUM))
+    // forward configs 2-cycle to match scratchpad latency
+    val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
 
     // datapath into scratchpads
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.read.req.en           := rd_en
-      bio.read.req.row          := row
-      bio.read.req.fg_col_start := rd_fg_col_start
+      bio.read.req.en           := ex_rd_en
+      bio.read.req.row          := ex_rd_row
+      bio.read.req.fg_col_start := ex_rd_fg_col_start
     }
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val rd_datas = bank_ios.map { bio => bio.read.resp.data }
-    outq.data = Mux1H((0 to log2Up(FG_NUM)).map { log2banks => 
-      val my_banks = scala.math.pow(2, log2banks)
-      val is_selected = (my_banks === banks)
-      (is_selected -> Mux1H((0 to (FG_NUM-1) by my_banks).map{my_bank_start =>
-        val my_bank_end = my_bank_start + my_banks - 1
-        val is_selected = (my_bank_start === bank_start)
-        (is_selected -> Cat((my_bank_start to my_bank_end).map{bank_idx =>
-          rd_datas(bank_idx)
-        }))
-      }))
-    })
+    val ex_rd_datas     = Cat(bank_ios.map { bio => bio.read.resp.data })
+    val ex_rd_data_cast = ex_rd_datas.asTypeOf(UInt(AB_EXEC_PORT_BITS.W))
+    val ex_rd_bitshift  = ex_rd_bank_start_buf * FG_DIM * ITYPE_BITS
+    io.exec.readA.resp.data := (ex_rd_data_cast >> ex_rd_bitshift)
 
     //--------------------------------------
     // write-datapath
@@ -231,40 +225,39 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   //========================================================================
   {
     // B-banks
-    val banks = Seq.fill(2) { 
-      Module(new FgScratchpadBank(config, SQRT_FG_NUM, 1)) 
+    val banks = Seq.fill(B_SP_BANKS) { 
+      Module(new FgScratchpadBank(config, B_SP_FG_COLS, B_SP_PORT_FG_COLS)) 
     }
     val bank_ios = VecInit(banks.map(_.io))
 
     //--------------------------------------
-    // read-datapath
+    // read-datapath (2-cycles non-decoupled)
     //--------------------------------------
     // exec reads can read from 1+ banks at a time
-    val ex_rd_req       = io.exec.readB.req
-    val rd_en           = ex_rd_req.en
-    val rd_row          = ex_rd_req.row
-    val rd_fg_col_start = ex_rd_req.fg_col_start
-    val rd_bank_start   = ex_rd_req.bank_start 
-    val rd_banks        = ex_rd_req.banks      
-    assert(rd_banks === 1.U && rd_bank_start < 2.U)
+    val ex_rd_req          = io.exec.readB.req
+    val ex_rd_en           = ex_rd_req.en
+    val ex_rd_row          = ex_rd_req.row
+    val ex_rd_fg_col_start = ex_rd_req.fg_col_start
+    val ex_rd_bank_start   = ex_rd_req.bank_start 
+    val ex_rd_banks        = ex_rd_req.banks      
+    assert(ex_rd_banks === 1.U && ex_rd_bank_start < 2.U)
 
-    // the queue to maintain back-pressure
-    val memq = RegNext(io.exec.readB.req)
-    val outq = RegNext(new FgMemUnitExecReadResp(config, 1))
+    // forward configs 2-cycle to match scratchpad latency
+    val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
 
     // datapath into scratchpads
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.read.req.en           := rd_en
-      bio.read.req.row          := row
-      bio.read.req.fg_col_start := rd_fg_col_start
+      bio.read.req.en           := ex_rd_en
+      bio.read.req.row          := ex_rd_row
+      bio.read.req.fg_col_start := ex_rd_fg_col_start
     }
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val rd_datas = bank_ios.map { bio => bio.read.resp.data }
-    outq.data = rd_datas(memq.bank_start)
+    val ex_rd_datas = bank_ios.map { bio => bio.read.resp.data }
+    io.exec.readB.resp.data := ex_rd_datas(ex_rd_bank_start_buf)
 
     //--------------------------------------
-    // write-datapath
+    // write-datapath (decoupled)
     //--------------------------------------
     val dma_wr_ready        = io.dma.loadB.resp.ready
     val dma_wr_valid        = loadB.io.resp.valid
@@ -295,10 +288,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   //========================================================================
   {
     // C/D-banks
-    val banks = Seq.fill(FG_NUM) { 
-      Module(new FgAccumulatorBank(config, FG_NUM, FG_NUM)) 
-    }
+    val banks = Seq.fill(FG_NUM) { Module(new FgAccumulatorBank(config)) }
     val bank_ios = VecInit(banks.map(_.io))
+    bank_ios.foreach { bio => bio.io.config := io.acc_config }
  
     //--------------------------------------
     // write-datapath
@@ -310,9 +302,10 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_wr_fg_col_start = ex_wr_req.fg_col_start
     val ex_wr_bank_start   = ex_wr_req.bank_start
     val ex_wr_bank_end     = ex_wr_req.bank_end
+    val ex_wr_banks        = ex_wr_req.total_banks
     val ex_wr_accum        = ex_wr_req.accum
     val ex_wr_data         = ex_wr_req.data
-    assert((bank_start & (bank_start-1.U)) === 0.U, "bank_start not aligned")
+    assert((ex_wr_bank_start % ex_wr_banks) === 0.U, "banks not aligned")
 
     // dma-loadD
     val dma_wr_ready        = !ex_wr_en && io.dma.loadD.resp.ready
@@ -338,7 +331,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
         val is_active     = (ex_wr_bank_start <= i) && (i <= ex_wr_bank_end)
         val bank_offset   = i.U - ex_wr_bank_start
         val fg_per_bank   = (FG_NUM / ex_wr_banks)
-        val bits_per_bank = fg_per_bank * FG_DIM * OTYPE_BITS
+        val bits_per_bank = fg_per_bank * FG_DIM.U * OTYPE_BITS.U
         val shifted_data  = ex_wr_data >> (i.U * bits_per_bank)
 
         bio.write.req.en           := is_active
@@ -357,9 +350,18 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
         bio.write.req.accum        := dma_wr_accum
       }
     }
- 
+
     //--------------------------------------
     // read-datapath (storeC)
+    // - accept read req if we know a spot is reserved for it 2 cycles later
+    // - acc bank read behavior:
+    //   - fg_col_start must be self-aligned
+    //   - total fg_cols per row written === FG_NUM / total_banks
+    //   - dma_store only reads 1 row of 1 bank at a time
+    //   - dma_load only writes 1 row of 1 bank at a time
+    //   - ex_write writes 1 row of multiple consecutive banks at a time
+    //   - simulatenously read banks are concatenated
+    // - datapath into scratchpads
     //--------------------------------------
     val dma_rd_req          = io.dma.storeC.req
     val dma_rd_vaddr        = dma_rd_req.bits.vaddr
@@ -378,16 +380,6 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
                                !store_is_blocked
     val dma_rd_fire = io.dma.storeC.fire()
 
-    // accept read req if we know a spot is reserved for it 2 cycles later
-
-    // acc bank read behavior:
-    // - fg_col_start must be self-aligned
-    // - total fg_cols per row written === FG_NUM / total_banks
-    // - dma_store only reads 1 row of 1 bank at a time
-    // - dma_load only writes 1 row of 1 bank at a time
-    // - ex_write writes 1 row of multiple consecutive banks at a time
-    // - simulatenously read banks are concatenated
-    // datapath into scratchpads
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
       bio.read.req.en           := dma_rd_fire && (dma_rd_bank === i.U)
       bio.read.req.row          := dma_rd_row
@@ -445,23 +437,8 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
 !!!!!!!!!!!!!!!!!!!!!!!!TODO TODO TODO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // TODO: 
 // 1) finish scrutinizing accumulator and IO
-// 2) finish scrutinizing scratchpad and IO
-// 3) finish scrutinizing exec-ctrl paths inside MemUnit and IO
+//   - need to pipe the FgAccumulatorBankConfigIO from ex-unit to mem-unit
+// (DONE) 2) finish scrutinizing scratchpad and IO
+// (DONE) 3) finish scrutinizing exec-ctrl paths inside MemUnit and IO
 // 4) finish scrutinizing exec-ctrl
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -3,50 +3,63 @@ package gemmini
 import chisel3._
 import chisel3.util._
 
-class FgAccumulatorBankReadReq[T <: Data](config: GemminiArrayConfig[T])
+class FgAccumulatorBankReadReq[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
-  val row          = Output(UInt(LOG2_FG_DIM.W))
-  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
+  val row          = Output(UInt(FG_DIM_IDX.W))
+  val fg_col_start = Output(UInt(FG_NUM_IDX.W))
 }
 
-class FgAccumulatorBankReadResp[T <: Data](config: GemminiArrayConfig[T])
+class FgAccumulatorBankReadResp[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val data = Output(UInt(ACC_ROW_BITS.W))
+  val data = Output(UInt(C_STORE_ROW_BITS.W))
 }
 
-class FgAccumulatorBankReadIO[T <: Data](config: GemminiArrayConfig[T])
+class FgAccumulatorBankReadIO[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   val req = new FgAccumulatorBankReadReq(config))
   val resp = Flipped(new FgAccumulatorBankReadResp(config))
 }
 
-class FgAccumulatorBankWriteReq[T <: Data](config: GemminiArrayConfig[T])
+class FgAccumulatorBankWriteReq[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
-  val row          = Output(UInt(LOG2_FG_DIM.W))
-  val cols         = Output(UInt(LOG2_ACC_ROW_ELEMS.W))
-  val fg_col_start = Output(UInt(LOG2_FG_NUM.W))
-  val data         = Output(UInt(ACC_ROW_BITS.W))
+  val row          = Output(UInt(FG_DIM_IDX.W))
+  val cols         = Output(UInt(CD_ACC_ROW_ELEMS_CTR.W))
+  val fg_col_start = Output(UInt(FG_NUM_IDX.W))
+  val data         = Output(UInt(D_LOAD_ROW_BITS.W))
   val accum        = Output(Bool())
+}
+
+//============================================================================
+// accumulator configuration
+//============================================================================
+class FgAccumulatorBankConfigIO[T <: Data](config: FgGemminiArrayConfig[T]) 
+  (implicit p: Parameters) extends CoreBundle {
+  import config._
+  val shift      = Output(UInt(OTYPE_BITS_CTR.W))
+  val relu_shift = Output(UInt(OTYPE_BITS_CTR.W))
+  val act        = Output(UInt(2.W))
 }
 
 //==========================================================================
 // Accumulator Bank
+// - fg_col_start shifts for reads/writes done WITHIN THE BANK!
 //==========================================================================
 class FgAccumulatorBank[T <: Data: Arithmetic]
   (config: FgGemminiArrayConfig[T])
   (implicit p: Parameters, ev: Arithmetic[T]) extends Module {
   import config._
   import ev._
-  val ROW_TYPE = Vec(ACC_ROW_ELEMS, accType.getType)
+  val ROW_TYPE = Vec(CD_ACC_ROW_ELEMS, accType.getType)
 
   val io = IO(new Bundle {
     val read = Flipped(new FgAccumulatorBankReadIO(config))
     val write = Flipped(new FgAccumulatorBankWriteReq(config))
+    val config = Flipped(new FgAccumulatorBankConfigIO(config))
   })
   val mem = SyncReadMem(FG_DIM, ROW_TYPE)
 
@@ -69,9 +82,9 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   val rd_en           = io.read.en
   val rd_row          = io.read.row
   val rd_fg_col_start = io.read.fg_col_start
-  val rd_shift        = io.read.req.shift
-  val rd_relu6_shift  = io.read.req.relu6_shift
-  val rd_act          = io.read.req.act
+  val rd_shift        = io.config.req.shift
+  val rd_relu6_shift  = io.config.req.relu6_shift
+  val rd_act          = io.config.req.act
 
   //-------------------------------------
   // read from bank (for read or write req)
