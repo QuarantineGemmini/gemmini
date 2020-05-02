@@ -46,7 +46,7 @@ class FgDMAControl
   val io = IO(new Bundle {
     val req      = Flipped(Decoupled(new FgDMAControlRequest(config)))
     val nextid   = Input(UInt(DMA_REQS_IDX.W))
-    val alloc    = Decoupled(new FgTrackerEntry(config, max_xfer_bytes))
+    val alloc    = Decoupled(new FgDMATrackerEntry(config, max_xfer_bytes))
     val tlb      = new FrontendTLBIO
     val flush    = Input(Bool())
     val dispatch = Decoupled(new FgDMADispatch(config))
@@ -83,15 +83,15 @@ class FgDMAControl
   io.tlb.req.bits.tlb_req.vaddr       := Cat(cur_vpn, 0.U(pgIdxBits.W))
   io.tlb.req.bits.tlb_req.passthrough := false.B
   io.tlb.req.bits.tlb_req.size        := 0.U
-  io.tlb.req.bits.tlb_req.cmd         := if(is_read_mode) M_XRD else M_XWR
+  io.tlb.req.bits.tlb_req.cmd         := (if(is_read_mode) M_XRD else M_XWR)
   io.tlb.req.bits.status              := mstatus
 
   //-----------------------------------------------
   // (combinational) Select the size and mask of the TileLink request
   //-----------------------------------------------
   class Txn extends Bundle {
-    val bytes          = UInt(DMA_TXN_BYTES_CTR).W)
-    val log2_bytes     = UInt(DMA_TXN_BYTES_CTR_IDX).W)
+    val bytes          = UInt(DMA_TXN_BYTES_CTR.W)
+    val log2_bytes     = UInt(DMA_TXN_BYTES_CTR_IDX.W)
     val useful_bytes   = UInt(DMA_TXN_BYTES_CTR.W)
     val data_start_idx = UInt(DMA_TXN_BYTES_IDX.W)
     val paddr          = UInt(paddrBits.W)
@@ -128,15 +128,15 @@ class FgDMAControl
   val is_last_txn              = (cur_useful_bytes === useful_bytes_left)
   val is_first_txn             = (useful_bytes_requested === 0.U)
 
-  tracker.io.alloc.valid                 := false.B
-  tracker.io.alloc.bits.lrange           := lrange
-  tracker.io.alloc.bits.rob_id           := rob_id
-  tracker.io.alloc.bits.req_useful_bytes := total_useful_bytes
-  tracker.io.alloc.bits.data_start_idx   := first_txn_data_start_idx
-  tracker.io.alloc.bits.txn_start_idx    := total_bytes_requested
-  tracker.io.alloc.bits.txn_bytes        := cur_txn_bytes
-  tracker.io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
-  tracker.io.alloc.bits.paddr            := cur_paddr
+  io.alloc.valid                 := false.B
+  io.alloc.bits.lrange           := lrange
+  io.alloc.bits.rob_id           := rob_id
+  io.alloc.bits.req_useful_bytes := total_useful_bytes
+  io.alloc.bits.data_start_idx   := first_txn_data_start_idx
+  io.alloc.bits.txn_start_idx    := total_bytes_requested
+  io.alloc.bits.txn_bytes        := cur_txn_bytes
+  io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
+  io.alloc.bits.paddr            := cur_paddr
 
   // output transaction towards tile-link A-channel
   io.dispatch.valid       := false.B
@@ -158,7 +158,7 @@ class FgDMAControl
       "cannot request more than 1 row at a time")
     val tmp_vpn = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
     val tmp_vpn_mapped  = cur_ppn_valid && (cur_vpn === tmp_vpn)
-    val tmp_total_bytes = lrange.total_bytes
+    val tmp_total_bytes = lrange.total_bytes()
     req                   := io.req.bits
     total_bytes_requested := 0.U
     total_useful_bytes    := tmp_total_bytes
@@ -190,16 +190,16 @@ class FgDMAControl
       }
     }
     is (s_REQ_NEXT_CHUNK) {
-      tracker.io.alloc.valid := io.dispatch.ready
-      io.dispatch.valid      := tracker.io.alloc.ready
+      io.alloc.valid := io.dispatch.ready
+      io.dispatch.valid      := io.alloc.ready
       when(io.dispatch.fire()) {
         val next_vaddr      = cur_vaddr + cur_useful_bytes
         val next_vpn        = next_vaddr(coreMaxAddrBits-1, pgIdxBits)
         val needs_translate = (next_vpn =/= cur_vpn)
 
         when (is_first_txn) {
-          tracker.io.alloc.bits.data_start_idx := cur_data_start_idx
-          first_txn_data_start_idx             := cur_data_start_idx
+          io.alloc.bits.data_start_idx := cur_data_start_idx
+          first_txn_data_start_idx     := cur_data_start_idx
         }
         total_bytes_requested := total_bytes_requested + cur_txn_bytes
         useful_bytes_left := useful_bytes_left - cur_useful_bytes
@@ -220,5 +220,5 @@ class FgDMAControl
   //-----------------------------------------------
   // busy signal
   //-----------------------------------------------
-  io.busy := tracker.io.busy || (state =/= s_IDLE)
+  io.busy := (state =/= s_IDLE)
 }

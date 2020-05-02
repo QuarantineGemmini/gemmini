@@ -2,7 +2,9 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
-import gemmini.Util.UDValid
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
+import gemmini.Util._
 
 //===========================================================================
 // tracked outstanding entry
@@ -78,7 +80,7 @@ class FgDMATracker[T <: Data]
 
   // interface to peekers
   for (i <- 0 to peeks) {
-    io.peek(i).bits.entry := entries(io.peek(i).bits.xactid).bits
+    io.peek(i).entry := entries(io.peek(i).xactid).bits
   }
 
   // interface to popper

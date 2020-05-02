@@ -3,6 +3,7 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 import Util._
 
 //============================================================================
@@ -85,8 +86,8 @@ class FgDMASplitter[T <: Data]
                               Mux(beat_end_idx <= data_end_idx, 0.U,
                                   beat_start_idx - data_start_idx))
   val beat_mask = Mux(is_full || is_empty, 0.U,
-                    (((1.U << (DMA_BEAT_BYTES1.U - end_mask_offset)) - 1.U)
-                      << start_mask_offset))
+                    (((1.U << (DMA_BEAT_BYTES.U - end_mask_offset)) - 1.U) &
+                    ~((1.U << (start_mask_offset)) - 1.U)))
  
   //---------------------------------
   // outputs

@@ -19,7 +19,7 @@ class FgAccumulatorBankReadResp[T <: Data](config: FgGemminiArrayConfig[T])
 
 class FgAccumulatorBankReadIO[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
-  val req = new FgAccumulatorBankReadReq(config))
+  val req = new FgAccumulatorBankReadReq(config)
   val resp = Flipped(new FgAccumulatorBankReadResp(config))
 }
 
@@ -120,13 +120,13 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   val rd_elemshift    = rd_fg_col_start_buf * FG_DIM
   val rd_shifted_data = bank_rdata >> rd_elemshift
 
-  val activated_rdata = WireInit(VecInit(rd_shifted_data.map(e =>
+  val activated_rdata = WireInit(VecInit(rd_shifted_data.map(e => {
     val e_clipped = (e >> rd_shift_buf).clippedToWidthOf(inputType)
     val e_act = MuxCase(e_clipped, Seq(
       (rd_act_buf === Activation.RELU) -> e_clipped.relu,
       (rd_act_buf === Activation.RELU6) -> e_clipped.relu6(rd_relu6_shift_buf)
     ))
     e_act
-  )))
+  })))
   io.read.resp.data := RegNext(activated_rdata)
 }

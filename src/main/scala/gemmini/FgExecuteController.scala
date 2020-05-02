@@ -21,7 +21,7 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 import Util._
 
-class FgExecuteController[T <: Data](config: GemminiArrayConfig[T])
+class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters, ev: Arithmetic[T]) 
   extends Module with HasCoreParameters {
   import config._
@@ -29,7 +29,6 @@ class FgExecuteController[T <: Data](config: GemminiArrayConfig[T])
   //=========================================================================
   // module interface
   //=========================================================================
-  val DIM = meshRows*tileRows
   // TODO for dgrubb: use this parameter
   val TOTAL_MESHES = fs_sa_div * fa_sa_div
 
@@ -640,8 +639,8 @@ class FgExecuteController[T <: Data](config: GemminiArrayConfig[T])
   //}
 }
 
-object ExecuteController {
+object FgExecuteController {
   def apply[T <: Data: Arithmetic]
-    (config: GemminiArrayConfig[T])(implicit p: Parameters)
-      = Module(new ExecuteController(config))
+    (config: FgGemminiArrayConfig[T])(implicit p: Parameters)
+      = Module(new FgExecuteController(config))
 }

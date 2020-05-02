@@ -8,6 +8,8 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 import Util._
 
 class FgDMAStoreResponder[T <: Data]

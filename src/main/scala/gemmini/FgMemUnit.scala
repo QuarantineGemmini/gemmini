@@ -434,7 +434,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   }
 }
 
-!!!!!!!!!!!!!!!!!!!!!!!!TODO TODO TODO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//!!!!!!!!!!!!!!!!!!!!!!!!TODO TODO TODO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // TODO: 
 // 1) finish scrutinizing accumulator and IO
 //   - need to pipe the FgAccumulatorBankConfigIO from ex-unit to mem-unit

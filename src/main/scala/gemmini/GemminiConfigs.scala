@@ -11,9 +11,9 @@ sealed abstract trait GemminiMemCapacity
 case class CapacityInKilobytes(kilobytes: Int) extends GemminiMemCapacity
 case class CapacityInMatrices(matrices: Int) extends GemminiMemCapacity
 
-case class FgGemminiArrayConfig[T <: Data : Arithmetic](
-  fg_tile_rows: Int,  // rows/cols in a fine-grained systolic array
-  fg_tile_cols: Int,
+case class GemminiArrayConfig[T <: Data : Arithmetic](
+  tileRows: Int,
+  tileColumns: Int,
   meshRows: Int,
   meshColumns: Int,
   ld_queue_length: Int,
@@ -33,7 +33,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   inputType: T,
   outputType: T,
   accType: T,
-  fg_sa_div: Int,
+  headerFileName: String = "gemmini_params.h"
 ) {
   val meshCols = meshColumns
   val tileCols = tileColumns
@@ -67,19 +67,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def local_addr_t = new LocalAddr(sp_banks, sp_bank_entries, 
                                    acc_banks, acc_bank_entries)
 
-  def max_in_flight_reqs    = 16 // TODO calculate this somehow
-
-  def MAX_DMA_REQS            = 16
-  def DMA_BUS_BITS            = dma_buswidth
-  def DMA_BUS_BYTES           = dma_buswidth / 8
-  def MAX_DMA_BYTES           = dma_maxbytes
-  def LOG2_MAX_DMA_REQS       = log2Up(MAX_DMA_REQS) // used as index
-  def LOG2_DMA_BUS_BITS       = log2Up(DMA_BUS_BITS) // used as index
-  def LOG2_DMA_BUS_BYTES      = log2Up(DMA_BUS_BYTES) // used as index
-  def LOG2_MAX_DMA_BYTES      = log2Up(MAX_DMA_BYTES+1) // used as counter
-
-  def MAX_DMA_BEATS = MAX_DMA_BYTES / DMA_BUS_BYTES
-  def LOG2_MAX_DMA_BEATS = log2Up(MAX_DMA_BEATS) // index
+  def max_in_flight_reqs = 16 // TODO calculate this somehow
 
   def mvin_len_bits   = log2Up(((dma_maxbytes / (inputType.getWidth / 8)) max 
                                DIM) + 1)
@@ -87,102 +75,44 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def mvout_len_bits  = log2Up(DIM + 1)
   def mvout_rows_bits = log2Up(DIM + 1)
 
-  def BANK_IDX_BITS = 16
-  def ROW_COUNT_BITS = 16
-  def SQ_COL_START_BITS = 12
-
   // TODO: move this. was originally in Controller.scala
   def tagWidth = 32
-
-  //==========================================================================
-  // gemmini2 fine-grained-SA miscellaneous constants
-  //==========================================================================
-  def fg_sp_width = DIM * inputType.getWidth
 
   //==========================================================================
   // gemmini2 miscellaneous constants (some redundant with above)
   //==========================================================================
   def ROB_ENTRIES      = rob_entries
-  def LOG2_ROB_ENTRIES = log2Up(rob_entries) //index
+  def LOG2_ROB_ENTRIES = log2Up(rob_entries)
 
   //==========================================================================
   // gemmini2 hardware-specific compile-time global constants
   //==========================================================================
-  def ITYPE_BITS         = inputType.getWidth
-  def ITYPE_BYTES        = (inputType.getWidth+7) / 8
-  def OTYPE_BITS         = accType.getWidth
-  def OTYPE_BYTES        = (accType.getWidth+7) / 8
 
-  def LOG2_ITYPE_BITS    = log2Up(ITYPE_BITS)       //index
-  def LOG2_OTYPE_BITS    = log2Up(OTYPE_BITS)       //index
-  def LOG2_ITYPE_BYTES   = if (ITYPE_BYTES <= 1) 0  // index
-                           else log2Up(ITYPE_BYTES)
-  def LOG2_OTYPE_BYTES   = if(OTYPE_BYTES <= 1) 0   // index
-                           else log2Up(OTYPE_BYTES)
+  def ITYPE_BITS       = inputType.getWidth
+  def ITYPE_BYTES      = (inputType.getWidth+7) / 8
+  def LOG2_ITYPE_BYTES = if(ITYPE_BYTES <= 1) 0 else log2Up(ITYPE_BYTES)
 
-  def SP_BANKS           = sp_banks
-  def SP_BANK_ROWS       = sp_bank_entries
-  def SP_ROWS            = SP_BANKS * SP_BANK_ROWS
-  def LOG2_SP_ROWS       = log2Up(SP_ROWS)
+  def OTYPE_BITS       = accType.getWidth
+  def LOG2_OTYPE_BITS  = log2Up(OTYPE_BITS)
+  def OTYPE_BYTES      = (accType.getWidth+7) / 8
+  def LOG2_OTYPE_BYTES = if(OTYPE_BYTES <= 1) 0 else log2Up(OTYPE_BYTES)
 
-  //==========================================================================
-  // fine-grained SA: gemmini2 hw-specific compile-time global constants
-  //==========================================================================
-  def FG_NUM      = fg_sa_div * fg_sa_div
-  def LOG2_FG_NUM = log2Up(FG_NUM) // counter
-  def FG_DIM      = DIM / fg_sa_div
-  def LOG2_FG_DIM = log2Up(FG_DIM) // index
+  def SP_BANKS        = sp_banks
+  def SP_BANK_ROWS    = sp_bank_entries
+  def SP_ROWS         = SP_BANKS * SP_BANK_ROWS
+  def LOG2_SP_ROWS    = log2Up(SP_ROWS)
 
-  def A_SP_BUSWIDTH
-
-  def SP_ROW_ELEMS       = FG_NUM * FG_DIM
-  def ACC_ROW_ELEMS      = FG_NUM * FG_DIM
-  def LOG2_SP_ROW_ELEMS  = log2Up(SP_ROW_ELEMS+1)  // counter
-  def LOG2_ACC_ROW_ELEMS = log2Up(ACC_ROW_ELEMS+1) // counter
-
-  def SQ_COL_ELEMS  = FG_NUM
-  def SQ_COL_IBYTES = 
-  def SQ_COL_OBYTES = 
-  def SQ_COL_IBITS  = 
-  def SQ_COL_OBITS  = 
-
-  def SP_ROW_ELEMS = FG_NUM * FG_DIM
-
-  def SP_ROW_BITS        = FG_NUM * FG_DIM * ITYPE_BITS
-  def SP_ROW_BYTES       = (SP_ROW_BITS +7 ) / 8
-  def ACC_ROW_BITS       = FG_NUM * FG_DIM * OTYPE_BITS
-  def ACC_ROW_BYTES      = (ACC_ROW_BITS +7 ) / 8
-  def LOG2_SP_ROW_BITS   = log2Up(SP_ROW_BITS)     // used as index
-  def LOG2_ACC_ROW_BITS  = log2Up(ACC_ROW_BITS)
-  def LOG2_SP_ROW_BYTES  = log2Up(SP_ROW_BYTES+1)  // used as counters
-  def LOG2_ACC_ROW_BYTES = log2Up(ACC_ROW_BYTES+1)
-
-  def MAX_MEM_OP_BYTES      = ACC_ROW_BYTES * FG_DIM
-  def LOG2_MAX_MEM_OP_BYTES = log2Up(MAX_MEM_OP_BYTES+1)
-
-  def SQRT_FG_NUM       = fg_sa_div
-  def FG_COL_START_BITS = log2Up(SQRT_FG_NUM) // index
-
-  // TODO: force ACC_BANK_ROWS == FG_DIM when FG_NUM > 1
-  //def ACC_BANKS       = acc_banks
-  // bank this
-  //def ACC_BANK_ROWS   = acc_bank_entries
-  def ACC_BANKS       = FG_NUM
-  def ACC_BANK_ROWS   = FG_DIM
+  def ACC_BANKS       = acc_banks
+  def ACC_BANK_ROWS   = acc_bank_entries
   def ACC_ROWS        = ACC_BANKS * ACC_BANK_ROWS
   def LOG2_ACC_ROWS   = log2Up(ACC_ROWS)
 
-  def MAX_OTYPE_TRANSFER_BYTES = FG_NUM * FG_DIM * OTYPE_BYTES
-  def MAX_ITYPE_TRANSFER_BYTES = FG_NUM * FG_DIM * ITYPE_BYTES
-  def MAX_TRANSFER_BITS       = MAX_TRANSFER_BYTES * 8
-  def LOG2_MAX_TRANSFER_BYTES = log2Up(MAX_TRANSFER_BYTES+1) // count
-
-  def MAX_TRANSFER_ELEMS      = FG_NUM * FG_DIM
-  def MAX_TRANSFER_ROWS       = FG_NUM * FG_DIM
-  def LOG2_MAX_TRANSFER_ROWS  = log2Up(MAX_TRANSFER_ROWS)
-
-  // this just makes some internal logic simpler
-  require(ACC_ROW_BYTES >= MAX_DMA_BYTES, "ACC_ROW_BYTES < MAX_DMA_BYTES")
+  def MNK_BYTES                   = Int.MaxValue / DIM  // TODO: upper bound?
+  def LOG2_MNK_BYTES              = log2Up(MNK_BYTES)
+  def MNK_BYTES_PER_TILE_ROW      = MNK_BYTES * DIM
+  def LOG2_MNK_BYTES_PER_TILE_ROW = log2Up(MNK_BYTES_PER_TILE_ROW)
+  def TILE_IDX                    = MNK_BYTES / (DIM / 8)
+  def LOG2_TILE_IDX               = log2Up(TILE_IDX)
 
   //--------------------------------------------------------------------------
   def I_TILE_BYTE_WIDTH = DIM * ((inputType.getWidth+7) / 8)
@@ -200,30 +130,11 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def USABLE_SP_TILES = (SP_ROWS / DIM) - 2
   def TOTAL_ACC_TILES = (ACC_ROWS / DIM)
   def SQRT_ACC_TILES = sqrt(TOTAL_ACC_TILES).toInt
-  require(USABLE_SP_TILES >= TOTAL_ACC_TILES, 
+  assert(USABLE_SP_TILES >= TOTAL_ACC_TILES, 
     s"SP_TILES($USABLE_SP_TILES) + 2 < ACC_TILES($TOTAL_ACC_TILES)")
 
   // prioritize sizes that cause the output-group to be further from square
   def OG_HEIGHT_MAP = (1 to TOTAL_ACC_TILES).sortWith((h1, h2) => {
-    (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs
-  })
-
-  def FG_DIM_EQ_SQ_TILE  = fg_sa_div
-  def FG_DIMS_LT_SQ_TILE = (0 until log2Up(fg_sa_div)).map {
-                              e=>math.pow(2,e) }
-  def FG_DIMS_GT_SQ_TILE = (log2Up(fg_sa_div)+1, log2Up(FG_NUM)).map {
-                              e=>math.pow(2,e) }.reverse
-
-  def FG_DIMS_LT_SQ_TILE = (0 until log2Up(fg_sa_div)).map {e=>math.pow(2,e)}
-  def FG_PER_SQ_TILE_DIM = fg_sa_div
-  require(DIM % fg_sa_div == 0, "invalid DIM and fs_sa_div combo")
-  require( FG_NUM is a power of 2, ..........)
-  def FG_TILES_PER_TILE_DIM = (0 to log2Up(FG_NUM)).map { 
-    e => scala.math.pow(2, e)
-  }
-
-
-  def OG__MAP = (1 to TOTAL_ACC_TILES).sortWith((h1, h2) => {
     (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs
   })
 

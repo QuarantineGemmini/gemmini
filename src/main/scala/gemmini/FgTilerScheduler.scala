@@ -237,7 +237,7 @@ class FgTilerScheduler[T <: Data: Arithmetic]
       new_entry.dst.valid &&
       (new_entry.dst.bits.overlaps(e.bits.op1.bits) && e.bits.op1.valid) ||
       (new_entry.dst.bits.overlaps(e.bits.op2.bits) && e.bits.op2.valid)
-    )}
+    }
 
     // We search for all entries which write to an address that we write to
     val waws = entries.map { e => 
@@ -245,7 +245,7 @@ class FgTilerScheduler[T <: Data: Arithmetic]
       e.bits.dst.valid &&
       new_entry.dst.valid &&
       new_entry.dst.bits.conflicts(e.bits.dst.bits)
-    )}
+    }
 
     val older_in_same_q = entries.map { e => 
       e.valid && 

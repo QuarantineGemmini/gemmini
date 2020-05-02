@@ -3,6 +3,7 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 import Util._
 
 //============================================================================
@@ -12,7 +13,7 @@ import Util._
 // - achieves max throughput of 1 resp/cycle
 //============================================================================
 class FgDMABeatMerger[T <: Data]
-  (config: GemminiArrayConfig[T], max_xfer_bytes:Int)
+  (config: FgGemminiArrayConfig[T], max_xfer_bytes:Int)
   (implicit p: Parameters) extends Module {
   import config._
   //---------------------------------
@@ -62,17 +63,17 @@ class FgDMABeatMerger[T <: Data]
   //---------------------------------
   // output signals
   //---------------------------------
-  io.peek.xactid := io.beat.bits.xactid
+  io.peek.xactid      := io.beat.bits.xactid
 
-  io.pop.valid   := false.B
-  io.pop.xactid  := io.beat.bits.xactid
+  io.pop.valid        := false.B
+  io.pop.xactid       := io.beat.bits.xactid
 
-  io.beat.ready  := false.B
+  io.beat.ready       := false.B
 
-  io.resp.valid  := false.B
-  io.resp.data   := data_next
-  io.resp.lrange := lrange
-  io.resp.rob_id := rob_id
+  io.resp.valid       := false.B
+  io.resp.bits.data   := data_next
+  io.resp.bits.lrange := lrange
+  io.resp.bits.rob_id := rob_id
 
   io.busy := (useful_bytes_merged =/= 0.U)
 
