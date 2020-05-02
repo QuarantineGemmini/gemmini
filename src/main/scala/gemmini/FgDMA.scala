@@ -13,32 +13,32 @@ import Util._
 
 //===========================================================================
 // DMA read interface (dram -> scratchpad)
-// - max_bytes: max bytes written to scratchpad in an operation
+// - max_xfer_bytes: max bytes read from dram in a multi-tilelink-txn request
 //===========================================================================
-class FgDMAReadRequest[T <: Data](config: GemminiArrayConfig[T])
+class FgDMALoadRequest[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
   val lrange = new FgLocalRange(config)
   val status = new MStatus
-  val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMAReadResponse[T <: Data]
-  (config: GemminiArrayConfig[T], max_bytes: Int)
+class FgDMALoadResponse[T <: Data]
+  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val data   = UInt((max_bytes*8).W)
+  val data   = UInt((max_xfer_bytes*8).W)
   val lrange = new FgLocalRange(config)
-  val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMAReader[T <: Data](config: GemminiArrayConfig[T], 
-  name: String = "stream-reader", max_bytes: Int)
+class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T], 
+  name: String = "dma-load", max_xfer_bytes: Int)
   (implicit p: Parameters) extends LazyModule {
   import config._
 
-  val node = TLHelper.makeClientNode(name, IdRange(0, MAX_DMA_REQS))
+  val node = TLHelper.makeClientNode(name, IdRange(0, DMA_REQS))
 
   lazy val module = new LazyModuleImp(this)
     with HasCoreParameters with MemoryOpConstants {
@@ -46,8 +46,8 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
     val (tl, edge) = node.out(0)
 
     val io = IO(new Bundle {
-      val req   = Flipped(Decoupled(new FgDMAReadRequest(config)))
-      val resp  = Decoupled(new FgDMAReadResponse(config, max_bytes))
+      val req   = Flipped(Decoupled(new FgDMALoadRequest(config)))
+      val resp  = Decoupled(new FgDMALoadResponse(config, max_xfer_bytes))
       val tlb   = new FrontendTLBIO
       val busy  = Output(Bool())
       val flush = Input(Bool())
@@ -64,12 +64,12 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
     //-----------------------------------------------
     // track outstanding transactions for each operation
     //-----------------------------------------------
-    val tracker = Module(new FgDMATracker(config, max_bytes, 2))
+    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 2))
 
     //-----------------------------------------------
     // tlb translations and tilelink txn dispatch
     //-----------------------------------------------
-    val control = Module(new FgDMAControl(config, max_bytes, true))
+    val control = Module(new FgDMAControl(config, max_xfer_bytes, true))
     control.io.req    <> req
     control.io.nextid := tracker.io.nextid
     tracker.io.alloc  <> control.io.alloc
@@ -79,7 +79,7 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
     //-----------------------------------------------
     // merge response beats into buffer
     //-----------------------------------------------
-    val merger = Module(new FgDMABeatMerger(config, max_bytes))
+    val merger = Module(new FgDMABeatMerger(config, max_xfer_bytes))
     tracker.io.peek(0) <> merger.io.peek
     tracker.io.pop     <> merger.io.pop
     io.resp            <> merger.io.resp
@@ -93,7 +93,7 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
     tl.a.bits := edge.Get(
       fromSource = tracker.io.peek(1).entry.xactid,
       toAddress  = tracker.io.peek(1).entry.paddr,
-      lgSize     = tracker.io.peek(1).entry.txn_log2_size
+      lgSize     = tracker.io.peek(1).entry.txn_log2_bytes
     )._2
 
     //-----------------------------------------------
@@ -115,29 +115,31 @@ class FgDMAReader[T <: Data](config: GemminiArrayConfig[T],
 
 //===========================================================================
 // DMA write interface (scratchpad -> dram)
-// - max_bytes: max bytes written to dram in an operation
+// - max_xfer_bytes: max bytes written to dram in a multi-tilelink-txn request
 //===========================================================================
-class FgDMAWriteRequest[T <: Data]
-  (config: GemminiArrayConfig[T], max_bytes: Int)
+class FgDMAStoreRequest[T <: Data]
+  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val data   = UInt((max_bytes*8).W)
+  val data   = UInt((max_xfer_bytes*8).W)
   val vaddr  = UInt(coreMaxAddrBits.W)
-  val len    = UInt(max_bytes.W)
+  val len    = UInt(log2Ceil(max_xfer_bytes+1).W)
   val status = new MStatus
-  val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMAWriteResponse(implicit p: Parameters) extends CoreBundle {
-  val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+class FgDMAStoreResponse[T <: Data](config: FgGemminiArrayConfig[T])
+  (implicit p: Parameters) extends CoreBundle {
+  import config._
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T], 
-  name: String = "stream-writer", max_bytes: Int)
+class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T], 
+  name: String = "dma-store", max_xfer_bytes: Int)
   (implicit p: Parameters) extends LazyModule {
   import config._
 
-  val node = TLHelper.makeClientNode(name, IdRange(0, MAX_DMA_REQS))
+  val node = TLHelper.makeClientNode(name, IdRange(0, DMA_REQS))
 
   lazy val module = new LazyModuleImp(this) 
     with HasCoreParameters {
@@ -145,8 +147,9 @@ class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T],
     val (tl, edge) = node.out(0)
     
     val io = IO(new Bundle {
-      val req  = Flipped(Decoupled(new FgDMAWriteRequest(config,max_bytes)))
-      val resp = Decoupled(new FgDMAWriteResponse)
+      val req  = Flipped(Decoupled(
+                    new FgDMAStoreRequest(config, max_xfer_bytes)))
+      val resp = Decoupled(new FgDMAStoreResponse(config))
       val tlb  = new FrontendTLBIO
       val busy = Output(Bool())
       val flush = Input(Bool())
@@ -163,12 +166,12 @@ class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T],
     //-----------------------------------------------
     // track outstanding requests
     //-----------------------------------------------
-    val tracker = Module(new FgDMATracker(config, max_bytes, 2))
+    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 2))
 
     //-----------------------------------------------
     // tlb translations and tilelink txn dispatch
     //-----------------------------------------------
-    val control = Module(new FgDMAControl(config, max_bytes, false))
+    val control = Module(new FgDMAControl(config, max_xfer_bytes, false))
     control.io.req    <> req
     control.io.nextid := tracker.io.nextid
     tracker.io.alloc  <> control.io.alloc
@@ -178,7 +181,7 @@ class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T],
     //-----------------------------------------------
     // track outstanding requests
     //-----------------------------------------------
-    val splitter = Module(new FgDMASplitter(config, max_bytes))
+    val splitter = Module(new FgDMASplitter(config, max_xfer_bytes))
     assert(splitter.io.req.ready === true.B, "splitter blocked on req")
     splitter.io.req.valid := io.req.valid
     splitter.io.req.bits  := io.req.bits
@@ -188,7 +191,7 @@ class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T],
     //-----------------------------------------------
     // send response when all tilelink txns are complete
     //-----------------------------------------------
-    val responder = Module(new FgDMAWriteResponder(config, max_bytes))
+    val responder = Module(new FgDMAStoreResponder(config, max_xfer_bytes))
     tracker.io.peek(1) <> responder.io.peek
     tracker.io.pop     <> responder.io.pop
     io.resp            <> responder.io.resp
@@ -202,13 +205,13 @@ class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T],
       edge.Put(
         fromSource = splitter.io.tl_a.bits.xactid,
         toAddress  = splitter.io.tl_a.bits.paddr,
-        lgSize     = splitter.io.tl_a.bits.log2_size,
+        lgSize     = splitter.io.tl_a.bits.log2_bytes,
         data       = splitter.io.tl_a.bits.data.asUInt(),
       )._2,
       edge.Put(
         fromSource = splitter.io.tl_a.bits.xactid,
         toAddress  = splitter.io.tl_a.bits.paddr,
-        lgSize     = splitter.io.tl_a.bits.log2_size,
+        lgSize     = splitter.io.tl_a.bits.log2_bytes,
         data       = splitter.io.tl_a.bits.data.asUInt(),
         mask       = splitter.io.tl_a.bits.mask.asUInt(),
       )._2)
@@ -216,8 +219,8 @@ class FgDMAWriter[T <: Data](config: GemminiArrayConfig[T],
     //-----------------------------------------------
     // tile-link D-channel response
     //-----------------------------------------------
-    responder.io.tl_d.valid := tl.d.valid
-    tl.d.ready := responder.io.tl_d.valid
+    responder.io.tl_d.valid       := tl.d.valid
+    tl.d.ready                    := responder.io.tl_d.ready
     responder.io.tl_d.bits.xactid := tl.d.bits.source
 
     //-----------------------------------------------

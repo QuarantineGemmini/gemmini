@@ -111,7 +111,6 @@ class FgTilerFSM[T <: Data : Arithmetic]
   // what the width/height of the tile is in terms of fine-grained tiles
   val FGS_LE_SQ_TILE = (0 to log2Up(SQRT_FG_NUM)).map { e=>math.pow(2,e) }
 
-
   //------------------------------------------------------------------------
   // input data-specific constants BEFORE TILE-SIZE CALCULATION
   //------------------------------------------------------------------------

@@ -11,30 +11,31 @@ import Util._
 //   for a DMA read (dram -> scratchpad)
 // - achieves max throughput of 1 resp/cycle
 //============================================================================
-class FgDMABeatMerger[T <: Data](config: GemminiArrayConfig[T], max_bytes:Int)
+class FgDMABeatMerger[T <: Data]
+  (config: GemminiArrayConfig[T], max_xfer_bytes:Int)
   (implicit p: Parameters) extends Module {
   import config._
   //---------------------------------
   // I/O interface
   //---------------------------------
   val io = IO(new Bundle {
-    val peek = new FgDMATrackerPeekIO(config)
-    val pop  = Output(Valid(UInt(LOG2_MAX_DMA_REQS.W)))
+    val peek = new FgDMATrackerPeekIO(config, max_xfer_bytes)
+    val pop  = Output(Valid(UInt(DMA_REQS_IDX.W)))
     val beat = Flipped(Decoupled(new Bundle {
-      val xactid       = UInt(LOG2_MAX_DMA_REQS.W)
-      val data         = UInt(DMA_BEAT_BITS.W)
-      val beat_idx     = UInt(LOG2_MAX_DMA_BEATS.W)
+      val xactid       = UInt(DMA_REQS_IDX.W)
+      val data         = UInt(DMA_BUS_BITS.W)
+      val beat_idx     = UInt(DMA_TXN_BEATS_IDX.W)
       val is_last_beat = Bool()
     }))
-    val resp = Decoupled(new FgStreamReadResponse(config, max_bytes))
+    val resp = Decoupled(new FgDMALoadResponse(config, max_xfer_bytes))
     val busy = Output(Bool())
   })
 
   //---------------------------------
   // internal state
   //---------------------------------
-  val data = RegInit(0.U((max_bytes*8).W))
-  val useful_bytes_merged = RegInit(0.U(LOG2_MAX_TRANSFER_BYTES.W))
+  val data = RegInit(0.U((max_xfer_bytes*8).W))
+  val useful_bytes_merged = RegInit(0.U(log2Ceil(max_xfer_bytes+1).W))
 
   //---------------------------------
   // output/next-state logic
@@ -95,4 +96,3 @@ class FgDMABeatMerger[T <: Data](config: GemminiArrayConfig[T], max_bytes:Int)
     }
   }
 }
-

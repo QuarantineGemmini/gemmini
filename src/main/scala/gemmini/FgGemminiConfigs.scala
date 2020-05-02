@@ -138,15 +138,15 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def B_SP_ROW_BYTES_IDX      = log2Up(B_SP_ROW_BYTES)
   def B_SP_ROW_BYTES_CTR      = log2Up(B_SP_ROW_BYTES+1)
 
-  def ACC_READ_ROW_BITS       = CD_ACC_ROW_ELEMS * ITYPE_BITS
-  def ACC_READ_ROW_BYTES      = CD_ACC_ROW_ELEMS * ITYPE_BYTES
-  def ACC_READ_ROW_BYTES_IDX  = log2Up(ACC_READ_ROW_BYTES)
-  def ACC_READ_ROW_BYTES_CTR  = log2Up(ACC_READ_ROW_BYTES+1)
+  def D_LOAD_ROW_BITS         = CD_ACC_ROW_ELEMS * OTYPE_BITS
+  def D_LOAD_ROW_BYTES        = CD_ACC_ROW_ELEMS * OTYPE_BYTES
+  def D_LOAD_ROW_BYTES_IDX    = log2Up(D_LOAD_ROW_BYTES)
+  def D_LOAD_ROW_BYTES_CTR    = log2Up(D_LOAD_ROW_BYTES+1)
 
-  def ACC_WRITE_ROW_BITS      = CD_ACC_ROW_ELEMS * OTYPE_BITS
-  def ACC_WRITE_ROW_BYTES     = CD_ACC_ROW_ELEMS * OTYPE_BYTES
-  def ACC_WRITE_ROW_BYTES_IDX = log2Up(ACC_WRITE_ROW_BYTES)
-  def ACC_WRITE_ROW_BYTES_CTR = log2Up(ACC_WRITE_ROW_BYTES+1)
+  def C_STORE_ROW_BITS        = CD_ACC_ROW_ELEMS * ITYPE_BITS
+  def C_STORE_ROW_BYTES       = CD_ACC_ROW_ELEMS * ITYPE_BYTES
+  def C_STORE_ROW_BYTES_IDX   = log2Up(C_STORE_ROW_BYTES)
+  def C_STORE_ROW_BYTES_CTR   = log2Up(C_STORE_ROW_BYTES+1)
   //------------------------------------------------------
   def A_SP_FG_COLS            = A_SP_FG_COLS / FG_DIM
   def A_SP_FG_COLS_IDX        = log2Up(A_SP_FG_COLS)
@@ -174,9 +174,10 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def DMA_BUS_BYTES_IDX = log2Ceil(DMA_BUS_BYTES)
   def DMA_BUS_BYTES_CTR = log2Ceil(DMA_BUS_BYTES+1)
 
-  def DMA_TXN_BYTES     = dma_max_req_bytes // in single TileLink txn
-  def DMA_TXN_BYTES_IDX = log2Ceil(DMA_TXN_BYTES)
-  def DMA_TXN_BYTES_CTR = log2Ceil(DMA_TXN_BYTES+1)
+  def DMA_TXN_BYTES         = dma_max_req_bytes // in single TileLink txn
+  def DMA_TXN_BYTES_IDX     = log2Ceil(DMA_TXN_BYTES)
+  def DMA_TXN_BYTES_CTR     = log2Ceil(DMA_TXN_BYTES+1)
+  def DMA_TXN_BYTES_CTR_IDX = log2Ceil(DMA_TXN_BYTES_CTR) // TL-A log2_size
 
   def DMA_TXN_BEATS     = MAX_DMA_BYTES / DMA_BUS_BYTES
   def DMA_TXN_BEATS_IDX = log2Ceil(DMA_TXN_BEATS)

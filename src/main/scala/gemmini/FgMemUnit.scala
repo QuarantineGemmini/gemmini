@@ -12,22 +12,13 @@ import Util._
 //===========================================================================
 // MemOpController <-> MemUnit Interfaces
 //===========================================================================
-//class FgMemUnitDMAReadReq[T <: Data](config: FgGemminiArrayConfig[T])
-//  (implicit p: Parameters) extends CoreBundle {
-//  import config._
-//  val bank         = UInt(LOG2_FG_NUM.W))
-//  val row          = UInt(LOG2_FG_DIM.W))
-//  val fg_col_start = UInt(LOG2_FG_NUM.W))
-//  val cols         = UInt(LOG2_SP_ROW_ELEMS.W))
-//}
-
 class FgMemUnitMemOpReq[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
   val lrange = new FgLocalRange(config)
   val status = new MStatus
-  val rob_id = UInt(LOG2_ROB_ENTRIES.W)
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
 class FgMemUnitMemOpResp[T <: Data](config: FgGemminiArrayConfig[T])
@@ -93,24 +84,24 @@ class FgMemUnit[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
   val id_node = TLIdentityNode()
   val xbar_node = TLXbar()
 
-  val readerA = LazyModule(new FgDMAReader(config,"readerA",A_SP_ROW_BYTES))
-  val readerB = LazyModule(new FgDMAReader(config,"readerB",B_SP_ROW_BYTES))
-  val readerD = LazyModule(new FgDMAReader(config,"readerD",D_ACC_ROW_BYTES))
-  val writerC = LazyModule(new FgDMAWriter(config,"writerC",C_SP_ROW_BYTES))
+  val loadA  = LazyModule(new FgDMALoad(config, "loadA", A_SP_ROW_BYTES))
+  val loadB  = LazyModule(new FgDMALoad(config, "loadB", B_SP_ROW_BYTES))
+  val loadD  = LazyModule(new FgDMALoad(config, "loadD", D_LOAD_ROW_BYTES))
+  val storeC = LazyModule(new FgDMAStore(config,"storeC",C_STORE_ROW_BYTES))
 
-  xbar_node := readerA.node
-  xbar_node := readerB.node
-  xbar_node := readerD.node
-  xbar_node := writerC.node
+  xbar_node := loadA.node
+  xbar_node := loadB.node
+  xbar_node := loadD.node
+  xbar_node := storeC.node
   id_node   := xbar_node
 
-  override lazy val module = new FgMemUnitModule(this, config)
+  override lazy val module = new FgMemUnitModuleImp(this, config)
 }
 
-class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
+class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   (implicit p: Parameters)
   extends LazyModuleImp(outer) with HasCoreParameters {
-  import outer.{config,readerA,readerB,readerD,writerC}
+  import outer.{config,loadA,loadB,loadD,storeC}
   import config._
   //------------------------------------------
   // I/O interface
@@ -138,32 +129,32 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
   })
 
   //--------------------------------------------
-  // setup tile-link DMA reader/writers
+  // setup tile-link DMA load/stores
   //--------------------------------------------
-  readerA.io.req <> io.dma.readA.req
-  readerB.io.req <> io.dma.readB.req
-  readerD.io.req <> io.dma.readD.req
-  //writerC.io.req <> io.dma.writeC.req
+  loadA.io.req <> io.dma.loadA.req
+  loadB.io.req <> io.dma.loadB.req
+  loadD.io.req <> io.dma.loadD.req
+  //storeC.io.req <> io.dma.writeC.req
 
-  Seq(readerA.io.resp, readerB.io.resp, readerD.io.resp).zip(
+  Seq(loadA.io.resp, loadB.io.resp, loadD.io.resp).zip(
     Seq(io.dma.readA, io.dma.readB, io.dma.readD).foreach {case(pin, port) =>
       pin.ready := port.ready
       port.valid := port.valid
       port.bits.rob_id := pin.bits.rob_id
     })
 
-  io.tlb.readA  <> readerA.io.tlb
-  io.tlb.readB  <> readerB.io.tlb
-  io.tlb.readD  <> readerD.io.tlb
-  io.tlb.writeC <> writerC.io.tlb
+  io.tlb.readA  <> loadA.io.tlb
+  io.tlb.readB  <> loadB.io.tlb
+  io.tlb.readD  <> loadD.io.tlb
+  io.tlb.writeC <> storeC.io.tlb
 
-  readerA.io.flush := io.flush
-  readerB.io.flush := io.flush
-  readerD.io.flush := io.flush
-  writerC.io.flush := io.flush
+  loadA.io.flush := io.flush
+  loadB.io.flush := io.flush
+  loadD.io.flush := io.flush
+  storeC.io.flush := io.flush
 
-  io.busy := readerA.io.busy || readerB.io.busy || 
-             readerD.io.busy || writerC.io.busy
+  io.busy := loadA.io.busy || loadB.io.busy || 
+             loadD.io.busy || storeC.io.busy
 
   //========================================================================
   {
@@ -209,9 +200,9 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     //======================================================================
     // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
     // dma-writes only do 1 row max (so it won't write to 2+ banks at once
-    val dma_wr_fire   = readerA.io.resp.fire()
-    val dma_wr_data   = readerA.io.resp.data
-    val dma_wr_lrange = readerA.io.resp.lrange
+    val dma_wr_fire   = loadA.io.resp.fire()
+    val dma_wr_data   = loadA.io.resp.data
+    val dma_wr_lrange = loadA.io.resp.lrange
     val wr_rows       = dma_wr_lrange.rows
     val wr_cols       = dma_wr_lrange.cols
     val wr_sq_col_start = dma_wr_lrange.sq_col_start
@@ -280,9 +271,9 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     //======================================================================
     // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
     // dma-writes only do 1 row max (so it won't write to 2+ banks at once
-    val dma_wr_fire     = readerA.io.resp.fire()
-    val dma_wr_data     = readerA.io.resp.data
-    val dma_wr_lrange   = readerA.io.resp.lrange
+    val dma_wr_fire     = loadA.io.resp.fire()
+    val dma_wr_data     = loadA.io.resp.data
+    val dma_wr_lrange   = loadA.io.resp.lrange
     val wr_rows         = dma_wr_lrange.rows
     val wr_cols         = dma_wr_lrange.cols
     val wr_fg_col_start = dma_wr_lrange.fg_col_start
@@ -341,9 +332,9 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     //======================================================================
     // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
     // dma-writes only do 1 row max (so it won't write to 2+ banks at once
-    val dma_wr_fire     = readerB.io.resp.fire()
-    val dma_wr_data     = readerB.io.resp.data
-    val dma_wr_lrange   = readerB.io.resp.lrange
+    val dma_wr_fire     = loadB.io.resp.fire()
+    val dma_wr_data     = loadB.io.resp.data
+    val dma_wr_lrange   = loadB.io.resp.lrange
     val wr_rows         = dma_wr_lrange.rows
     val wr_cols         = dma_wr_lrange.cols
     val wr_fg_col_start = dma_wr_lrange.fg_col_start
@@ -386,10 +377,10 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
 
     // when 'fire', this MUST NOT BLOCK when writing to the scratchpad!
     // dma-writes only do 1 row max (so it won't write to 2+ banks at once
-    readerD.io.req.ready := !ex_wr_en
-    val dma_wr_fire         = readerD.io.resp.fire()
-    val dma_wr_data         = readerD.io.resp.data
-    val dma_wr_lrange       = readerD.io.resp.lrange
+    loadD.io.req.ready := !ex_wr_en
+    val dma_wr_fire         = loadD.io.resp.fire()
+    val dma_wr_data         = loadD.io.resp.data
+    val dma_wr_lrange       = loadD.io.resp.lrange
     val dma_wr_row          = dma_wr_lrange.row
     val dma_wr_cols         = dma_wr_lrange.cols
     val dma_wr_fg_col_start = dma_wr_lrange.fg_col_start
@@ -473,7 +464,7 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_q = Module(new Queue(dma_rd_q_type))
 
     // queue accumulator read if can't send to dma-store unit this cycle
-    when (dma_rd_en_buf && (!writerC.io.req.ready || dma_rd_q.valid)) {
+    when (dma_rd_en_buf && (!storeC.io.req.ready || dma_rd_q.valid)) {
       dma_rd_q.enq.valid       := true.B
       dma_rd_q.enq.bits.data   := dma_rd_data
       dma_rd_q.enq.bits.vaddr  := dma_rd_vaddr_buf
@@ -485,20 +476,20 @@ class FgMemUnitModule[T <: Data: Arithmetic](outer: FgMemUnit[T])
 
     // send the accumulator read data or queued data to dma-store if ready
     when (dma_rd_q.deq.valid) {
-      writerC.io.req <> dma_rd_q.deq
+      storeC.io.req <> dma_rd_q.deq
     } 
-    .elsewhen (dma_rd_en_buf && writerC.io.req.ready) {
-      writerC.io.req.valid       := true.B
-      writerC.io.req.bits.data   := dma_rd_data.asUInt()
-      writerC.io.req.bits.vaddr  := dma_rd_vaddr_buf
-      writerC.io.req.bits.len    := (dma_rd_cols_buf * ITYPE_BYTES.U)
-      writerC.io.req.bits.status := dma_rd_status_buf
-      writerC.io.req.bits.rob_id := dma_rd_rob_id_buf
+    .elsewhen (dma_rd_en_buf && storeC.io.req.ready) {
+      storeC.io.req.valid       := true.B
+      storeC.io.req.bits.data   := dma_rd_data.asUInt()
+      storeC.io.req.bits.vaddr  := dma_rd_vaddr_buf
+      storeC.io.req.bits.len    := (dma_rd_cols_buf * ITYPE_BYTES.U)
+      storeC.io.req.bits.status := dma_rd_status_buf
+      storeC.io.req.bits.rob_id := dma_rd_rob_id_buf
     }
 
-    // internal dma-writer decoupled response to external store-controller
-    writerC.io.resp.ready     := io.dma.writeC.resp.ready
-    io.dma.writeC.resp.valid  := writerC.io.resp.valid
-    io.dma.writeC.resp.rob_id := writerC.io.resp.rob_id
+    // internal dma-store decoupled response to external store-controller
+    storeC.io.resp.ready     := io.dma.writeC.resp.ready
+    io.dma.writeC.resp.valid  := storeC.io.resp.valid
+    io.dma.writeC.resp.rob_id := storeC.io.resp.rob_id
   }
 }
