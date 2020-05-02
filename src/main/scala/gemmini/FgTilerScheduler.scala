@@ -141,6 +141,9 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     //======================================================================
     // debug
     //======================================================================
+    val op1 = new_entry.op1.bits
+    val op2 = new_entry.op2.bits
+    val dst = new_entry.dst.bits
     when(new_entry.is_config) {
       when (new_entry.is_loadA) {
         printf("cycle[%d], entry[%d], accept[%d], config_mvinA[stride=%x]\n", 
@@ -437,18 +440,21 @@ class FgTilerScheduler[T <: Data: Arithmetic]
   // debugging/utilization report
   //========================================================================
   val util = PopCount(entries.map(e => e.valid))
-  val util_ld_q_unissued = PopCount(entries.map(e => e.valid && 
-                                                     !e.bits.issued && 
-                                                     e.bits.q === ldq))
-  val util_st_q_unissued = PopCount(entries.map(e => e.valid && 
-                                                     !e.bits.issued && 
-                                                     e.bits.q === stq))
-  val util_ex_q_unissued = PopCount(entries.map(e => e.valid && 
-                                                     !e.bits.issued && 
-                                                     e.bits.q === exq))
-  val util_ld_q = PopCount(entries.map(e => e.valid && e.bits.q === ldq))
-  val util_st_q = PopCount(entries.map(e => e.valid && e.bits.q === stq))
-  val util_ex_q = PopCount(entries.map(e => e.valid && e.bits.q === exq))
+  val util_ldA_q_unissued = PopCount(entries.map(e => 
+                              e.valid && !e.bits.issued && e.bits.q === ldaq))
+  val util_ldB_q_unissued = PopCount(entries.map(e => 
+                              e.valid && !e.bits.issued && e.bits.q === ldbq))
+  val util_ldD_q_unissued = PopCount(entries.map(e => 
+                              e.valid && !e.bits.issued && e.bits.q === lddq))
+  val util_stC_q_unissued = PopCount(entries.map(e => 
+                              e.valid && !e.bits.issued && e.bits.q === stcq))
+  val util_ex_q_unissued = PopCount(entries.map(e => 
+                              e.valid && !e.bits.issued && e.bits.q === exq))
+  val util_ldA_q = PopCount(entries.map(e => e.valid && e.bits.q === ldaq))
+  val util_ldB_q = PopCount(entries.map(e => e.valid && e.bits.q === ldbq))
+  val util_ldD_q = PopCount(entries.map(e => e.valid && e.bits.q === lddq))
+  val util_stC_q = PopCount(entries.map(e => e.valid && e.bits.q === stcq))
+  val util_ex_q  = PopCount(entries.map(e => e.valid && e.bits.q === exq))
 
   val packed_deps = VecInit(entries.map(e => Cat(e.bits.deps)))
   dontTouch(packed_deps)
@@ -462,9 +468,11 @@ class FgTilerScheduler[T <: Data: Arithmetic]
 
   val cycles_since_issue = RegInit(0.U(32.W))
 
-  when (io.issue.load.fire() || 
-        io.issue.store.fire() || 
-        io.issue.exec.fire() || 
+  when (io.issue.loadA.fire() ||
+        io.issue.loadB.fire() ||
+        io.issue.loadD.fire() ||
+        io.issue.storeC.fire() ||
+        io.issue.exec.fire() ||
         !io.busy) {
     cycles_since_issue := 0.U
   } .elsewhen (io.busy) {
@@ -475,12 +483,16 @@ class FgTilerScheduler[T <: Data: Arithmetic]
   val cntr = Counter(10000000)
   when (cntr.inc()) {
     printf(p"Utilization: $util\n")
-    printf(p"Utilization ld q (incomplete): $util_ld_q_unissued\n")
-    printf(p"Utilization st q (incomplete): $util_st_q_unissued\n")
-    printf(p"Utilization ex q (incomplete): $util_ex_q_unissued\n")
-    printf(p"Utilization ld q: $util_ld_q\n")
-    printf(p"Utilization st q: $util_st_q\n")
-    printf(p"Utilization ex q: $util_ex_q\n")
+    printf(p"Utilization ldA q (incomplete): $util_ldA_q_unissued\n")
+    printf(p"Utilization ldB q (incomplete): $util_ldB_q_unissued\n")
+    printf(p"Utilization ldD q (incomplete): $util_ldD_q_unissued\n")
+    printf(p"Utilization stC q (incomplete): $util_stC_q_unissued\n")
+    printf(p"Utilization ex  q (incomplete): $util_ex_q_unissued\n")
+    printf(p"Utilization ldA q: $util_ldA_q\n")
+    printf(p"Utilization ldB q: $util_ldB_q\n")
+    printf(p"Utilization ldD q: $util_ldD_q\n")
+    printf(p"Utilization stC q: $util_stC_q\n")
+    printf(p"Utilization ex  q: $util_ex_q\n")
     printf(p"Packed deps: $packed_deps\n")
     printf(p"Last allocated: $last_allocated\n\n")
   }

@@ -46,16 +46,16 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   //==========================================================================
   def DIM     = dim
   def DIM_IDX = log2Up(DIM)
-  def DIM_CNT = log2Up(DIM+1)
+  def DIM_CTR = log2Up(DIM+1)
   require(DIM >= 2)
 
   // fg-array rows/cols
   def SQRT_FG_NUM     = dim / fg_dim
   def SQRT_FG_NUM_IDX = log2Up(SQRT_FG_NUM)
-  def SQRT_FG_NUM_CNT = log2Up(SQRT_FG_NUM+1)
+  def SQRT_FG_NUM_CTR = log2Up(SQRT_FG_NUM+1)
   def FG_NUM          = SQRT_FG_NUM * SQRT_FG_NUM
   def FG_NUM_IDX      = log2Up(FG_NUM)
-  def FG_NUM_CNT      = log2Up(FG_NUM+1)
+  def FG_NUM_CTR      = log2Up(FG_NUM+1)
 
   // element rows/cols per fg-tile
   def FG_DIM     = fg_dim

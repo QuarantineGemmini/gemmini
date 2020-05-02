@@ -41,17 +41,17 @@ class FgLocalRange[T <: Data](config: FgGemminiArrayConfig[T])
   def overlaps(other: FgLocalRange[T])
     = (is_acc === other.is_acc) && 
       (is_acc || (is_B_sp === other.is_B_sp)) &&
-      (bank_start <= other.bank_end) &&
-      (bank_end >= other.bank_start) &&
-      (col_start <= other.col_end) &&
-      (col_end >= other.col_start)
+      (bank_start() <= other.bank_end()) &&
+      (bank_end()   >= other.bank_start()) &&
+      (col_start()  <= other.col_end()) &&
+      (col_end()    >= other.col_start())
 
   // do two ranges have bank conflicts (both writes or both reads)
   def conflicts(other: FgLocalRange[T]) 
     = (is_acc === other.is_acc) && 
       (is_acc || (is_B_sp === other.is_B_sp)) &&
-      (bank_start <= other.bank_end) &&
-      (bank_end >= other.bank_start)
+      (bank_start() <= other.bank_end()) &&
+      (bank_end()   >= other.bank_start())
 }
 
 //===========================================================================
