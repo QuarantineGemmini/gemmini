@@ -3,9 +3,6 @@
 //============================================================================
 package gemmini
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Paths}
-
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
@@ -17,9 +14,6 @@ class FgGemmini2[T <: Data : Arithmetic]
   (opcodes: OpcodeSet, val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters)
   extends LazyRoCC(opcodes=OpcodeSet.custom3, nPTWPorts=1) {
-
-  Files.write(Paths.get(config.headerFilePath),
-              config.generateHeader().getBytes(StandardCharsets.UTF_8))
 
   override lazy val module = new FgGemminiModule2(this)
 
@@ -56,7 +50,7 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   tlb.io.exp.flush_retry := cmd_fsm.io.flush_retry
   tlb.io.exp.flush_skip  := cmd_fsm.io.flush_skip
 
-  val tiler = TilerController(config)
+  val tiler = FgTilerController(config)
   tiler.io.cmd_in <> cmd_fsm.io.tiler
 
   //=========================================================================

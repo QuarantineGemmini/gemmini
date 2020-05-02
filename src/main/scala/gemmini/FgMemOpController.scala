@@ -15,7 +15,7 @@ class FgMemOpController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   val io = IO(new Bundle {
     val cmd       = Flipped(Decoupled(new GemminiCmd(ROB_ENTRIES_IDX)))
-    val dma       = new FgMemUnitMemIO(config)
+    val dma       = new FgMemUnitMemOpIO(config)
     val completed = Decoupled(UInt(ROB_ENTRIES_IDX.W))
     val busy      = Output(Bool())
   })

@@ -104,7 +104,7 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     merger.io.beat.valid             := tl.d.valid
     merger.io.beat.bits.xactid       := tl.d.bits.source
     merger.io.beat.bits.data         := tl.d.bits.data
-    merger.io.beat.bits.beat_idx     := edge.count(tl.d) 
+    merger.io.beat.bits.beat_idx     := edge.count(tl.d)._4 
     merger.io.beat.bits.is_last_beat := edge.last(tl.d)
 
     //-----------------------------------------------
@@ -124,7 +124,7 @@ class FgDMAStoreRequest[T <: Data]
   import config._
   val data   = UInt((max_xfer_bytes*8).W)
   val vaddr  = UInt(coreMaxAddrBits.W)
-  val len    = UInt(log2Ceil(max_xfer_bytes+1).W)
+  val lrange = new FgLocalRange(config)
   val status = new MStatus
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
@@ -227,6 +227,6 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // busy tracker
     //-----------------------------------------------
-    io.busy := control.io.busy || tracker.io.busy || reponder.io.busy
+    io.busy := control.io.busy || tracker.io.busy || responder.io.busy
   }
 }

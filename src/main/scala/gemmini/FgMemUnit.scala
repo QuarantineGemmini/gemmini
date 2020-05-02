@@ -96,7 +96,7 @@ class FgMemUnit[T <: Data: Arithmetic](val config: FgGemminiArrayConfig[T])
   xbar_node := storeC.node
   id_node   := xbar_node
 
-  override lazy val module = new FgMemUnitModuleImp(this, config)
+  override lazy val module = new FgMemUnitModuleImp(this)
 }
 
 class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
@@ -123,7 +123,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val exec = new Bundle {
       val readA  = Flipped(new FgMemUnitExecReadIO(config, A_SP_FG_COLS))
       val readB  = Flipped(new FgMemUnitExecReadIO(config, B_SP_FG_COLS))
-      val storeC = Flipped(new FgMemUnitExecWriteReq(config))
+      val writeC = Flipped(new FgMemUnitExecWriteReq(config))
     }
     val acc_config = Flipped(new FgAccumulatorBankConfigIO(config))
     val busy = Output(Bool())
@@ -291,12 +291,12 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     // C/D-banks
     val banks = Seq.fill(FG_NUM) { Module(new FgAccumulatorBank(config)) }
     val bank_ios = VecInit(banks.map(_.io))
-    bank_ios.foreach { bio => bio.io.config := io.acc_config }
+    bank_ios.foreach { bio => bio.io.acc_config := io.acc_config }
  
     //--------------------------------------
     // write-datapath
     //--------------------------------------
-    val ex_wr_req          = io.exec.storeC
+    val ex_wr_req          = io.exec.writeC
     val ex_wr_en           = ex_wr_req.en
     val ex_wr_row          = ex_wr_req.row
     val ex_wr_cols         = ex_wr_req.cols
@@ -329,9 +329,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val is_writing = ex_wr_en || dma_wr_fire
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
       when (ex_wr_en) {
-        val is_active     = (ex_wr_bank_start <= i) && (i <= ex_wr_bank_end)
+        val is_active     = (ex_wr_bank_start<=i.U) && (i.U<=ex_wr_bank_end)
         val bank_offset   = i.U - ex_wr_bank_start
-        val fg_per_bank   = (FG_NUM / ex_wr_banks)
+        val fg_per_bank   = (FG_NUM.U / ex_wr_banks)
         val bits_per_bank = fg_per_bank * FG_DIM.U * OTYPE_BITS.U
         val shifted_data  = ex_wr_data >> (i.U * bits_per_bank)
 
@@ -390,6 +390,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_cols_buf   = ShiftRegister(dma_rd_cols,   2)
     val dma_rd_bank_buf   = ShiftRegister(dma_rd_bank,   2)
     val dma_rd_vaddr_buf  = ShiftRegister(dma_rd_vaddr,  2)
+    val dma_rd_lrange_buf = ShiftRegister(dma_rd_lrange, 2)
     val dma_rd_status_buf = ShiftRegister(dma_rd_status, 2)
     val dma_rd_rob_id_buf = ShiftRegister(dma_rd_rob_id, 2)
 
@@ -409,7 +410,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
                                                dma_rd_q.io.deq.valid)
     dma_rd_q.io.enq.bits.data   := dma_rd_data
     dma_rd_q.io.enq.bits.vaddr  := dma_rd_vaddr_buf
-    dma_rd_q.io.enq.bits.len    := (dma_rd_cols_buf * ITYPE_BYTES.U)
+    dma_rd_q.io.enq.bits.lrange := dma_rd_lrange_buf
     dma_rd_q.io.enq.bits.status := dma_rd_status_buf
     dma_rd_q.io.enq.bits.rob_id := dma_rd_rob_id_buf
 
@@ -421,7 +422,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
       storeC.module.io.req.valid       := dma_rd_en_buf
       storeC.module.io.req.bits.data   := dma_rd_data.asUInt()
       storeC.module.io.req.bits.vaddr  := dma_rd_vaddr_buf
-      storeC.module.io.req.bits.len    := (dma_rd_cols_buf * ITYPE_BYTES.U)
+      storeC.module.io.req.bits.lrange := dma_rd_lrange_buf
       storeC.module.io.req.bits.status := dma_rd_status_buf
       storeC.module.io.req.bits.rob_id := dma_rd_rob_id_buf
     }

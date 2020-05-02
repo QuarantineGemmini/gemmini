@@ -28,12 +28,12 @@ class FgDMASplitter[T <: Data]
     val peek = new FgDMATrackerPeekIO(config, max_xfer_bytes)
     // output beats to tl_a interface
     val tl_a = Decoupled(new Bundle {
-      val xactid    = UInt(DMA_REQS_IDX.W)
-      val paddr     = UInt(coreMaxAddrBits.W)
-      val log2_size = UInt(DMA_TXN_BYTES_CTR_IDX.W)
-      val is_full   = Bool()
-      val data      = Output(UInt((DMA_BUS_BYTES*8).W))
-      val mask      = Output(UInt(DMA_BUS_BYTES.W))
+      val xactid     = UInt(DMA_REQS_IDX.W)
+      val paddr      = UInt(coreMaxAddrBits.W)
+      val log2_bytes = UInt(DMA_TXN_BYTES_CTR_IDX.W)
+      val is_full    = Bool()
+      val data       = Output(UInt((DMA_BUS_BYTES*8).W))
+      val mask       = Output(UInt(DMA_BUS_BYTES.W))
     })
   })
 
@@ -92,13 +92,13 @@ class FgDMASplitter[T <: Data]
   //---------------------------------
   // outputs
   //---------------------------------
-  io.tl_a.valid          := false.B
-  io.tl_a.bits.is_full   := is_full
-  io.tl_a.bits.xactid    := cur_txn.xactid
-  io.tl_a.bits.paddr     := paddr
-  io.tl_a.bits.log2_size := txn_log2_bytes
-  io.tl_a.bits.data      := beat_data
-  io.tl_a.bits.mask      := beat_mask
+  io.tl_a.valid           := false.B
+  io.tl_a.bits.is_full    := is_full
+  io.tl_a.bits.xactid     := cur_txn.xactid
+  io.tl_a.bits.paddr      := paddr
+  io.tl_a.bits.log2_bytes := txn_log2_bytes
+  io.tl_a.bits.data       := beat_data
+  io.tl_a.bits.mask       := beat_mask
 
   //---------------------------------
   // next-state logic

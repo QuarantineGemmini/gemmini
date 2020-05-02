@@ -36,7 +36,7 @@ class FgDMADispatch[T <: Data](config: FgGemminiArrayConfig[T])
 // - it allocates entries in the FgDMATracker for each tilelink txn initiated
 // - achieves max throughput of 1 dispatch/cycle
 //===========================================================================
-class FgDMAControl
+class FgDMAControl[T <: Data]
   (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int, is_read_mode:Boolean)
   (implicit p: Parameters) extends CoreModule with MemoryOpConstants {
   import config._
@@ -182,7 +182,6 @@ class FgDMAControl
       }
     }
     is (s_FINISH_TRANSLATE) {
-      io.tlb.resp.ready := true.B
       when (io.tlb.resp.fire()) {
         cur_ppn := io.tlb.resp.bits.paddr(paddrBits-1, pgIdxBits)
         cur_ppn_valid := true.B
