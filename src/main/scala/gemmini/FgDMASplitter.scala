@@ -14,7 +14,7 @@ import Util._
 //============================================================================
 class FgDMASplitter[T <: Data]
   (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
-  (implicit p: Parameters) extends Module {
+  (implicit p: Parameters) extends CoreModule {
   import config._
   //---------------------------------
   // I/O interface
@@ -43,7 +43,7 @@ class FgDMASplitter[T <: Data]
   // pre-load the req, which comes in 1+ cycles before the 1st matching txn
   val req = Queue(io.req, 2)
   val cur_req = Reg(new FgDMAStoreRequest(config, max_xfer_bytes))
-  val data = cur_req.bits.data
+  val data = cur_req.data
   
   // current txn that we are splitting into beats
   val txn = Queue(io.txn, 4)
@@ -86,7 +86,7 @@ class FgDMASplitter[T <: Data]
                               Mux(beat_end_idx <= data_end_idx, 0.U,
                                   beat_start_idx - data_start_idx))
   val beat_mask = Mux(is_full || is_empty, 0.U,
-                    (((1.U << (DMA_BEAT_BYTES.U - end_mask_offset)) - 1.U) &
+                    (((1.U << (DMA_BUS_BYTES.U - end_mask_offset)) - 1.U) &
                     ~((1.U << (start_mask_offset)) - 1.U)))
  
   //---------------------------------
@@ -94,7 +94,7 @@ class FgDMASplitter[T <: Data]
   //---------------------------------
   io.tl_a.valid          := false.B
   io.tl_a.bits.is_full   := is_full
-  io.tl_a.bits.xactid    := txn.xactid
+  io.tl_a.bits.xactid    := cur_txn.xactid
   io.tl_a.bits.paddr     := paddr
   io.tl_a.bits.log2_size := log2_size
   io.tl_a.bits.data      := beat_data
@@ -103,7 +103,7 @@ class FgDMASplitter[T <: Data]
   //---------------------------------
   // next-state logic
   //---------------------------------
-  val txn_bytes_sent_next    = txn_bytes_sent + DMA_BEAT_BYTES
+  val txn_bytes_sent_next    = txn_bytes_sent + DMA_BUS_BYTES
   val useful_bytes_sent_next = useful_bytes_sent + txn_useful_bytes
   val txn_finished_next      = (txn_bytes_sent_next === txn_bytes)
   val xfer_finished_next     = (useful_bytes_sent_next === req_useful_bytes)

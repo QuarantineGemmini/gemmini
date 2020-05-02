@@ -54,7 +54,7 @@ class FgScratchpadBankWriteReq[T <: Data]
 //============================================================================
 class FgScratchpadBank[T <: Data]
   (config: FgGemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
-  (implicit p: Parameters) extends CoreBundle {
+  (implicit p: Parameters) extends CoreModule {
   import config._
   val PORT_BITS = port_fg_cols * FG_DIM * ITYPE_BITS
   val ROW_ELEMS  = fg_cols * FG_DIM
@@ -76,11 +76,12 @@ class FgScratchpadBank[T <: Data]
   val wr_row          = io.write.row
   val wr_cols         = io.write.cols
   val wr_fg_col_start = io.write.fg_col_start
-  val wr_bitshift     = (wr_fg_col_start * FG_DIM * ITYPE_BITS)
-  val wr_elemshift    = (wr_fg_col_start * FG_DIM)
+  val wr_bitshift     = (wr_fg_col_start * FG_DIM.U * ITYPE_BITS.U)
+  val wr_elemshift    = (wr_fg_col_start * FG_DIM.U)
   val wr_data         = (io.write.data << wr_bitshift).asTypeOf(
-                          Vec(ROW_ELEMS, inputType.getType))
-  val wr_mask         = ((1.U << wr_cols) - 1.U) << wr_elemshift
+                          Vec(ROW_ELEMS, inputType))
+  val wr_mask         = (((1.U << wr_cols) - 1.U) << wr_elemshift).asTypeOf(
+                          Vec(FG_DIM, Bool()))
   when (wr_en) {
     mem.write(wr_row, wr_data, wr_mask)
   }
@@ -89,11 +90,10 @@ class FgScratchpadBank[T <: Data]
   // read path
   //--------------------------------------
   val rd_row          = RegNext(io.read.req.row)
-  val rd_cols         = RegNext(io.read.cols)
-  val rd_fg_col_start = RegNext(io.read.fg_col_start)
+  val rd_fg_col_start = RegNext(io.read.req.fg_col_start)
   val rd_en           = io.read.req.en
   val rd_data         = mem.read(rd_row, rd_en).asUInt()
-  val rd_bitshift     = (rd_fg_col_start * FG_DIM * ITYPE_BITS)
+  val rd_bitshift     = (rd_fg_col_start * FG_DIM.U * ITYPE_BITS.U)
   val data_shifted    = (rd_data >> rd_bitshift)
   io.read.resp.data  := RegNext(data_shifted(PORT_BITS-1,0))
 }

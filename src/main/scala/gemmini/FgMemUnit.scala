@@ -174,7 +174,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_rd_fg_col_start = ex_rd_req.fg_col_start
     val ex_rd_bank_start   = ex_rd_req.bank_start
     val ex_rd_banks        = ex_rd_req.banks
-    assert(ex_rd_bank_start % ex_rd_banks === 0, "bank_start not aligned")
+    assert((ex_rd_bank_start % ex_rd_banks) === 0.U, "bank_start not aligned")
 
     // forward configs 2-cycle to match scratchpad latency
     val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
@@ -189,7 +189,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     // read datapath out of scratchpads and output data (2 cycle latency)
     val ex_rd_datas     = Cat(bank_ios.map { bio => bio.read.resp.data })
     val ex_rd_data_cast = ex_rd_datas.asTypeOf(UInt(AB_EXEC_PORT_BITS.W))
-    val ex_rd_bitshift  = ex_rd_bank_start_buf * FG_DIM * ITYPE_BITS
+    val ex_rd_bitshift  = ex_rd_bank_start_buf * FG_DIM.U * ITYPE_BITS.U
     io.exec.readA.resp.data := (ex_rd_data_cast >> ex_rd_bitshift)
 
     //--------------------------------------
@@ -210,14 +210,14 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     io.dma.loadA.resp.valid       := dma_wr_valid
     io.dma.loadA.resp.bits.rob_id := loadA.module.io.resp.bits.rob_id
     assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
-    assert(dma_wr_bank < FG_NUM)
+    assert(dma_wr_bank < FG_NUM.U)
 
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.write.req.en           := (dma_wr_fire && (dma_wr_bank === i))
-      bio.write.req.row          := dma_wr_row
-      bio.write.req.cols         := dma_wr_cols
-      bio.write.req.fg_col_start := dma_wr_fg_col_start
-      bio.write.req.data         := dma_wr_data
+      bio.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
+      bio.write.row          := dma_wr_row
+      bio.write.cols         := dma_wr_cols
+      bio.write.fg_col_start := dma_wr_fg_col_start
+      bio.write.data         := dma_wr_data
     }
   }
 
@@ -225,7 +225,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   {
     // B-banks
     val banks = Seq.fill(B_SP_BANKS) { 
-      Module(new FgScratchpadBank(config, B_SP_FG_COLS, B_SP_PORT_FG_COLS)) 
+      Module(new FgScratchpadBank(config, B_SP_FG_COLS, B_SP_PORT_FG_COLS))
     }
     val bank_ios = VecInit(banks.map(_.io))
 
@@ -253,7 +253,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
 
     // read datapath out of scratchpads and output data (2 cycle latency)
     val ex_rd_datas = bank_ios.map { bio => bio.read.resp.data }
-    io.exec.readB.resp.data := ex_rd_datas(ex_rd_bank_start_buf)
+    io.exec.readB.resp.data := Mux1H(ex_rd_datas.zipWithIndex.map { 
+      case (data, i) => ((ex_rd_bank_start_buf === i.U) -> data)
+    })
 
     //--------------------------------------
     // write-datapath (decoupled)
@@ -276,11 +278,11 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     assert(dma_wr_bank < 2.U)
 
     bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.write.req.en           := (dma_wr_fire && (dma_wr_bank === i))
-      bio.write.req.row          := dma_wr_row
-      bio.write.req.cols         := dma_wr_cols
-      bio.write.req.fg_col_start := dma_wr_fg_col_start
-      bio.write.req.data         := dma_wr_data
+      bio.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
+      bio.write.row          := dma_wr_row
+      bio.write.cols         := dma_wr_cols
+      bio.write.fg_col_start := dma_wr_fg_col_start
+      bio.write.data         := dma_wr_data
     }
   }
 
@@ -333,20 +335,20 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
         val bits_per_bank = fg_per_bank * FG_DIM.U * OTYPE_BITS.U
         val shifted_data  = ex_wr_data >> (i.U * bits_per_bank)
 
-        bio.write.req.en           := is_active
-        bio.write.req.row          := ex_wr_row
-        bio.write.req.cols         := ex_wr_cols
-        bio.write.req.fg_col_start := ex_wr_fg_col_start
-        bio.write.req.data         := shifted_data
-        bio.write.req.accum        := ex_wr_accum
+        bio.write.en           := is_active
+        bio.write.row          := ex_wr_row
+        bio.write.cols         := ex_wr_cols
+        bio.write.fg_col_start := ex_wr_fg_col_start
+        bio.write.data         := shifted_data
+        bio.write.accum        := ex_wr_accum
       } 
       .elsewhen (dma_wr_fire) {
-        bio.write.req.en           := (dma_wr_bank === i)
-        bio.write.req.row          := dma_wr_row
-        bio.write.req.cols         := dma_wr_cols
-        bio.write.req.fg_col_start := dma_wr_fg_col_start
-        bio.write.req.data         := dma_wr_data
-        bio.write.req.accum        := dma_wr_accum
+        bio.write.en           := (dma_wr_bank === i.U)
+        bio.write.row          := dma_wr_row
+        bio.write.cols         := dma_wr_cols
+        bio.write.fg_col_start := dma_wr_fg_col_start
+        bio.write.data         := dma_wr_data
+        bio.write.accum        := dma_wr_accum
       }
     }
 

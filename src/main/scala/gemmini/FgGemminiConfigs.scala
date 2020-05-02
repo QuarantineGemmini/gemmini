@@ -10,6 +10,9 @@ import scala.math.{pow,sqrt}
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
+import freechips.rocketchip.rocket._
+import freechips.rocketchip.subsystem._
+import freechips.rocketchip.system._
 import freechips.rocketchip.tile._
 import GemminiISA._
 
@@ -148,15 +151,15 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def C_STORE_ROW_BYTES_IDX   = log2Up(C_STORE_ROW_BYTES)
   def C_STORE_ROW_BYTES_CTR   = log2Up(C_STORE_ROW_BYTES+1)
   //------------------------------------------------------
-  def A_SP_FG_COLS            = A_SP_FG_COLS / FG_DIM
+  def A_SP_FG_COLS            = A_SP_ROW_ELEMS / FG_DIM
   def A_SP_FG_COLS_IDX        = log2Up(A_SP_FG_COLS)
   def A_SP_FG_COLS_CTR        = log2Up(A_SP_FG_COLS+1)
 
-  def B_SP_FG_COLS            = B_SP_FG_COLS / FG_DIM
+  def B_SP_FG_COLS            = B_SP_ROW_ELEMS / FG_DIM
   def B_SP_FG_COLS_IDX        = log2Up(B_SP_FG_COLS)
   def B_SP_FG_COLS_CTR        = log2Up(B_SP_FG_COLS+1)
 
-  def CD_ACC_FG_COLS          = CD_ACC_FG_COLS / FG_DIM
+  def CD_ACC_FG_COLS          = CD_ACC_ROW_ELEMS / FG_DIM
   def CD_ACC_FG_COLS_IDX      = log2Up(CD_ACC_FG_COLS)
   def CD_ACC_FG_COLS_CTR      = log2Up(CD_ACC_FG_COLS+1)
   //==========================================================================

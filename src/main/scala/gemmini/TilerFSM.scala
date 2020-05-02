@@ -19,7 +19,7 @@ class TilerFSM[T <: Data : Arithmetic]
   // interface
   //=========================================================================
   val io = IO(new Bundle {
-    val cmd_in    = Flipped(Decoupled(new TilerCmd(config)))
+    val cmd_in    = Flipped(Decoupled(new TilerCmd(LOG2_ROB_ENTRIES)))
     val sched_out = Decoupled(new RoCCCommand)
     val busy      = Output(Bool())
   })

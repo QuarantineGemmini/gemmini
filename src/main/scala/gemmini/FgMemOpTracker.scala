@@ -5,6 +5,8 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 
 class FgMemOpTracker[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends CoreModule {
@@ -29,8 +31,8 @@ class FgMemOpTracker[T <: Data](config: FgGemminiArrayConfig[T])
   }))
 
   // when a new mem-op is allocated
-  val cmd_valids = cmds.map(_.valid)
-  io.alloc.ready := cmd_valids(io.alloc.bits.rob_id)
+  val cmd_valids = VecInit(cmds.map(_.valid))
+  io.alloc.ready := !cmd_valids(io.alloc.bits.rob_id)
   when (io.alloc.fire()) {
     val rob_id = io.alloc.bits.rob_id
     cmds(rob_id).valid     := true.B
@@ -51,9 +53,9 @@ class FgMemOpTracker[T <: Data](config: FgGemminiArrayConfig[T])
   })
   io.completed.valid := cmds(cmd_completed_id).valid &&
                         cmds(cmd_completed_id).rows_left === 0.U
-  io.completed.bits.rob_id := cmd_completed_id
+  io.completed.bits := cmd_completed_id
   when (io.completed.fire()) {
-    cmds(io.completed.bits.rob_id).valid := false.B
+    cmds(io.completed.bits).valid := false.B
   }
 
   // busy logic 

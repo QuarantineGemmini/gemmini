@@ -24,7 +24,7 @@ class FgTilerController[T <: Data: Arithmetic]
       val loadA  = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
       val loadB  = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
       val loadD  = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
-      val storeD = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
+      val storeC = Decoupled(new GemminiCmd(ROB_ENTRIES_IDX))
     }
     val completed = new Bundle {
       val exec   = Flipped(Valid(UInt(ROB_ENTRIES_IDX.W)))

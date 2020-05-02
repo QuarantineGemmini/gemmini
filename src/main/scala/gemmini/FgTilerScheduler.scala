@@ -130,7 +130,7 @@ class FgTilerScheduler[T <: Data: Arithmetic]
 
     // ALL THE FOLLOWING FOR DEBUGGING ONLY
     new_entry.cmd_id      := cmd_id.value                
-    new_entry.is_config   := is_config
+    new_entry.is_config   := is_cfg
     new_entry.is_loadA    := is_loadA   || is_cfg_loadA
     new_entry.is_loadB    := is_loadB   || is_cfg_loadB
     new_entry.is_loadD    := is_loadD   || is_cfg_loadD
