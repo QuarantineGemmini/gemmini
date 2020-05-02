@@ -191,15 +191,5 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def MEM_OP_ROWS     = FG_NUM * FG_DIM
   def MEM_OP_ROWS_IDX = log2Up(MEM_OP_ROWS)
   def MEM_OP_ROWS_CTR = log2Up(MEM_OP_ROWS+1)
-
-  //def MAX_MEM_OP_ELEMS        = FG_NUM * FG_DIM
-  //def LOG2_MAX_TRANSFER_ROWS  = log2Up(MAX_TRANSFER_ROWS)
-  //def MAX_MEM_OP_BYTES        = ACC_ROW_BYTES * FG_DIM
-  //def LOG2_MAX_MEM_OP_BYTES   = log2Up(MAX_MEM_OP_BYTES+1)
-
-  //def MAX_OTYPE_TRANSFER_BYTES = FG_NUM * FG_DIM * OTYPE_BYTES
-  //def MAX_ITYPE_TRANSFER_BYTES = FG_NUM * FG_DIM * ITYPE_BYTES
-  //def MAX_TRANSFER_BITS       = MAX_TRANSFER_BYTES * 8
-  //def LOG2_MAX_TRANSFER_BYTES = log2Up(MAX_TRANSFER_BYTES+1) // count
 }
 
