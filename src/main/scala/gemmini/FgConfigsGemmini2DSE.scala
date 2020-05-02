@@ -11,20 +11,19 @@ import freechips.rocketchip.tile.{BuildRoCC, OpcodeSet}
 //============================================================================
 object FgGemmini2DSEBaseConfig {
   val baseConfig = FgGemminiArrayConfig(
-    dim               = 32,
-    fg_dim            = 8,
-    //-----------------
-    ld_queue_length   = 8,
-    st_queue_length   = 8,
-    ex_queue_length   = 8,
-    rob_entries       = 16,
-    //-----------------
-    dma_max_req_bytes = 64, // TODO: how do i change CacheBlockBytes?
-    dma_beat_bits     = 128,
-    //-----------------
-    inputType         = SInt(8.W),
-    outputType        = SInt(24.W),
-    accType           = SInt(32.W),
+    dim                 = 32,
+    fg_dim              = 8,
+    //--------------------
+    mem_op_queue_length = 8,
+    ex_queue_length     = 8,
+    rob_entries         = 16,
+    //--------------------
+    dma_max_req_bytes   = 64, // TODO: how do i change CacheBlockBytes?
+    dma_beat_bits       = 128,
+    //--------------------
+    inputType           = SInt(8.W),
+    outputType          = SInt(24.W),
+    accType             = SInt(32.W),
   )
 }
 

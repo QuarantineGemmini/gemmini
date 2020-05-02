@@ -4,9 +4,10 @@ import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.rocket._
+import freechips.rocketchip.rocket.constants.MemoryOpConstants
 import freechips.rocketchip.tile._
 import testchipip.TLHelper
-import freechips.rocketchip.rocket._
 
 import Util._
 
@@ -86,11 +87,12 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tile-link A-channel request
     //-----------------------------------------------
+    val tl_a_xactid = control.io.dispatch.bits.xactid
     tl.a.valid := control.io.dispatch.valid
     control.io.dispatch.ready := tl.a.ready
-    tracker.io.peek(1).xactid := control.io.dispatch.bits.xactid
+    tracker.io.peek(1).xactid := tl_a_xactid
     tl.a.bits := edge.Get(
-      fromSource = tracker.io.peek(1).entry.xactid,
+      fromSource = tl_a_xactid,
       toAddress  = tracker.io.peek(1).entry.paddr,
       lgSize     = tracker.io.peek(1).entry.txn_log2_bytes
     )._2

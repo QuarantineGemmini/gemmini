@@ -2,6 +2,8 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.config._
+import freechips.rocketchip.tile._
 
 class FgAccumulatorBankReadReq[T <: Data](config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
@@ -40,8 +42,8 @@ class FgAccumulatorBankWriteReq[T <: Data](config: FgGemminiArrayConfig[T])
 class FgAccumulatorBankConfigIO[T <: Data](config: FgGemminiArrayConfig[T]) 
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val shift      = Output(UInt(OTYPE_BITS_CTR.W))
-  val relu_shift = Output(UInt(OTYPE_BITS_CTR.W))
+  val shift      = Output(UInt(OTYPE_BITS_IDX.W))
+  val relu_shift = Output(UInt(OTYPE_BITS_IDX.W))
   val act        = Output(UInt(2.W))
 }
 

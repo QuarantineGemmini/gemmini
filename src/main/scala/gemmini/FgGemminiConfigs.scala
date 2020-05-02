@@ -10,6 +10,7 @@ import scala.math.{pow,sqrt}
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
+import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.system._
@@ -38,6 +39,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   ex_queue_length: Int,
   rob_entries: Int,
   //------------------------
+  dma_max_req_bytes: Int,
   dma_beat_bits: Int,
   //------------------------
   inputType: T,
@@ -195,7 +197,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def DMA_TXN_BYTES_CTR     = log2Ceil(DMA_TXN_BYTES+1)
   def DMA_TXN_BYTES_CTR_IDX = log2Ceil(DMA_TXN_BYTES_CTR) // TL-A log2_size
 
-  def DMA_TXN_BEATS     = MAX_DMA_BYTES / DMA_BUS_BYTES
+  def DMA_TXN_BEATS     = DMA_TXN_BYTES / DMA_BUS_BYTES
   def DMA_TXN_BEATS_IDX = log2Ceil(DMA_TXN_BEATS)
   def DMA_TXN_BEATS_CTR = log2Ceil(DMA_TXN_BEATS+1)
 

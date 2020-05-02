@@ -51,7 +51,7 @@ class FgDMASplitter[T <: Data]
   io.peek.xactid := cur_txn.xactid
 
   val req_useful_bytes = io.peek.entry.req_useful_bytes
-  val data_start_idx   = io.peak.entry.data_start_idx
+  val data_start_idx   = io.peek.entry.data_start_idx
   val data_end_idx     = data_start_idx + req_useful_bytes - 1.U
   val txn_useful_bytes = io.peek.entry.txn_useful_bytes
   val txn_bytes        = io.peek.entry.txn_bytes
@@ -67,12 +67,12 @@ class FgDMASplitter[T <: Data]
   // output logic
   //---------------------------------
   // calculate beat offsets into data-buffer
-  val beat_start_idx = txn_start_idx + (beat_idx * DMA_BUS_BYTES)
-  val beat_end_idx   = beat_start_idx + DMA_BUS_BYTES - 1.U
+  val beat_start_idx = txn_start_idx + (beat_idx * DMA_BUS_BYTES.U)
+  val beat_end_idx   = beat_start_idx + DMA_BUS_BYTES.U - 1.U
   val beat_data_full = Mux(beat_start_idx > data_start_idx,
                            data >> ((beat_start_idx - data_start_idx)*8.U),
                            data << ((data_start_idx - beat_start_idx)*8.U))
-  val beat_data      = beat_data_full(DMA_BEAT_BITS-1, 0)
+  val beat_data      = beat_data_full(DMA_BUS_BITS-1, 0)
 
   // beat write-mask calculations
   val is_full        = (beat_start_idx >= data_start_idx) &&
@@ -96,14 +96,14 @@ class FgDMASplitter[T <: Data]
   io.tl_a.bits.is_full   := is_full
   io.tl_a.bits.xactid    := cur_txn.xactid
   io.tl_a.bits.paddr     := paddr
-  io.tl_a.bits.log2_size := log2_size
+  io.tl_a.bits.log2_size := txn_log2_bytes
   io.tl_a.bits.data      := beat_data
   io.tl_a.bits.mask      := beat_mask
 
   //---------------------------------
   // next-state logic
   //---------------------------------
-  val txn_bytes_sent_next    = txn_bytes_sent + DMA_BUS_BYTES
+  val txn_bytes_sent_next    = txn_bytes_sent + DMA_BUS_BYTES.U
   val useful_bytes_sent_next = useful_bytes_sent + txn_useful_bytes
   val txn_finished_next      = (txn_bytes_sent_next === txn_bytes)
   val xfer_finished_next     = (useful_bytes_sent_next === req_useful_bytes)

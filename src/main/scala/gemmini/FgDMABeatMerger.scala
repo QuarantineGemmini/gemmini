@@ -45,12 +45,12 @@ class FgDMABeatMerger[T <: Data]
   val lrange           = io.peek.entry.lrange
   val rob_id           = io.peek.entry.rob_id
   val req_useful_bytes = io.peek.entry.req_useful_bytes
-  val data_start_idx   = io.peak.entry.data_start_idx
+  val data_start_idx   = io.peek.entry.data_start_idx
   val txn_useful_bytes = io.peek.entry.txn_useful_bytes
   val txn_bytes        = io.peek.entry.txn_bytes
   val txn_start_idx    = io.peek.entry.txn_start_idx
 
-  val beat_start_idx = txn_start_idx + (io.beat.bits.beat_idx * DMA_BUS_BYTES)
+  val beat_start_idx = txn_start_idx + (io.beat.bits.beat_idx*DMA_BUS_BYTES.U)
   val beat_data = io.beat.bits.data
   val data_next = data | 
                   Mux(beat_start_idx > data_start_idx,
