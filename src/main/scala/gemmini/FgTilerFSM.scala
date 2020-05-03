@@ -427,7 +427,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
                                     (g_DATAFLOW << 2) |
                                     CONFIG_EX
         sched.bits(0).rs2        := (g_RELU6_IN_LSHIFT << 32) |
-                                    g_SYSTOLIC_OUT_RSHIFT
+                                     g_SYSTOLIC_OUT_RSHIFT
         sched.bits(1).inst.funct := CONFIG_CMD
         sched.bits(1).rs1        := CONFIG_STORE
         sched.bits(1).rs2        := g_C_BYTES_PER_ROW

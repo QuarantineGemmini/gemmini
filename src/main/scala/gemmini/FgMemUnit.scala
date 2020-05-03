@@ -12,7 +12,7 @@ import Util._
 //===========================================================================
 // MemOpController <-> MemUnit Interfaces
 //===========================================================================
-class FgMemUnitMemOpReq[T <: Data](config: FgGemminiArrayConfig[T])
+class FgMemUnitMemOpReq[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
@@ -21,13 +21,13 @@ class FgMemUnitMemOpReq[T <: Data](config: FgGemminiArrayConfig[T])
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgMemUnitMemOpResp[T <: Data](config: FgGemminiArrayConfig[T])
+class FgMemUnitMemOpResp[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgMemUnitMemOpIO[T <: Data](config: FgGemminiArrayConfig[T])
+class FgMemUnitMemOpIO[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   val req  = Decoupled(new FgMemUnitMemOpReq(config))
   val resp = Flipped(Decoupled(new FgMemUnitMemOpResp(config)))
@@ -37,7 +37,7 @@ class FgMemUnitMemOpIO[T <: Data](config: FgGemminiArrayConfig[T])
 // ExecController <-> MemUnit
 //===========================================================================
 class FgMemUnitExecReadReq[T <: Data]
-  (config: FgGemminiArrayConfig[T], fg_cols: Int)
+  (val config: FgGemminiArrayConfig[T], val fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -47,21 +47,20 @@ class FgMemUnitExecReadReq[T <: Data]
   val banks        = Output(UInt(FG_NUM_CTR.W))
 }
 
-class FgMemUnitExecReadResp[T <: Data]
-  (config: FgGemminiArrayConfig[T])
+class FgMemUnitExecReadResp[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val data = Output(UInt(AB_EXEC_PORT_BITS.W))
 }
 
 class FgMemUnitExecReadIO[T <: Data]
-  (config: FgGemminiArrayConfig[T], fg_cols: Int)
+  (val config: FgGemminiArrayConfig[T], val fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   val req  = new FgMemUnitExecReadReq(config, fg_cols)
   val resp = Flipped(new FgMemUnitExecReadResp(config))
 }
 
-class FgMemUnitExecWriteReq[T <: Data](config: FgGemminiArrayConfig[T]) 
+class FgMemUnitExecWriteReq[T <: Data](val config: FgGemminiArrayConfig[T]) 
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -291,7 +290,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     // C/D-banks
     val banks = Seq.fill(FG_NUM) { Module(new FgAccumulatorBank(config)) }
     val bank_ios = VecInit(banks.map(_.io))
-    bank_ios.foreach { bio => bio.io.acc_config := io.acc_config }
+    bank_ios.foreach { bio => bio.acc_config := io.acc_config }
  
     //--------------------------------------
     // write-datapath
@@ -377,7 +376,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     assert(dma_rd_rows === 1.U, "dma cannot read >1 acc rows per request")
 
     val store_is_blocked = WireDefault(false.B)
-    io.dma.storeC.req.ready := !bank_ios(dma_rd_bank).write.req.en &&
+    io.dma.storeC.req.ready := !bank_ios(dma_rd_bank).write.en &&
                                !store_is_blocked
     val dma_rd_fire = io.dma.storeC.req.fire()
 
@@ -395,7 +394,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_rob_id_buf = ShiftRegister(dma_rd_rob_id, 2)
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val dma_rd_datas = bank_ios.map { bio => bio.read.resp.data }
+    val dma_rd_datas = VecInit(bank_ios.map { bio => bio.read.resp.data })
     val dma_rd_data  = dma_rd_datas(dma_rd_bank_buf)
 
     val dma_rd_q_type = new FgDMAStoreRequest(config, C_STORE_ROW_BYTES)

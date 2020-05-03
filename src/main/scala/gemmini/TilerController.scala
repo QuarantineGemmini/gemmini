@@ -18,7 +18,7 @@ class TilerController[T <: Data: Arithmetic]
   // Interface
   //=========================================================================
   val io = IO(new Bundle {
-    val cmd_in = Flipped(Decoupled(new TilerCmd(config)))
+    val cmd_in = Flipped(Decoupled(new TilerCmd(LOG2_OTYPE_BITS)))
     val issue = new Bundle {
       val exec  = Decoupled(new GemminiCmd(ROB_ENTRIES))
       val load  = Decoupled(new GemminiCmd(ROB_ENTRIES))

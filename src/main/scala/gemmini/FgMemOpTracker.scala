@@ -9,7 +9,7 @@ import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 
 class FgMemOpTracker[T <: Data](config: FgGemminiArrayConfig[T])
-  (implicit val p: Parameters) extends CoreModule {
+  (implicit p: Parameters) extends CoreModule {
   import config._
   //-------------------------------------------------------------------------
   // I/O interface

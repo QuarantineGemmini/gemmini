@@ -23,7 +23,7 @@ class CmdFSM[T <: Data: Arithmetic]
   //==========================================================================
   val io = IO(new Bundle {
     val cmd         = Flipped(Decoupled(new RoCCCommand))
-    val tiler       = Decoupled(new TilerCmd(config))
+    val tiler       = Decoupled(new TilerCmd(LOG2_OTYPE_BITS))
     val flush_retry = Output(Bool())
     val flush_skip  = Output(Bool())
     val busy        = Output(Bool())

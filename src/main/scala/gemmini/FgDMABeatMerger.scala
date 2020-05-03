@@ -63,12 +63,12 @@ class FgDMABeatMerger[T <: Data]
   //---------------------------------
   // output signals
   //---------------------------------
-  io.peek.xactid      := io.beat.bits.xactid
+  io.peek.xactid := io.beat.bits.xactid
 
-  io.pop.valid        := false.B
-  io.pop.xactid       := io.beat.bits.xactid
+  io.pop.valid := false.B
+  io.pop.bits  := io.beat.bits.xactid
 
-  io.beat.ready       := false.B
+  io.beat.ready := false.B
 
   io.resp.valid       := false.B
   io.resp.bits.data   := data_next

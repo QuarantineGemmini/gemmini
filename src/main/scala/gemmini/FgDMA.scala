@@ -15,7 +15,7 @@ import Util._
 // DMA read interface (dram -> scratchpad)
 // - max_xfer_bytes: max bytes read from dram in a multi-tilelink-txn request
 //===========================================================================
-class FgDMALoadRequest[T <: Data](config: FgGemminiArrayConfig[T])
+class FgDMALoadRequest[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
@@ -25,7 +25,7 @@ class FgDMALoadRequest[T <: Data](config: FgGemminiArrayConfig[T])
 }
 
 class FgDMALoadResponse[T <: Data]
-  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
+  (val config: FgGemminiArrayConfig[T], val max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val data   = UInt((max_xfer_bytes*8).W)
@@ -119,7 +119,7 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
 // - max_xfer_bytes: max bytes written to dram in a multi-tilelink-txn request
 //===========================================================================
 class FgDMAStoreRequest[T <: Data]
-  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
+  (val config: FgGemminiArrayConfig[T], val max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val data   = UInt((max_xfer_bytes*8).W)
@@ -129,7 +129,7 @@ class FgDMAStoreRequest[T <: Data]
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMAStoreResponse[T <: Data](config: FgGemminiArrayConfig[T])
+class FgDMAStoreResponse[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val rob_id = UInt(ROB_ENTRIES_IDX.W)

@@ -8,7 +8,7 @@ import GemminiISA._
 import Util._
 
 class FgMemOpController[T <: Data](config: FgGemminiArrayConfig[T])
-  (implicit val p: Parameters) extends CoreModule {
+  (implicit p: Parameters) extends CoreModule {
   import config._
   //=========================================================================
   // I/O interface

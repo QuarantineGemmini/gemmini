@@ -11,7 +11,7 @@ import Util._
 //===========================================================================
 // request to FgDMAControl to start dma write/read operation
 //===========================================================================
-class FgDMAControlRequest[T <: Data](config: FgGemminiArrayConfig[T])
+class FgDMAControlRequest[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val vaddr  = UInt(coreMaxAddrBits.W)
@@ -23,7 +23,7 @@ class FgDMAControlRequest[T <: Data](config: FgGemminiArrayConfig[T])
 //===========================================================================
 // request from FgDMAControl to the circuit that sends tilelink-A reqs
 //===========================================================================
-class FgDMADispatch[T <: Data](config: FgGemminiArrayConfig[T])
+class FgDMADispatch[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val xactid = UInt(DMA_REQS_IDX.W)
@@ -76,7 +76,7 @@ class FgDMAControl[T <: Data]
   val cur_vaddr     = RegInit(0.U(coreMaxAddrBits.W))
   val cur_vpn       = cur_vaddr(coreMaxAddrBits-1, pgIdxBits)
   val cur_ppn       = RegInit(0.U((coreMaxAddrBits - pgIdxBits).W))
-  val cur_ppn_valid = withReset(io.flush.toBool()) { RegInit(false.B) }
+  val cur_ppn_valid = withReset(io.flush.asBool()) { RegInit(false.B) }
   val cur_paddr     = Cat(cur_ppn, cur_vaddr(pgIdxBits-1, 0))
 
   io.tlb.req.valid                    := false.B
@@ -119,7 +119,7 @@ class FgDMAControl[T <: Data]
   val cur_txn_bytes      = best_txn.bytes
   val cur_txn_log2_bytes = best_txn.log2_bytes
   val cur_data_start_idx = best_txn.data_start_idx
-  val cur_paddr          = best_txn.paddr
+  val cur_aligned_paddr  = best_txn.paddr
 
   //-----------------------------------------------
   // allocate new tag for the tile-link request
@@ -136,7 +136,7 @@ class FgDMAControl[T <: Data]
   io.alloc.bits.txn_start_idx    := total_bytes_requested
   io.alloc.bits.txn_bytes        := cur_txn_bytes
   io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
-  io.alloc.bits.paddr            := cur_paddr
+  io.alloc.bits.paddr            := cur_aligned_paddr
 
   // output transaction towards tile-link A-channel
   io.dispatch.valid       := false.B

@@ -14,13 +14,10 @@ import GemminiISA._
 //===========================================================================
 // From ROB to {exec,load,store,flush} units
 //===========================================================================
-class GemminiCmd(ROB_ENTRIES_IDX: Int)
-  (implicit p: Parameters) extends Bundle {
+class GemminiCmd(val ROB_ENTRIES_IDX: Int)
+  (implicit p: Parameters) extends CoreBundle {
   val cmd = new RoCCCommand
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
-
-  override def cloneType: this.type 
-    = (new GemminiCmd(ROB_ENTRIES_IDX)).asInstanceOf[this.type]
 }
 
 //===========================================================================

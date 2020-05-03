@@ -12,7 +12,7 @@ import gemmini.Util._
 //   sent/recieved NOT useful bytes
 //===========================================================================
 class FgDMATrackerEntry[T <: Data]
-  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
+  (val config: FgGemminiArrayConfig[T], val max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   // same for all txns in a req
@@ -32,7 +32,7 @@ class FgDMATrackerEntry[T <: Data]
 // Tracker Interfaces
 //===========================================================================
 class FgDMATrackerPeekIO[T <: Data]
-  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
+  (val config: FgGemminiArrayConfig[T], val max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle { 
   import config._
   val xactid = Output(UInt(DMA_REQS_IDX.W))
@@ -79,7 +79,7 @@ class FgDMATracker[T <: Data]
   }
 
   // interface to peekers
-  for (i <- 0 to peeks) {
+  for (i <- 0 until peeks) {
     io.peek(i).entry := entries(io.peek(i).xactid).bits
   }
 

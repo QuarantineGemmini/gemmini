@@ -5,7 +5,7 @@ import chisel3.util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 
-class FgAccumulatorBankReadReq[T <: Data](config: FgGemminiArrayConfig[T])
+class FgAccumulatorBankReadReq[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -13,19 +13,19 @@ class FgAccumulatorBankReadReq[T <: Data](config: FgGemminiArrayConfig[T])
   val fg_col_start = Output(UInt(FG_NUM_IDX.W))
 }
 
-class FgAccumulatorBankReadResp[T <: Data](config: FgGemminiArrayConfig[T])
+class FgAccumulatorBankReadResp[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val data = Output(UInt(C_STORE_ROW_BITS.W))
 }
 
-class FgAccumulatorBankReadIO[T <: Data](config: FgGemminiArrayConfig[T])
+class FgAccumulatorBankReadIO[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   val req = new FgAccumulatorBankReadReq(config)
   val resp = Flipped(new FgAccumulatorBankReadResp(config))
 }
 
-class FgAccumulatorBankWriteReq[T <: Data](config: FgGemminiArrayConfig[T])
+class FgAccumulatorBankWriteReq[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -39,12 +39,13 @@ class FgAccumulatorBankWriteReq[T <: Data](config: FgGemminiArrayConfig[T])
 //============================================================================
 // accumulator configuration
 //============================================================================
-class FgAccumulatorBankConfigIO[T <: Data](config: FgGemminiArrayConfig[T]) 
+class FgAccumulatorBankConfigIO[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val shift       = Output(UInt(OTYPE_BITS_IDX.W))
-  val relu6_shift = Output(UInt(OTYPE_BITS_IDX.W))
-  val act         = Output(UInt(2.W))
+  val in_rshift    = Output(UInt(OTYPE_BITS_IDX.W))
+  val acc_rshift   = Output(UInt(OTYPE_BITS_IDX.W))
+  val relu6_lshift = Output(UInt(OTYPE_BITS_IDX.W))
+  val act          = Output(UInt(2.W))
 }
 
 //==========================================================================
@@ -64,6 +65,11 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
     val acc_config = Flipped(new FgAccumulatorBankConfigIO(config))
   })
   val mem = SyncReadMem(FG_DIM, ROW_TYPE)
+
+  val in_rshift    = io.acc_config.in_rshift
+  val acc_rshift   = io.acc_config.acc_rshift
+  val relu6_lshift = io.acc_config.relu6_lshift
+  val activation   = io.acc_config.act
 
   //-------------------------------------
   // unpack write signals
@@ -85,9 +91,6 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   val rd_en           = io.read.req.en
   val rd_row          = io.read.req.row
   val rd_fg_col_start = io.read.req.fg_col_start
-  val rd_shift        = io.acc_config.shift
-  val rd_relu6_shift  = io.acc_config.relu6_shift
-  val rd_act          = io.acc_config.act
 
   //-------------------------------------
   // read from bank (for read or write req)
@@ -116,19 +119,16 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   val rd_en_buf           = ShiftRegister(rd_en,           1)
   val rd_row_buf          = ShiftRegister(rd_row,          1)
   val rd_fg_col_start_buf = ShiftRegister(rd_fg_col_start, 1)
-  val rd_shift_buf        = ShiftRegister(rd_shift,        1)
-  val rd_relu6_shift_buf  = ShiftRegister(rd_relu6_shift,  1)
-  val rd_act_buf          = ShiftRegister(rd_act,          1)
 
   val rd_elemshift    = rd_fg_col_start_buf * FG_DIM.U
   val rd_bitshift     = rd_elemshift * ITYPE_BITS.U
   val rd_shifted_data = (bank_rdata.asUInt()>>rd_bitshift).asTypeOf(ROW_TYPE)
 
   val activated_rdata = WireInit(VecInit(rd_shifted_data.map(e => {
-    val e_clipped = (e >> rd_shift_buf).clippedToWidthOf(inputType)
+    val e_clipped = (e >> acc_rshift).clippedToWidthOf(inputType)
     val e_act = MuxCase(e_clipped, Seq(
-      (rd_act_buf === Activation.RELU) -> e_clipped.relu,
-      (rd_act_buf === Activation.RELU6) -> e_clipped.relu6(rd_relu6_shift_buf)
+      (activation === Activation.RELU) -> e_clipped.relu,
+      (activation === Activation.RELU6) -> e_clipped.relu6(relu6_lshift)
     ))
     e_act
   })))

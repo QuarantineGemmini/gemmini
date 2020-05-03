@@ -79,7 +79,7 @@ class FgTilerScheduler[T <: Data: Arithmetic]
   //=========================================================================
   // accept new commands
   //=========================================================================
-  val last_allocated = Reg(0.U(log2Up(ROB_ENTRIES).W))
+  val last_allocated = RegInit(0.U(ROB_ENTRIES_IDX.W))
 
   val new_entry = Wire(new Entry)
   new_entry := DontCare

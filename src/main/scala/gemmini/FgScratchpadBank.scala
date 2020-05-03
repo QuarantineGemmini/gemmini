@@ -11,7 +11,7 @@ import Util._
 // internal scratchpad bank interfaces (all non-decoupled)
 //===========================================================================
 class FgScratchpadBankReadReq[T <: Data]
-  (config: FgGemminiArrayConfig[T], fg_cols: Int)
+  (val config: FgGemminiArrayConfig[T], val fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val en           = Output(Bool())
@@ -20,7 +20,7 @@ class FgScratchpadBankReadReq[T <: Data]
 }
 
 class FgScratchpadBankReadResp[T <: Data]
-  (config: FgGemminiArrayConfig[T], port_fg_cols: Int)
+  (val config: FgGemminiArrayConfig[T], val port_fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val PORT_BITS = port_fg_cols * FG_DIM * ITYPE_BITS
@@ -28,14 +28,14 @@ class FgScratchpadBankReadResp[T <: Data]
 }
 
 class FgScratchpadBankReadIO[T <: Data]
-  (config: FgGemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (val config:FgGemminiArrayConfig[T], val fg_cols:Int, val port_fg_cols:Int)
   (implicit p: Parameters) extends CoreBundle {
   val req  = new FgScratchpadBankReadReq(config, fg_cols)
   val resp = Flipped(new FgScratchpadBankReadResp(config, port_fg_cols))
 }
 
 class FgScratchpadBankWriteReq[T <: Data]
-  (config: FgGemminiArrayConfig[T], fg_cols: Int, port_fg_cols: Int)
+  (val config:FgGemminiArrayConfig[T], val fg_cols:Int, val port_fg_cols:Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val PORT_ELEMS = port_fg_cols * FG_DIM

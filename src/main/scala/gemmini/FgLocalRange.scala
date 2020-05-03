@@ -9,7 +9,7 @@ import Util._
 //===========================================================================
 // represents a 2-D array of rows/cols in a scratchpad/accumulator
 //===========================================================================
-class FgLocalRange[T <: Data](config: FgGemminiArrayConfig[T])
+class FgLocalRange[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val rows         = UInt(16.W)
