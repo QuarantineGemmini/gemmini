@@ -16,6 +16,7 @@ class FgDMASplitter[T <: Data]
   (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreModule {
   import config._
+  val max_xfer_bits = max_xfer_bytes*8
   //---------------------------------
   // I/O interface
   //---------------------------------
@@ -42,11 +43,13 @@ class FgDMASplitter[T <: Data]
   //---------------------------------
   // pre-load the req, which comes in 1+ cycles before the 1st matching txn
   val req = Queue(io.req, 2)
+  req.ready := false.B
   val cur_req = Reg(new FgDMAStoreRequest(config, max_xfer_bytes))
   val data = cur_req.data
   
   // current txn that we are splitting into beats
   val txn = Queue(io.txn, 4)
+  txn.ready := false.B
   val cur_txn = Reg(new FgDMADispatch(config))
   io.peek.xactid := cur_txn.xactid
 
@@ -69,25 +72,38 @@ class FgDMASplitter[T <: Data]
   // calculate beat offsets into data-buffer
   val beat_start_idx = txn_start_idx + (beat_idx * DMA_BUS_BYTES.U)
   val beat_end_idx   = beat_start_idx + DMA_BUS_BYTES.U - 1.U
+
+  // firrtl requires < 20 bits to represent the shift-amount
+  val lshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
+  val rshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
+  lshift_bits := (data_start_idx - beat_start_idx)*8.U
+  rshift_bits := (beat_start_idx - data_start_idx)*8.U
+
   val beat_data_full = Mux(beat_start_idx > data_start_idx,
-                           data >> ((beat_start_idx - data_start_idx)*8.U),
-                           data << ((data_start_idx - beat_start_idx)*8.U))
-  val beat_data      = beat_data_full(DMA_BUS_BITS-1, 0)
+                           data >> rshift_bits,
+                           data << lshift_bits)
+  val beat_data = beat_data_full(DMA_BUS_BITS-1, 0)
 
   // beat write-mask calculations
-  val is_full        = (beat_start_idx >= data_start_idx) &&
-                       (beat_end_idx   <= data_end_idx)
-  val is_empty       = (beat_start_idx  > data_end_idx) ||
-                       (beat_end_idx    < data_start_idx)
+  val is_full  = (beat_start_idx >= data_start_idx) &&
+                 (beat_end_idx   <= data_end_idx)
+  val is_empty = (beat_start_idx  > data_end_idx) ||
+                 (beat_end_idx    < data_start_idx)
   val start_mask_offset = Mux(is_full || is_empty, 0.U, 
                               Mux(beat_start_idx >= data_start_idx, 0.U,
                                   data_start_idx - beat_start_idx))
   val end_mask_offset   = Mux(is_full || is_empty, 0.U, 
                               Mux(beat_end_idx <= data_end_idx, 0.U,
                                   beat_start_idx - data_start_idx))
+
+  // firrtl requires < 20 bits to represent the shift-amount
+  val p1_mask_bits = Wire(UInt(log2Ceil(max_xfer_bytes+1).W))
+  val p2_mask_bits = Wire(UInt(log2Ceil(max_xfer_bytes+1).W))
+  p1_mask_bits := DMA_BUS_BYTES.U - end_mask_offset
+  p2_mask_bits := start_mask_offset
   val beat_mask = Mux(is_full || is_empty, 0.U,
-                    (((1.U << (DMA_BUS_BYTES.U - end_mask_offset)) - 1.U) &
-                    ~((1.U << (start_mask_offset)) - 1.U)))
+                      (((1.U << p1_mask_bits) - 1.U) & 
+                      ~((1.U << p2_mask_bits) - 1.U)))
  
   //---------------------------------
   // outputs

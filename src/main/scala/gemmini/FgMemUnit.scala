@@ -161,7 +161,6 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val banks = Seq.fill(A_SP_BANKS) { 
       Module(new FgScratchpadBank(config, A_SP_FG_COLS, A_SP_PORT_FG_COLS)) 
     }
-    val bank_ios = VecInit(banks.map(_.io))
 
     //--------------------------------------
     // read-datapath (2-cycle non-decoupled)
@@ -179,14 +178,14 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
 
     // datapath into scratchpads
-    bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.read.req.en           := ex_rd_en
-      bio.read.req.row          := ex_rd_row
-      bio.read.req.fg_col_start := ex_rd_fg_col_start
+    banks.zipWithIndex.foreach { case (bank, i) =>
+      bank.io.read.req.en           := ex_rd_en
+      bank.io.read.req.row          := ex_rd_row
+      bank.io.read.req.fg_col_start := ex_rd_fg_col_start
     }
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val ex_rd_datas     = Cat(bank_ios.map { bio => bio.read.resp.data })
+    val ex_rd_datas     = Cat(banks.map { bank => bank.io.read.resp.data })
     val ex_rd_data_cast = ex_rd_datas.asTypeOf(UInt(AB_EXEC_PORT_BITS.W))
     val ex_rd_bitshift  = ex_rd_bank_start_buf * FG_DIM.U * ITYPE_BITS.U
     io.exec.readA.resp.data := (ex_rd_data_cast >> ex_rd_bitshift)
@@ -211,12 +210,12 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
     assert(dma_wr_bank < FG_NUM.U)
 
-    bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
-      bio.write.row          := dma_wr_row
-      bio.write.cols         := dma_wr_cols
-      bio.write.fg_col_start := dma_wr_fg_col_start
-      bio.write.data         := dma_wr_data
+    banks.zipWithIndex.foreach { case (bank, i) =>
+      bank.io.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
+      bank.io.write.row          := dma_wr_row
+      bank.io.write.cols         := dma_wr_cols
+      bank.io.write.fg_col_start := dma_wr_fg_col_start
+      bank.io.write.data         := dma_wr_data
     }
   }
 
@@ -226,7 +225,6 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val banks = Seq.fill(B_SP_BANKS) { 
       Module(new FgScratchpadBank(config, B_SP_FG_COLS, B_SP_PORT_FG_COLS))
     }
-    val bank_ios = VecInit(banks.map(_.io))
 
     //--------------------------------------
     // read-datapath (2-cycles non-decoupled)
@@ -244,14 +242,14 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
 
     // datapath into scratchpads
-    bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.read.req.en           := ex_rd_en
-      bio.read.req.row          := ex_rd_row
-      bio.read.req.fg_col_start := ex_rd_fg_col_start
+    banks.zipWithIndex.foreach { case (bank, i) =>
+      bank.io.read.req.en           := ex_rd_en
+      bank.io.read.req.row          := ex_rd_row
+      bank.io.read.req.fg_col_start := ex_rd_fg_col_start
     }
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val ex_rd_datas = bank_ios.map { bio => bio.read.resp.data }
+    val ex_rd_datas = banks.map { bank => bank.io.read.resp.data }
     io.exec.readB.resp.data := Mux1H(ex_rd_datas.zipWithIndex.map { 
       case (data, i) => ((ex_rd_bank_start_buf === i.U) -> data)
     })
@@ -276,12 +274,12 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
     assert(dma_wr_bank < 2.U)
 
-    bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
-      bio.write.row          := dma_wr_row
-      bio.write.cols         := dma_wr_cols
-      bio.write.fg_col_start := dma_wr_fg_col_start
-      bio.write.data         := dma_wr_data
+    banks.zipWithIndex.foreach { case (bank, i) =>
+      bank.io.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
+      bank.io.write.row          := dma_wr_row
+      bank.io.write.cols         := dma_wr_cols
+      bank.io.write.fg_col_start := dma_wr_fg_col_start
+      bank.io.write.data         := dma_wr_data
     }
   }
 
@@ -289,8 +287,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   {
     // C/D-banks
     val banks = Seq.fill(FG_NUM) { Module(new FgAccumulatorBank(config)) }
-    val bank_ios = VecInit(banks.map(_.io))
-    bank_ios.foreach { bio => bio.acc_config := io.acc_config }
+    banks.foreach { bank => bank.io.acc_config := io.acc_config }
  
     //--------------------------------------
     // write-datapath
@@ -326,7 +323,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     assert(dma_wr_rows === 1.U, "dma cannot write >1 row at a time")
 
     val is_writing = ex_wr_en || dma_wr_fire
-    bank_ios.zipWithIndex.foreach { case (bio, i) =>
+    banks.zipWithIndex.foreach { case (bank, i) =>
       when (ex_wr_en) {
         val is_active     = (ex_wr_bank_start<=i.U) && (i.U<=ex_wr_bank_end)
         val bank_offset   = i.U - ex_wr_bank_start
@@ -334,20 +331,19 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
         val bits_per_bank = fg_per_bank * FG_DIM.U * OTYPE_BITS.U
         val shifted_data  = ex_wr_data >> (i.U * bits_per_bank)
 
-        bio.write.en           := is_active
-        bio.write.row          := ex_wr_row
-        bio.write.cols         := ex_wr_cols
-        bio.write.fg_col_start := ex_wr_fg_col_start
-        bio.write.data         := shifted_data
-        bio.write.accum        := ex_wr_accum
-      } 
-      .elsewhen (dma_wr_fire) {
-        bio.write.en           := (dma_wr_bank === i.U)
-        bio.write.row          := dma_wr_row
-        bio.write.cols         := dma_wr_cols
-        bio.write.fg_col_start := dma_wr_fg_col_start
-        bio.write.data         := dma_wr_data
-        bio.write.accum        := dma_wr_accum
+        bank.io.write.en           := is_active
+        bank.io.write.row          := ex_wr_row
+        bank.io.write.cols         := ex_wr_cols
+        bank.io.write.fg_col_start := ex_wr_fg_col_start
+        bank.io.write.data         := shifted_data
+        bank.io.write.accum        := ex_wr_accum
+      } .otherwise {
+        bank.io.write.en           := dma_wr_fire && (dma_wr_bank === i.U)
+        bank.io.write.row          := dma_wr_row
+        bank.io.write.cols         := dma_wr_cols
+        bank.io.write.fg_col_start := dma_wr_fg_col_start
+        bank.io.write.data         := dma_wr_data
+        bank.io.write.accum        := dma_wr_accum
       }
     }
 
@@ -376,14 +372,16 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     assert(dma_rd_rows === 1.U, "dma cannot read >1 acc rows per request")
 
     val store_is_blocked = WireDefault(false.B)
-    io.dma.storeC.req.ready := !bank_ios(dma_rd_bank).write.en &&
-                               !store_is_blocked
+    io.dma.storeC.req.ready := MuxCase(false.B, 
+      banks.zipWithIndex.map { case(bank, i) => 
+        (dma_rd_bank === i.U) -> (!bank.io.write.en && !store_is_blocked)
+      })
     val dma_rd_fire = io.dma.storeC.req.fire()
 
-    bank_ios.zipWithIndex.foreach { case (bio, i) =>
-      bio.read.req.en           := dma_rd_fire && (dma_rd_bank === i.U)
-      bio.read.req.row          := dma_rd_row
-      bio.read.req.fg_col_start := dma_rd_fg_col_start
+    banks.zipWithIndex.foreach { case (bank, i) =>
+      bank.io.read.req.en           := dma_rd_fire && (dma_rd_bank === i.U)
+      bank.io.read.req.row          := dma_rd_row
+      bank.io.read.req.fg_col_start := dma_rd_fg_col_start
     }
     val dma_rd_en_buf     = ShiftRegister(dma_rd_fire,   2)
     val dma_rd_cols_buf   = ShiftRegister(dma_rd_cols,   2)
@@ -394,11 +392,12 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_rob_id_buf = ShiftRegister(dma_rd_rob_id, 2)
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val dma_rd_datas = VecInit(bank_ios.map { bio => bio.read.resp.data })
+    val dma_rd_datas = VecInit(banks.map { bank => bank.io.read.resp.data })
     val dma_rd_data  = dma_rd_datas(dma_rd_bank_buf)
 
     val dma_rd_q_type = new FgDMAStoreRequest(config, C_STORE_ROW_BYTES)
     val dma_rd_q = Module(new Queue(dma_rd_q_type, 3))
+    dma_rd_q.io.deq.ready := false.B
 
     // we can only be SURE that the io.dma.storeC.req can be handled 2 cycles
     // later if the queue has a slot open for it if the dma engine blocks

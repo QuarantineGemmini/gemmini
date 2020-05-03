@@ -16,6 +16,7 @@ class FgDMABeatMerger[T <: Data]
   (config: FgGemminiArrayConfig[T], max_xfer_bytes:Int)
   (implicit p: Parameters) extends Module {
   import config._
+  val max_xfer_bits = max_xfer_bytes*8
   //---------------------------------
   // I/O interface
   //---------------------------------
@@ -35,7 +36,7 @@ class FgDMABeatMerger[T <: Data]
   //---------------------------------
   // internal state
   //---------------------------------
-  val data = RegInit(0.U((max_xfer_bytes*8).W))
+  val data = RegInit(0.U((max_xfer_bits).W))
   val useful_bytes_merged = RegInit(0.U(log2Ceil(max_xfer_bytes+1).W))
 
   //---------------------------------
@@ -52,10 +53,16 @@ class FgDMABeatMerger[T <: Data]
 
   val beat_start_idx = txn_start_idx + (io.beat.bits.beat_idx*DMA_BUS_BYTES.U)
   val beat_data = io.beat.bits.data
-  val data_next = data | 
-                  Mux(beat_start_idx > data_start_idx,
-                    beat_data << ((beat_start_idx - data_start_idx)*8.U),
-                    beat_data >> ((data_start_idx - beat_start_idx)*8.U))
+
+  // firrtl requires < 20 bits to represent the shift-amount
+  val lshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
+  val rshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
+  lshift_bits := (beat_start_idx - data_start_idx)*8.U
+  rshift_bits := (data_start_idx - beat_start_idx)*8.U
+
+  val data_next = data | Mux(beat_start_idx > data_start_idx,
+                             beat_data << lshift_bits,
+                             beat_data >> rshift_bits)
 
   val is_last_beat_in_txn = io.beat.bits.is_last_beat
   val useful_bytes_merged_next = useful_bytes_merged + txn_useful_bytes

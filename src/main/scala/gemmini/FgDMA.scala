@@ -187,7 +187,7 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     splitter.io.req.valid := io.req.valid
     splitter.io.req.bits  := io.req.bits
     splitter.io.txn       <> control.io.dispatch
-    tracker.io.peek(0)    <> splitter.io.txn
+    tracker.io.peek(0)    <> splitter.io.peek
 
     //-----------------------------------------------
     // send response when all tilelink txns are complete

@@ -41,7 +41,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   })
 
   io.cmd.ready        := DontCare
+  io.readA.req        := DontCare
   io.readA.resp.data  := DontCare
+  io.readB.req        := DontCare
   io.readB.resp.data  := DontCare
   io.writeC           := DontCare
   io.acc_config       := DontCare
