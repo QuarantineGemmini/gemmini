@@ -24,8 +24,8 @@ class FgMesh[T <: Data : Arithmetic](config: GemminiConfig[T])
 
 
   val io = IO(new Bundle {
-    val a = Flipped(Decoupled(ROW_TYPE))
-    val b = Flipped(Decoupled(COL_TYPE))
+    val a = Flipped(Valid(ROW_TYPE))
+    val b = Flipped(Valid(COL_TYPE))
     val a_mux_ctrl = UInt(FG_NUM.W)
     val b_mux_ctrl = UInt(FG_NUM.W)
     val tag_in = Flipped(Decoupled(new MeshQueueTag2(config)))

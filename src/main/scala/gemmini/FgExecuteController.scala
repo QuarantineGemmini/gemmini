@@ -22,7 +22,7 @@ import GemminiISA._
 import Util._
 
 class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
-  (implicit val p: Parameters, ev: Arithmetic[T]) 
+  (implicit val p: Parameters, ev: Arithmetic[T])
   extends Module with HasCoreParameters {
   import config._
   import ev._
@@ -196,23 +196,24 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   // TODO: generate list of powers-of-2 up to FG_NUM
   val mesh_partition_list = Seq(1, 2, 4, 8, 16)
 
-  val b_fg_arrange = Vec(FG_NUM, Bool())
-  val a_fg_arrange = Vec(FG_NUM, Bool())
+  val b_fg_mux_cntl = Vec(FG_NUM, Bool())
+  val a_fg_mux_cntl = Vec(FG_NUM, Bool())
 
+  //TODO this needs to not change when computing in the mesh
   // Bucket the computation for assigning to FG arrays
   for (i <- 0 until mesh_partition_list.length) {
-    when (b_cols < (mesh_partition_list(i) * FG_DIM).U) {
-      b_fg_arrange(i) := true.B
+    when (b_cols > (mesh_partition_list(i) * FG_DIM).U) {
+      b_fg_mux_cntl(i) := true.B
     } .otherwise {
-      b_fg_arrange(i) := false.B
+      b_fg_mux_cntl(i) := false.B
     }
   }
 
   for (i <- 0 until mesh_partition_list.length) {
-    when (a_rows < mesh_partition_list(i).U) {
-      a_fg_arrange(i) := true.B
+    when (a_rows > mesh_partition_list(i).U) {
+      a_fg_mux_cntl(i) := true.B
     } .otherwise {
-      a_fg_arrange(i) := false.B
+      a_fg_mux_cntl(i) := false.B
     }
   }
 
@@ -527,8 +528,8 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
     assert(mesh.io.tag_in.fire(), "could not write tag_in to mesh!")
   }
 
-  mesh.io.a_mux_ctrl := a_fg_arrange
-  mesh.io.b_mux_ctrl := b_fg_arrange
+  mesh.io.a_mux_ctrl := a_fg_mux_cntl
+  mesh.io.b_mux_ctrl := b_fg_mux_cntl
 
   //TODO check this operation (just write every cycle in this case)
   cntlq_out.ready := state === s_PRELOAD ||
@@ -608,7 +609,11 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //  e_act
   //})))
 
-  //TODO add ACC_CONFIG connections
+  //TODO add in_rshift to acc_config connection
+  io.acc_config.in_rshift :=
+  io.acc_config.acc_shift := acc_shift
+  io.acc_config.relu6_lshift := relu6_shift
+  io.acc_config.act := activation
 
   //TODO fix type and deal with activation
   io.writeC.data := mesh.io.out.bits
