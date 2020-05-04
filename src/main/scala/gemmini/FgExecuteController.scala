@@ -86,18 +86,19 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   val mesh_partition_list = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
-  val a_fg_mux_ctrl = VecInit(Seq.fill(FG_NUM)(false.B))
-  val b_fg_mux_ctrl = VecInit(Seq.fill(FG_NUM)(false.B))
+  //val a_fg_mux_ctrl = VecInit(Seq.fill(FG_NUM)(false.B))
+  //val b_fg_mux_ctrl = VecInit(Seq.fill(FG_NUM)(false.B))
+
+  val a_fg_mux_ctrl = Vec(mesh_partition_list.length, Bool()))
+  val b_fg_mux_ctrl = Vec(mesh_partition_list.length, Bool()))
 
   //TODO this needs to not change when computing in the mesh
   // Bucket the computation for assigning to FG arrays
-//  for (i <- 0 until mesh_partition_list.length) {
-//    b_fg_mux_ctrl(i) := (b_lrange.cols > (mesh_partition_list(i) * FG_DIM).U)
-//  }
-//
-//  for (i <- 0 until mesh_partition_list.length) {
-//    a_fg_mux_ctrl(i) := (a_lrange.rows > mesh_partition_list(i).U)
-//  }
+  for (i <- 0 until mesh_partition_list.length) {
+    b_fg_mux_ctrl(i) := (b_lrange.cols > (mesh_partition_list(i) * FG_DIM).U)
+    a_fg_mux_ctrl(i) := (a_lrange.rows > (mesh_partition_list(i) * FG_DIM).U)
+  }
+
 
   //=========================================================================
   // fix-latency scratchpad-inputs read
@@ -235,13 +236,13 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   }
 
   //=========================================================================
-  // mesh-ctrl input signals 
+  // mesh-ctrl input signals
   // - buffer all mesh-ctrl signals for 2 cycles (sp delay is fixed 2-cycles)
   //=========================================================================
   class ComputeCntrlSignals extends Bundle {
     val in_valid      = Bool()
-    val a_fg_mux_ctrl = Vec(FG_NUM, Bool())
-    val b_fg_mux_ctrl = Vec(FG_NUM, Bool())
+    val a_fg_mux_ctrl = Vec(mesh_partition_list.length, Bool())
+    val b_fg_mux_ctrl = Vec(mesh_partition_list.length, Bool())
     val rob_id        = UInt(ROB_ENTRIES_IDX.W)
     val c_lrange      = new FgLocalRange(config)
     val row_idx       = UInt(FG_DIM_CTR.W)
@@ -260,7 +261,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh_ctrl.a_fg_mux_ctrl := a_fg_mux_ctrl
   mesh_ctrl.b_fg_mux_ctrl := b_fg_mux_ctrl
   mesh_ctrl.rob_id        := cmd.bits(preload_idx).rob_id
-  mesh_ctrl.c_lrange      := c_lrange 
+  mesh_ctrl.c_lrange      := c_lrange
   mesh_ctrl.row_idx       := sp_read_counter
   mesh_ctrl.flipped       := in_flipped && (sp_read_counter === 0.U)
   mesh_ctrl.last_row      := sp_read_counter === (FG_DIM-1).U

@@ -34,8 +34,8 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
     val in_valid   = Input(Bool())
     val a          = Input(Vec(FG_NUM, Vec(FG_DIM, inputType)))
     val b          = Input(Vec(FG_NUM, Vec(FG_DIM, inputType)))
-    val a_mux_ctrl = Input(Vec(FG_NUM, Bool()))
-    val b_mux_ctrl = Input(Vec(FG_NUM, Bool()))
+    val a_mux_ctrl = Input(Vec(mesh_partition_list.length, Bool())) //TODO change to a global param?
+    val b_mux_ctrl = Input(Vec(mesh_partition_list.length, Bool()))
     val flipped    = Input(Bool())
     val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
     val out_valid  = Output(Bool())
@@ -47,55 +47,90 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
 
   val fg_mesh = Seq.fill(FG_NUM)(Module(new FgMeshWithDelays(config)))
 
-  val a_mux_seq = Wire(Vec(FG_NUM, Vec(FG_DIM, inputType)))
-  val b_mux_seq = Wire(Vec(FG_NUM, Vec(FG_DIM, inputType)))
+  //val a_mux_seq = Wire(Vec(FG_NUM, Vec(FG_DIM, inputType)))
+  //val b_mux_seq = Wire(Vec(FG_NUM, Vec(FG_DIM, inputType)))
 
-  // Connect up all of the muxing of inputs
+  //TODO: convert thermometer to binary (00000 -> 000; 10000 -> 001; 11100 -> 011)
+  val a_mux_sel = BINARY(a_mux_ctrl)
+  val b_mux_sel = BINARY(b_mux_ctrl)
+
+  val mesh_partition_list = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
+
+  // Each sub-mesh selects from a set of values that are indexed into various portiions of
+  // the a and b inputs based upon the fine-grainedness of the array, the size of the array,
+  // and the sub-meshes position in the full mesh
+  val a_mesh_muxes = Wire(Vec(FG_NUM, Vec(mesh_partition_list.length, Vec(FG_DIM, inputType))))
+  val b_mesh_muxes = Wire(Vec(FG_NUM, Vec(mesh_partition_list.length, Vec(FG_DIM, inputType))))
+
+  var idx_divs = 0 //TODO better way to do this (gets reassigned in the for loop)
+  // Routing the possible inputs to each sub-array
+
+
   for (i <- 0 until SQRT_FG_NUM) {
     for (j <- 0 until SQRT_FG_NUM) {
-      if (i == 0 && j == 0) {
-        a_mux_seq(0) := io.a(0)
-        b_mux_seq(0) := io.b(0)
-      } else if ((j*SQRT_FG_NUM + i) % FG_NUM == 0) {
-        a_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.a_mux_ctrl(j*SQRT_FG_NUM + i),
-                                            io.a(j*SQRT_FG_NUM + i),
-                                            a_mux_seq((j-1)*SQRT_FG_NUM + i))
-        b_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.b_mux_ctrl(j*SQRT_FG_NUM + i),
-                                            io.b(j*SQRT_FG_NUM + i),
-                                            b_mux_seq((j-1)*SQRT_FG_NUM + i))
-      } else {
-        a_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.a_mux_ctrl(j*SQRT_FG_NUM + i),
-                                            io.a(j*SQRT_FG_NUM + i),
-                                            a_mux_seq(j*SQRT_FG_NUM + i - 1))
-        b_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.b_mux_ctrl(j*SQRT_FG_NUM + i),
-                                            io.b(j*SQRT_FG_NUM + i),
-                                            b_mux_seq(j*SQRT_FG_NUM + i - 1))
+      idx_divs = mesh_partition_list.map{ e => (i*SQRT_FG_NUM+j) / e }.reverse //this must be floordiv
+      for (k <- 0 until mesh_partition_list.length) {
+        a_mesh_muxes(i*SQRT_FG_NUM + j)(k) := io.a(idx_divs(k))
+        b_mesh_muxes(j*SQRT_FG_NUM + i)(k) := io.b(idx_divs(k))
       }
     }
   }
 
-  for (i <- 0 until SQRT_FG_NUM) {
-    for (j <- 0 until SQRT_FG_NUM) {
-      fg_mesh(j*SQRT_FG_NUM + i).io.in_valid := io.in_valid
-      fg_mesh(j*SQRT_FG_NUM + i).io.a        := a_mux_seq(j*SQRT_FG_NUM + i)
-      fg_mesh(j*SQRT_FG_NUM + i).io.b        := b_mux_seq(j*SQRT_FG_NUM + i)
-      fg_mesh(j*SQRT_FG_NUM + i).io.flipped  := io.flipped
+  //for (i <- 0 until FG_NUM) {
+  //  idx_divs = mesh_partition_list.map{ e => i / e }.reverse //this must be floordiv
+  //  for (j <- 0 until mesh_partition_list.length) {
+  //    a_mesh_muxes(i)(j) := io.a(idx_divs(j))
+  //  }
+  //}
 
-      io.out(j*SQRT_FG_NUM + i) := fg_mesh(j*SQRT_FG_NUM + i).io.out
-    }
+  for (i <- 0 until FG_NUM) {
+    fg_mesh(i).io.in_valid  := io.in_valid
+    fg_mesh(i).io.a         := a_mesh_muxes(i)(a_mux_sel)
+    fg_mesh(i).io.b         := b_mesh_muxes(i)(b_mux_sel)
+    fg_mesh(i).io.flipped   := io.flipped
+
+    io.out(i)               := fg_mesh(i).io.out
   }
+
+  //TODO is this alright?
   io.out_valid := fg_mesh(0).io.out_valid
 
-  // Add muxing of inputs
-//  fg_mesh(0).io.a <> io.a(0)
-//  fg_mesh(0).io.b <> io.b(0)
-//  for (i <- 1 until FG_NUM) {
-//    for (j <- 1 until FG_NUM) {
-//      fg_mesh(j*FG_NUM + i).io.a <> io.a(j*FG_NUM + i)
-//      fg_mesh(j*FG_NUM + i).io.b <> io.b(j*FG_NUM + i)
-//    }
-//  }
-//
+  // Connect up all of the muxing of inputs
+  //for (i <- 0 until SQRT_FG_NUM) {
+  //  for (j <- 0 until SQRT_FG_NUM) {
+  //    if (i == 0 && j == 0) {
+  //      a_mux_seq(0) := io.a(0)
+  //      b_mux_seq(0) := io.b(0)
+  //    } else if ((j*SQRT_FG_NUM + i) % FG_NUM == 0) {
+  //      a_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.a_mux_ctrl(j*SQRT_FG_NUM + i),
+  //                                          io.a(j*SQRT_FG_NUM + i),
+  //                                          a_mux_seq((j-1)*SQRT_FG_NUM + i))
+  //      b_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.b_mux_ctrl(j*SQRT_FG_NUM + i),
+  //                                          io.b(j*SQRT_FG_NUM + i),
+  //                                          b_mux_seq((j-1)*SQRT_FG_NUM + i))
+  //    } else {
+  //      a_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.a_mux_ctrl(j*SQRT_FG_NUM + i),
+  //                                          io.a(j*SQRT_FG_NUM + i),
+  //                                          a_mux_seq(j*SQRT_FG_NUM + i - 1))
+  //      b_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.b_mux_ctrl(j*SQRT_FG_NUM + i),
+  //                                          io.b(j*SQRT_FG_NUM + i),
+  //                                          b_mux_seq(j*SQRT_FG_NUM + i - 1))
+  //    }
+  //  }
+  //}
+
+
+  //for (i <- 0 until SQRT_FG_NUM) {
+  //  for (j <- 0 until SQRT_FG_NUM) {
+  //    fg_mesh(j*SQRT_FG_NUM + i).io.in_valid := io.in_valid
+  //    fg_mesh(j*SQRT_FG_NUM + i).io.a        := a_mux_seq(j*SQRT_FG_NUM + i)
+  //    fg_mesh(j*SQRT_FG_NUM + i).io.b        := b_mux_seq(j*SQRT_FG_NUM + i)
+  //    fg_mesh(j*SQRT_FG_NUM + i).io.flipped  := io.flipped
+
+  //    io.out(j*SQRT_FG_NUM + i) := fg_mesh(j*SQRT_FG_NUM + i).io.out
+  //  }
+  //}
+
   //=========================================================================
   // Tags
   //=========================================================================
