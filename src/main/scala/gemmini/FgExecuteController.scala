@@ -1,13 +1,5 @@
 //============================================================================
 // Fine-grained-systolic-array exec-controller
-// (new parameter: fg_sa_div)
-//
-// WARNING!!! the 'b-addr' and 'd-addr' within this ExecuteController and
-// all submodules are swapped with the meaning of 'b-addr' and 'd-addr'
-// in all external modules! this was due to originally supporting WS and OS
-// modes simultaneously. Just remember that d-addr within this module means
-// the weights that is preloaded into the matrix, and the 'b-addr' is the
-// address that is preloaded into the accumulator (so it isn't used here!)
 //============================================================================
 package gemmini
 
