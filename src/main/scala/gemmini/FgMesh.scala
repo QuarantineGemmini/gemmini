@@ -12,7 +12,7 @@ import gemmini.Util._
 import GemminiISA._
 
 
-class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
+class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters)
   extends Module with HasCoreParameters {
     import config._
@@ -71,7 +71,6 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
       fg_mesh(j*SQRT_FG_NUM + i).io.a.valid := io.a.valid
       fg_mesh(j*SQRT_FG_NUM + i).io.b.bits := b_mux_seq(j*SQRT_FG_NUM + i)
       fg_mesh(j*SQRT_FG_NUM + i).io.b.valid := io.b.valid
-      fg_mesh(j*SQRT_FG_NUM + i).io.tag_in <> io.tag_in
       fg_mesh(j*SQRT_FG_NUM + i).io.pe_ctrl := io.pe_ctrl
       fg_mesh(j*SQRT_FG_NUM + i).io.prof    := io.prof
 
@@ -105,28 +104,23 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
   // this current tag allows delaying the written tag_in by 1 matmul, since
   // we load the tag for the preload, and have to write the tag out after
   // the FOLLOWING compute
-  val garbage_tag = WireInit(0.U.asTypeOf(new MeshQueueTag(config)))
-  garbage_tag.make_this_garbage()
+  val garbage_tag = WireInit(UDValid(new FgMeshQueueTag(config)))
+  garbage_tag.pop()
+  garbage_tag.bits.make_this_garbage()
   val current_tag = RegInit(garbage_tag)
-  io.tag_out := current_tag
+  io.tag_out := garbage_tag
 
   // we are busy if we still have unfinished, valid tags
-  io.busy := tag_queue.valid || current_tag.rob_id.valid
+  io.busy := tag_queue.valid || current_tag.valid
 
   // TODO: this is hardcoded to output DIM rows
-  val output_counter = RegInit(0.U(FG_DIM_CTR.W))
+  val output_counter = RegInit(0.U(FG_DIM_IDX.W))
   val is_last_row_output = (output_counter === (FG_DIM-1).U)
   output_counter := wrappingAdd(output_counter, io.out.valid, FG_DIM)
 
   when (is_last_row_output && io.out.valid) {
     tag_queue.ready := true.B
-    current_tag := Mux(tag_queue.fire(),tag_queue.bits, garbage_tag)
+    current_tag := Mux(tag_queue.fire(), tag_queue.bits, garbage_tag)
   }
-
-
-  //TODO is this necessary?
-  //OR all of the busy signals
-  io.busy := fg_mesh.map{ case(x) => x.io.busy }.reduce(_ || _)
-
 }
 

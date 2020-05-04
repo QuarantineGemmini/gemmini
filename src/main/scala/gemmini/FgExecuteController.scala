@@ -85,17 +85,17 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   val mesh_partition_list = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
-  val b_fg_mux_cntl = Vec(FG_NUM, Bool())
-  val a_fg_mux_cntl = Vec(FG_NUM, Bool())
+  val a_fg_mux_ctrl = Vec(FG_NUM, Bool())
+  val b_fg_mux_ctrl = Vec(FG_NUM, Bool())
 
   //TODO this needs to not change when computing in the mesh
   // Bucket the computation for assigning to FG arrays
   for (i <- 0 until mesh_partition_list.length) {
-    b_fg_mux_cntl(i) := (b_cols > (mesh_partition_list(i) * FG_DIM).U)
+    b_fg_mux_ctrl(i) := (b_cols > (mesh_partition_list(i) * FG_DIM).U)
   }
 
   for (i <- 0 until mesh_partition_list.length) {
-    a_fg_mux_cntl(i) := (a_rows > mesh_partition_list(i).U)
+    a_fg_mux_ctrl(i) := (a_rows > mesh_partition_list(i).U)
   }
 
   //=========================================================================
@@ -238,12 +238,14 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   // - buffer all mesh-ctrl signals for 2 cycles (sp delay is fixed 2-cycles)
   //=========================================================================
   class ComputeCntrlSignals extends Bundle {
-    val valid    = Bool()
-    val rob_id   = UDValid(UInt(ROB_ENTRIES_IDX.W))
-    val c_lrange = new FgLocalRange(config)
-    val row_idx  = UInt(FG_DIM_CTR.W)
-    val prop     = UInt(1.W)
-    val last_row = Bool()
+    val valid         = Bool()
+    val a_fg_mux_ctrl = Vec(FG_NUM, Bool())
+    val b_fg_mux_ctrl = Vec(FG_NUM, Bool())
+    val rob_id        = UDValid(UInt(ROB_ENTRIES_IDX.W))
+    val c_lrange      = new FgLocalRange(config)
+    val row_idx       = UInt(FG_DIM_CTR.W)
+    val prop          = UInt(1.W)
+    val last_row      = Bool()
   }
   val mesh_ctrl = new ComputeCntrlSignals
   val mesh_ctrl_buf = ShiftRegister(mesh_ctrl, SP_RD_LATENCY)
@@ -254,6 +256,8 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh_ctrl.valid         := state === s_PRELOAD ||
                              state === s_MUL_PRE ||
                              state === s_MUL
+  mesh_ctrl.a_fg_mux_ctrl := a_fg_mux_ctrl
+  mesh_ctrl.b_fg_mux_ctrl := b_fg_mux_ctrl
   mesh_ctrl.rob_id        := cmd.bits(preload_idx).rob_id
   mesh_ctrl.c_lrange      := c_lrange 
   mesh_ctrl.row_idx       := sp_read_counter
@@ -267,16 +271,17 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val mesh_in_c_lrange = mesh_ctrl_buf.c_lrange
   mesh_in_c_lrange.row := mesh_ctrl_buf.row_idx
 
-  mesh.io.a.valid           := a_read_en_buf
-  mesh.io.a.bits            := a_data
-  mesh.io.a.valid           := b_read_en_buf
-  mesh.io.a.bits            := b_data
-  mesh.io.a_mux_ctrl        := mesh_ctrl_buf.a_fg_mux_ctrl
-  mesh.io.b_mux_ctrl        := mesh_ctrl_buf.b_fg_mux_ctrl
-  mesh.io.tag_in.rob_id     := mesh_ctrl_buf.rob_id
-  mesh.io.tag_in.c_lrange   := mesh_in_c_lrange
-  mesh.io.pe_ctrl.propagate := mesh_ctrl_buf.prop
-  mesh.io.prof              := io.prof
+  mesh.io.a.valid              := a_read_en_buf
+  mesh.io.a.bits               := a_data
+  mesh.io.a.valid              := b_read_en_buf
+  mesh.io.a.bits               := b_data
+  mesh.io.a_mux_ctrl           := mesh_ctrl_buf.a_fg_mux_ctrl
+  mesh.io.b_mux_ctrl           := mesh_ctrl_buf.b_fg_mux_ctrl
+  mesh.io.tag_in.valid         := mesh_ctrl_buf.last_row
+  mesh.io.tag_in.bits.rob_id   := mesh_ctrl_buf.rob_id
+  mesh.io.tag_in.bits.c_lrange := mesh_in_c_lrange
+  mesh.io.pe_ctrl.propagate    := mesh_ctrl_buf.prop
+  mesh.io.prof                 := io.prof
 
   //=========================================================================
   // Mesh->Scratchpad/Accumulator write datapath
@@ -356,7 +361,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //  bank_stall_d_cycles := bank_stall_d_cycles +(is_inputting_d && !d_valid)
 
   //  for(c <- 0 to DIM) {
-  //    col_usage(c) := col_usage(c) && (c < cntlq.c_cols) &&
+  //    col_usage(c) := col_usage(c) && (c < ctrlq.c_cols) &&
 
   //  when(io.prof.end) {
   //    printf(s"G2-PERF[%d]: bank-stall-a-cycles: %d\n",

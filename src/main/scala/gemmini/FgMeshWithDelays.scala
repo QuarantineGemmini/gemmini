@@ -23,22 +23,19 @@ class FgMeshQueueTag[T <: Data](val config: FgGemminiArrayConfig[T])
   }
 }
 
-class FgMeshWithDelays[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
+class FgMeshWithDelays[T <: Data:Arithmetic](config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends Module with HasCoreParameters {
   import config._
+  val A_TYPE = Vec(FG_NUM, Vec(FG_DIM, inputType))
+  val B_TYPE = Vec(FG_NUM, Vec(FG_DIM, inputType))
+  val C_TYPE = Vec(FG_NUM, Vec(FG_DIM, outputType))
   //=========================================================================
   // module interface
   //=========================================================================
-  val DIM = FG_DIM*tileRows
-
-  val A_TYPE = Vec(FG_DIM, Vec(tileRows, inputType))
-  val C_TYPE = Vec(FG_DIM, Vec(tileCols, outputType))
-  val B_TYPE = Vec(FG_DIM, Vec(tileCols, inputType))
-
   val io = IO(new Bundle {
     val a       = Flipped(Decoupled(A_TYPE))
     val b       = Flipped(Decoupled(B_TYPE))
-    val tag_in  = Flipped(Decoupled(new MeshQueueTag(config)))
+    val tag_in  = Flipped(Decoupled(new FgMeshQueueTag(config)))
     val pe_ctrl = Input(new PEControl(accType))
     val out     = Valid(C_TYPE)
     val tag_out = Output(new MeshQueueTag(config))

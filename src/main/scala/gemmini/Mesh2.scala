@@ -22,12 +22,12 @@ class Mesh2[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
   // module interface
   //=========================================================================
   val io = IO(new Bundle {
-    val in_a    = Input(Vec(FG_DIM, Vec(tileRows, inputType)))
-    val in_b    = Input(Vec(FG_DIM, Vec(tileCols, inputType)))
-    val in_d    = Input(Vec(FG_DIM, Vec(tileCols, inputType)))
-    val in_ctrl = Input(Vec(FG_DIM, Vec(tileCols, new PEControl(accType))))
-    val out_b   = Output(Vec(FG_DIM, Vec(tileCols, outputType)))
-    val out_c   = Output(Vec(FG_DIM, Vec(tileCols, outputType)))
+    val in_a      = Input(Vec(FG_DIM, Vec(tileRows, inputType)))
+    val in_b      = Input(Vec(FG_DIM, Vec(tileCols, inputType)))
+    val in_d      = Input(Vec(FG_DIM, Vec(tileCols, inputType)))
+    val in_ctrl   = Input(Vec(FG_DIM, Vec(tileCols, new PEControl(accType))))
+    val out_b     = Output(Vec(FG_DIM, Vec(tileCols, outputType)))
+    val out_c     = Output(Vec(FG_DIM, Vec(tileCols, outputType)))
     val in_valid  = Input(Vec(FG_DIM, Vec(tileCols, Bool())))
     val out_valid = Output(Vec(FG_DIM, Vec(tileCols, Bool())))
   })
