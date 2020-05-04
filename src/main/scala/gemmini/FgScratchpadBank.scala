@@ -81,7 +81,7 @@ class FgScratchpadBank[T <: Data]
   val wr_data         = (io.write.data << wr_bitshift).asTypeOf(
                           Vec(ROW_ELEMS, inputType))
   val wr_mask         = (((1.U << wr_cols) - 1.U) << wr_elemshift)
-                          .asTypeOf(Vec(FG_DIM, Bool()))
+                          .asTypeOf(Vec(fg_cols*FG_DIM, Bool()))
   when (wr_en) {
     mem.write(wr_row, wr_data, wr_mask)
   }

@@ -81,7 +81,7 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   val wr_bitshift     = wr_elemshift * OTYPE_BITS.U
   val wr_data         = (io.write.data << wr_bitshift).asTypeOf(ROW_TYPE)
   val wr_mask         = (((1.U << wr_cols) - 1.U) << wr_elemshift)
-                        .asTypeOf(Vec(FG_DIM, Bool()))
+                        .asTypeOf(Vec(CD_ACC_ROW_ELEMS, Bool()))
 
   //-------------------------------------
   // unpack read signals
