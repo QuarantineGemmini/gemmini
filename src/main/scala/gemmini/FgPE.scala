@@ -3,7 +3,7 @@ package gemmini
 import chisel3._
 import chisel3.util._
 
-class FgPEControl[T <: Data : Arithmetic] extends Bundle {
+class FgPEControl extends Bundle {
   val prop = Bool()
 }
 

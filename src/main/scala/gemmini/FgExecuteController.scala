@@ -3,6 +3,7 @@
 //============================================================================
 package gemmini
 
+import scala.math.{pow}
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.config._
@@ -42,7 +43,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val (cmd, _) = MultiHeadedQueue(io.cmd, ex_queue_length, cmd_q_heads)
   cmd.pop := 0.U
 
-  val functs = cmd.bits.map(_.cmd.inst.funct)
+  val functs = VecInit(cmd.bits.map(_.cmd.inst.funct))
   val rs1s   = VecInit(cmd.bits.map(_.cmd.rs1))
   val rs2s   = VecInit(cmd.bits.map(_.cmd.rs2))
 
@@ -56,9 +57,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val preload_rs1 = rs1s(preload_idx).asTypeOf(new FgLocalRange(config))
   val preload_rs2 = rs2s(preload_idx).asTypeOf(new FgLocalRange(config))
   val compute_rs1 = rs1s(0).asTypeOf(new FgLocalRange(config))
-  val compute_rs2 = rs2s(0).asTypePf(new FgLocalRange(config))
+  val compute_rs2 = rs2s(0).asTypeOf(new FgLocalRange(config))
 
-  val in_flip = functs(0) === COMPUTE_AND_FLIP_CMD
+  val in_flipped = functs(0) === COMPUTE_AND_FLIP_CMD
 
   val a_lrange = compute_rs1
   val b_lrange = preload_rs1
@@ -76,7 +77,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val relu6_shift = Reg(UInt(OTYPE_BITS_IDX.W))
   val activation  = Reg(UInt(2.W))
 
-  io.acc_config.acc_shift    := acc_shift
+  io.acc_config.acc_rshift   := acc_shift
   io.acc_config.relu6_lshift := relu6_shift
   io.acc_config.act          := activation
 
@@ -85,18 +86,18 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   val mesh_partition_list = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
-  val a_fg_mux_ctrl = Vec(FG_NUM, Bool())
-  val b_fg_mux_ctrl = Vec(FG_NUM, Bool())
+  val a_fg_mux_ctrl = VecInit(Seq.fill(FG_NUM)(false.B))
+  val b_fg_mux_ctrl = VecInit(Seq.fill(FG_NUM)(false.B))
 
   //TODO this needs to not change when computing in the mesh
   // Bucket the computation for assigning to FG arrays
-  for (i <- 0 until mesh_partition_list.length) {
-    b_fg_mux_ctrl(i) := (b_cols > (mesh_partition_list(i) * FG_DIM).U)
-  }
-
-  for (i <- 0 until mesh_partition_list.length) {
-    a_fg_mux_ctrl(i) := (a_rows > mesh_partition_list(i).U)
-  }
+//  for (i <- 0 until mesh_partition_list.length) {
+//    b_fg_mux_ctrl(i) := (b_lrange.cols > (mesh_partition_list(i) * FG_DIM).U)
+//  }
+//
+//  for (i <- 0 until mesh_partition_list.length) {
+//    a_fg_mux_ctrl(i) := (a_lrange.rows > mesh_partition_list(i).U)
+//  }
 
   //=========================================================================
   // fix-latency scratchpad-inputs read
@@ -122,8 +123,8 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   io.readA.req.banks        := a_banks
 
   // get data back 2 cycles later
-  val a_read_en_buf      = ShiftRegister(a_read_en, SP_RD_CYCLES)
-  val a_nonzero_cols_buf = ShiftRegister(a_nonzero_cols, SP_RD_CYCLES)
+  val a_read_en_buf      = ShiftRegister(a_read_en, SP_RD_LATENCY)
+  val a_nonzero_cols_buf = ShiftRegister(a_nonzero_cols, SP_RD_LATENCY)
   val a_data_prepad      = io.readA.resp.data.asTypeOf(A_TYPE)
   val a_data             = WireDefault(0.U.asTypeOf(A_TYPE))
 
@@ -145,11 +146,11 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   io.readB.req.row          := sp_read_counter
   io.readB.req.fg_col_start := b_lrange.fg_col_start
   io.readB.req.bank_start   := b_lrange.bank_start()
-  io.readB.req.banks        := b_banks
+  io.readB.req.banks        := 1.U
 
   // get data back 2 cycles later
-  val b_read_en_buf      = ShiftRegister(b_read_en, SP_RD_CYCLES)
-  val b_nonzero_cols_buf = ShiftRegister(b_nonzero_cols, SP_RD_CYCLES)
+  val b_read_en_buf      = ShiftRegister(b_read_en, SP_RD_LATENCY)
+  val b_nonzero_cols_buf = ShiftRegister(b_nonzero_cols, SP_RD_LATENCY)
   val b_data_prepad      = io.readB.resp.data.asTypeOf(B_TYPE)
   val b_data             = WireDefault(0.U.asTypeOf(B_TYPE))
 
@@ -162,7 +163,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   // global FSM
   //=========================================================================
-  val (s_IDLE :: s_PRELOAD :: s_MUL :: s_MUL_PRE) :: Nil = Enum(4)
+  val (s_IDLE :: s_PRELOAD :: s_MUL :: s_MUL_PRE :: Nil) = Enum(4)
   val state = RegInit(s_IDLE)
 
   // if we are committing the mul tag back to the rob. the backend datapath
@@ -196,7 +197,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
       is_reading_b    := !b_lrange.garbage
       sp_read_counter := sp_read_counter + 1.U
 
-      when (sp_read_counter === (FG_DIM-1.U)) {
+      when (sp_read_counter === (FG_DIM-1).U) {
         cmd.pop         := 1.U
         sp_read_counter := 0.U
         state           := s_IDLE
@@ -208,7 +209,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
       is_reading_b    := !b_lrange.garbage
       sp_read_counter := sp_read_counter + 1.U
 
-      when (sp_read_counter === (FG_DIM-1.U)) {
+      when (sp_read_counter === (FG_DIM-1).U) {
         cmd.pop := 2.U
         is_mul_tag_finished := true.B
         io.completed.valid  := true.B
@@ -222,7 +223,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
       is_reading_a    := true.B
       sp_read_counter := sp_read_counter + 1.U
 
-      when (sp_read_counter === (FG_DIM-1.U)) {
+      when (sp_read_counter === (FG_DIM-1).U) {
         cmd.pop := 1.U
         is_mul_tag_finished := true.B
         io.completed.valid  := true.B
@@ -238,22 +239,22 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   // - buffer all mesh-ctrl signals for 2 cycles (sp delay is fixed 2-cycles)
   //=========================================================================
   class ComputeCntrlSignals extends Bundle {
-    val valid         = Bool()
+    val in_valid      = Bool()
     val a_fg_mux_ctrl = Vec(FG_NUM, Bool())
     val b_fg_mux_ctrl = Vec(FG_NUM, Bool())
-    val rob_id        = UDValid(UInt(ROB_ENTRIES_IDX.W))
+    val rob_id        = UInt(ROB_ENTRIES_IDX.W)
     val c_lrange      = new FgLocalRange(config)
     val row_idx       = UInt(FG_DIM_CTR.W)
-    val flip          = Bool()
+    val flipped       = Bool()
     val last_row      = Bool()
   }
-  val mesh_ctrl = new ComputeCntrlSignals
+  val mesh_ctrl = Wire(new ComputeCntrlSignals)
   val mesh_ctrl_buf = ShiftRegister(mesh_ctrl, SP_RD_LATENCY)
 
   //------------------------------------------------------------------------
   // write next command for meshq input datapath to handle
   //------------------------------------------------------------------------
-  mesh_ctrl.valid         := state === s_PRELOAD ||
+  mesh_ctrl.in_valid      := state === s_PRELOAD ||
                              state === s_MUL_PRE ||
                              state === s_MUL
   mesh_ctrl.a_fg_mux_ctrl := a_fg_mux_ctrl
@@ -261,22 +262,23 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh_ctrl.rob_id        := cmd.bits(preload_idx).rob_id
   mesh_ctrl.c_lrange      := c_lrange 
   mesh_ctrl.row_idx       := sp_read_counter
-  mesh_ctrl.flip          := in_flip && (sp_read_counter === 0.U)
-  mesh_ctrl.bits.last_row := sp_read_counter === (FG_DIM-1.U)
+  mesh_ctrl.flipped       := in_flipped && (sp_read_counter === 0.U)
+  mesh_ctrl.last_row      := sp_read_counter === (FG_DIM-1).U
 
   //========================================================================
   // Instantiate the actual mesh and connect non-blocking inputs
   //========================================================================
   val mesh = Module(new FgMesh(config))
-  val mesh_in_c_lrange = mesh_ctrl_buf.c_lrange
-  mesh_in_c_lrange.row := mesh_ctrl_buf.row_idx
+  val mesh_in_c_lrange = Wire(new FgLocalRange(config))
+  mesh_in_c_lrange           := mesh_ctrl_buf.c_lrange
+  mesh_in_c_lrange.row_start := mesh_ctrl_buf.row_idx
 
-  mesh.io.in_valid              := mesh_ctrl_buf.valid
+  mesh.io.in_valid              := mesh_ctrl_buf.in_valid
   mesh.io.a                     := a_data
   mesh.io.b                     := b_data
   mesh.io.a_mux_ctrl            := mesh_ctrl_buf.a_fg_mux_ctrl
   mesh.io.b_mux_ctrl            := mesh_ctrl_buf.b_fg_mux_ctrl
-  mesh.io.flip                  := mesh_ctrl_buf.flip
+  mesh.io.flipped               := mesh_ctrl_buf.flipped
   mesh.io.tag_in.valid          := mesh_ctrl_buf.last_row
   mesh.io.tag_in.bits.rob_id    := mesh_ctrl_buf.rob_id
   mesh.io.tag_in.bits.wb_lrange := mesh_in_c_lrange
@@ -291,11 +293,11 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_lrange          = mesh.io.tag_out.wb_lrange
   val wb_cols            = wb_lrange.cols
   val wb_fg_col_start    = wb_lrange.fg_col_start
-  val wb_bank_start      = wb_lrange.bank_start
+  val wb_bank_start      = wb_lrange.bank_start()
   val wb_banks           = wb_lrange.total_banks()
   val wb_accum           = wb_lrange.is_accum
   val wb_garbage         = wb_lrange.garbage
-  val wb_row             = wb_lrange.row
+  val wb_row             = wb_lrange.row_start
   val is_outputting      = wb_valid && !wb_garbage
   val is_outputting_last = is_outputting && (wb_row === (FG_DIM-1).U)
 
@@ -306,7 +308,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   io.writeC.bank_start   := wb_bank_start
   io.writeC.banks        := wb_banks
   io.writeC.accum        := wb_accum
-  io.writeC.data         := wb_data
+  io.writeC.data         := wb_data.asTypeOf(UInt(D_LOAD_ROW_BITS.W))
 
   //-------------------------------------------------------------------------
   // commit the pending preload tag on the last output row
@@ -314,7 +316,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val pending_preload_tag_complete
     = RegInit(0.U.asTypeOf(UDValid(UInt(ROB_ENTRIES_IDX.W))))
 
-  when(is_outputing_last) {
+  when(is_outputting_last) {
     assert(!pending_preload_tag_complete.valid,
       "can't output last row when we have an existing pending tag!")
     when (is_mul_tag_finished) {
