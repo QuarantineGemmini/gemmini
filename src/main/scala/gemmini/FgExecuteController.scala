@@ -92,7 +92,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   // FG Mesh Muxing Control
   //=========================================================================
-
   val mesh_partition_list = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
   val b_fg_mux_cntl = Vec(FG_NUM, Bool())
@@ -251,6 +250,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
     val valid    = Bool()
     val rob_id   = UDValid(UInt(ROB_ENTRIES_IDX.W))
     val c_lrange = new FgLocalRange(config)
+    val row_idx  = UInt(FG_DIM_CTR.W)
     val prop     = UInt(1.W)
     val last_row = Bool()
   }
@@ -263,8 +263,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh_ctrl.valid         := state === s_PRELOAD ||
                              state === s_MUL_PRE ||
                              state === s_MUL
-  mesh_ctrl.c_lrange      := c_lrange 
   mesh_ctrl.rob_id        := cmd.bits(preload_idx).rob_id
+  mesh_ctrl.c_lrange      := c_lrange 
+  mesh_ctrl.row_idx       := sp_read_counter
   mesh_ctrl.prop          := in_prop
   mesh_ctrl.bits.last_row := sp_read_counter === (FG_DIM-1.U)
 
@@ -272,6 +273,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   // Instantiate the actual mesh and connect non-blocking inputs
   //========================================================================
   val mesh = Module(new FgMesh(config))
+  val mesh_in_c_lrange = mesh_ctrl_buf.c_lrange
+  mesh_in_c_lrange.row := mesh_ctrl_buf.row_idx
+
   mesh.io.a.valid           := a_read_en_buf
   mesh.io.a.bits            := a_data
   mesh.io.a.valid           := b_read_en_buf
@@ -279,46 +283,42 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh.io.a_mux_ctrl        := mesh_ctrl_buf.a_fg_mux_ctrl
   mesh.io.b_mux_ctrl        := mesh_ctrl_buf.b_fg_mux_ctrl
   mesh.io.tag_in.rob_id     := mesh_ctrl_buf.rob_id
-  mesh.io.tag_in.c_lrange   := mesh_ctrl_buf.c_lrange
+  mesh.io.tag_in.c_lrange   := mesh_in_c_lrange
   mesh.io.pe_ctrl.propagate := mesh_ctrl_buf.prop
   mesh.io.prof              := io.prof
 
   //=========================================================================
   // Mesh->Scratchpad/Accumulator write datapath
   //=========================================================================
-  val c_lrange       = mesh.io.tag_out
-  val w_matrix_cols  = c_lrange.cols
-  val w_fg_col_start = c_lrange.fg_col_start
-  val w_bank_start   = c_lrange.bank_start
-  val w_banks        = c_lrange.total_banks()
-  val w_accum        = c_lrange.is_accum
-  val w_garbage      = c_lrange.garbage
-  val w_data         = mesh.io.out.bits
+  val wb_valid        = mesh.io.out.fire()
+  val wb_data         = mesh.io.out.bits
+  val wb_rob_id       = mesh.io.tag_out.rob_id
+  val wb_lrange       = mesh.io.tag_out.c_lrange
+  val wb_cols         = wb_lrange.cols
+  val wb_fg_col_start = wb_lrange.fg_col_start
+  val wb_bank_start   = wb_lrange.bank_start
+  val wb_banks        = wb_lrange.total_banks()
+  val wb_accum        = wb_lrange.is_accum
+  val wb_garbage      = wb_lrange.garbage
+  val wb_rows         = Mux(wb_lrange.rows > FG_DIM.U, 
+                            FG_DIM.U, wb_lrange.rows)
+  val wb_maxbank_rows = wb_lrange.rows(FG_DIM_IDX-1,0)
+  val wb_row          = wb_lrange.row
+  val wb_banks        = Mux(wb_row < wb_maxbank_rows,
+                            wb_lrange.total_banks(),
+                            wb_lrange.total_banks() - 1.U)
 
-  val is_array_outputting = mesh.io.out.fire() &&
-                            !w_garbage &&
-                            mesh.io.tag_out.rob_id.valid
+  val is_outputting      = wb_valid && !wb_garbage
+  val is_outputting_last = is_outputting && (wb_row === (wb_max_rows-1.U))
 
-  // TODO: make this finish after w_matrix_rows
-  // TODO off by 1?
-  val output_row = RegInit(0.U(FG_DIM_CTR.W))
-  output_row := wrappingAdd(output_row, is_array_outputting, FG_DIM)
-
-  //TODO fix this
-  val is_array_outputting_valid_row = is_array_outputting &&
-                                      (output_row < FG_DIM)
-  val is_array_outputting_last_row = is_array_outputting &&
-                                     (output_row === (FG_DIM-1.U))
-
-  //TODO check valid row
-  io.writeC.en           := is_array_outputting_valid_row
-  io.writeC.row          := output_row
-  io.writeC.cols         := w_matrix_cols
-  io.writeC.fg_col_start := w_fg_col_start
-  io.writeC.bank_start   := w_bank_start
-  io.writeC.banks        := w_banks
-  io.writeC.accum        := w_accum
-  io.writeC.data         := w_data
+  io.writeC.en           := is_outputting
+  io.writeC.row          := wb_row
+  io.writeC.cols         := wb_cols
+  io.writeC.fg_col_start := wb_fg_col_start
+  io.writeC.bank_start   := wb_bank_start
+  io.writeC.banks        := wb_banks
+  io.writeC.accum        := wb_accum
+  io.writeC.data         := wb_data
 
   //-------------------------------------------------------------------------
   // commit the pending preload tag on the last output row
@@ -326,7 +326,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val pending_preload_tag_complete
     = RegInit(0.U.asTypeOf(UDValid(UInt(ROB_ENTRIES_IDX.W))))
 
-  when(is_array_outputting_last_row) {
+  when(is_outputing_last) {
     assert(!pending_preload_tag_complete.valid,
       "can't output last row when we have an existing pending tag!")
     when (is_mul_tag_finished) {

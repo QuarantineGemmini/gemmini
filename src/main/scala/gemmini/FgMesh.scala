@@ -31,7 +31,7 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
     val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
     val pe_ctrl    = Input(new PEControl(accType))
     val out        = Valid(COL_TYPE)
-    val tag_out    = Output(new MeshQueueTag(config))
+    val tag_out    = Output(new FgMeshQueueTag(config))
     val busy       = Output(Bool())
     val prof       = Input(new Profiling)
   }
