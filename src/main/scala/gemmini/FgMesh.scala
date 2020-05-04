@@ -61,7 +61,7 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   val b_mesh_muxes = Wire(Vec(FG_NUM, Vec(mesh_partition_list.length, Vec(FG_DIM, inputType))))
 
   var idx_divs = 0 //TODO better way to do this (gets reassigned in the for loop)
-  // Routing the possible inputs to each sub-array
+  // Routing the possible inputs to each sub-array's mux
   for (i <- 0 until SQRT_FG_NUM) {
     for (j <- 0 until SQRT_FG_NUM) {
       idx_divs = mesh_partition_list.map{ e => (i*SQRT_FG_NUM+j) / e }.reverse //this must be floordiv
@@ -75,8 +75,11 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
 
   for (i <- 0 until FG_NUM) {
     fg_mesh(i).io.in_valid  := io.in_valid
+
+    //Select the input to each sub-array
     fg_mesh(i).io.a         := a_mesh_muxes(i)(a_mux_sel)
     fg_mesh(i).io.b         := b_mesh_muxes(i)(b_mux_sel)
+
     fg_mesh(i).io.flipped   := io.flipped
 
     io.out(i)               := fg_mesh(i).io.out
