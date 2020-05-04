@@ -93,8 +93,8 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   for (i <- 0 until FG_NUM_CTR) {
     a_fg_mux_ctrl(i) := (a_lrange.rows <= (fg_pow2s(i) * FG_DIM).U)
   }
-  // Convert thermometer to binary (a,b) = (4,0),(3,1),(2,2),(1,3),(0,4), where
-  // a = 4 when 1 a-tile is broadcast to all fg-meshes
+  // Convert thermometer to binary (a,b) = (4,0),(3,1),(2,2),(1,3),(0,4), 
+  // where a = 4 when 1 a-tile is broadcast to all fg-meshes
   a_fg_mux_sel := PopCount(a_fg_mux_ctrl)
   b_fg_mux_sel := FG_NUM_CTR.U - a_fg_mux_sel
 

@@ -298,7 +298,11 @@ class FgTilerFSM[T <: Data : Arithmetic]
                               cmd.k(FG_DIM_IDX-1,0).orR - 1.U
 
       // update next state
-      state := s_FINISH_INIT1
+      when(io.cmd_in.valid) {
+        state := s_FINISH_INIT1
+      }
+      // if we are sitting in idle state, we are not busy!
+      busy := false.B
     }
     is (s_FINISH_INIT1) {
       // set the number of fg-tiles per row/col of the tile 
@@ -319,6 +323,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
 
       // update next state
       state := s_FINISH_INIT2
+      assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
     }
     is (s_FINISH_INIT2) {
       //-------------------------------------------------------------------
@@ -363,6 +368,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
 
       // update next state
       state := s_FINISH_INIT3
+      assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
     }
     is (s_FINISH_INIT3) {
       val l_FG_TILE_COLS_PER_GROUP = g_TILE_COLS_PER_GROUP *
@@ -377,6 +383,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
 
       // update next state
       state := s_FINISH_INIT4
+      assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
     }
     is (s_FINISH_INIT4) {
       val l_A_BYTE_WIDTH  = WireDefault(cmd.k << ITYPE_BYTES_IDX.U)
@@ -416,29 +423,24 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // update interface signals. we are only ready when an input cmd is
       // ready AND the output queue has 2 slots available to write to
       //-------------------------------------------------------------------
+      assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
       io.cmd_in.ready := (sched.ready >= 2.U)
 
       // issue gemmini commands
-      when(io.cmd_in.fire()) {
-        sched.push               := 2.U
-        sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(0).rs1        := (g_ACC_OUT_RSHIFT << 32) |
-                                    (g_ACTIVATION << 3) |
-                                    (g_DATAFLOW << 2) |
-                                    CONFIG_EX
-        sched.bits(0).rs2        := (g_RELU6_IN_LSHIFT << 32) |
-                                     g_SYSTOLIC_OUT_RSHIFT
-        sched.bits(1).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1        := CONFIG_STORE
-        sched.bits(1).rs2        := g_C_BYTES_PER_ROW
+      sched.push               := 2.U
+      sched.bits(0).inst.funct := CONFIG_CMD
+      sched.bits(0).rs1        := (g_ACC_OUT_RSHIFT << 32) |
+                                  (g_ACTIVATION << 3) |
+                                  (g_DATAFLOW << 2) |
+                                  CONFIG_EX
+      sched.bits(0).rs2        := (g_RELU6_IN_LSHIFT << 32) |
+                                   g_SYSTOLIC_OUT_RSHIFT
+      sched.bits(1).inst.funct := CONFIG_CMD
+      sched.bits(1).rs1        := CONFIG_STORE
+      sched.bits(1).rs2        := g_C_BYTES_PER_ROW
 
-        // update next state
-        state := s_RESET_OUTPUT_GROUP
-      }
-      .otherwise {
-        // if we are sitting in idle state, we are not busy!
-        busy := false.B
-      }
+      // update next state
+      state := s_RESET_OUTPUT_GROUP
     }
     //=======================================================================
     is (s_RESET_OUTPUT_GROUP) {

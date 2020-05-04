@@ -99,9 +99,10 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   // - don't use raw_cmd.valid, since it causes spurious prof_starts when
   //   the cmd_fsm is being configured
   //=========================================================================
-  val busy_last  = RegNext(is_computing)
+  val busy_last  = RegInit(false.B)
   val prof_start = WireDefault(~busy_last & is_computing)
   val prof_end   = WireDefault(busy_last & ~is_computing)
+  busy_last := is_computing
 
   val prof_cycle = RegInit(0.U(32.W))
   prof_cycle := Mux(prof_start, 0.U, prof_cycle + 1.U)
