@@ -32,7 +32,6 @@ class FgMeshWithDelays[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
   val DIM = FG_DIM*tileRows
 
   val A_TYPE = Vec(FG_DIM, Vec(tileRows, inputType))
-  val D_TYPE = Vec(FG_DIM, Vec(tileCols, inputType))
   val C_TYPE = Vec(FG_DIM, Vec(tileCols, outputType))
   val B_TYPE = Vec(FG_DIM, Vec(tileCols, inputType))
 

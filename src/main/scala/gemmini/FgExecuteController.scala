@@ -39,7 +39,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
     val prof       = Input(new Profiling)
   })
 
-
   io.completed.valid := false.B
   io.completed.bits  := DontCare
 
@@ -309,7 +308,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
                             wb_lrange.total_banks() - 1.U)
 
   val is_outputting      = wb_valid && !wb_garbage
-  val is_outputting_last = is_outputting && (wb_row === (wb_max_rows-1.U))
+  val is_outputting_last = is_outputting && (wb_row === (wb_rows-1.U))
 
   io.writeC.en           := is_outputting
   io.writeC.row          := wb_row
@@ -343,6 +342,11 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
     io.completed.bits := pending_preload_tag_complete.bits
     pending_preload_tag_complete.valid := false.B
   }
+
+  //=========================================================================
+  // busy calculation
+  //=========================================================================
+  io.busy := (state =/= s_IDLE) || mesh.io.busy
 
   //=========================================================================
   // hardware profiling counters (non architecturally visible!)
