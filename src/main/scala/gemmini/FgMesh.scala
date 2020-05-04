@@ -20,6 +20,9 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
   val ROW_TYPE = Vec(FG_NUM, Vec(FG_DIM, inputType))
   val COL_TYPE = Vec(FG_NUM, Vec(FG_DIM, inputType))
 
+  //========================================================================
+  // I/O interface
+  //========================================================================
   val io = IO(new Bundle {
     val a          = Flipped(Valid(ROW_TYPE))
     val b          = Flipped(Valid(COL_TYPE))
@@ -28,13 +31,12 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
     val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
     val pe_ctrl    = Input(new PEControl(accType))
     val out        = Valid(COL_TYPE)
-    val tag_out    = Output(new MeshQueueTag(config))
+    val tag_out    = Output(new FgMeshQueueTag(config))
     val busy       = Output(Bool())
     val prof       = Input(new Profiling)
   }
 
-
-  val fg_mesh = Seq.fill(FG_NUM)(Module(new MeshWithDelays2(config)))
+  val fg_mesh = Seq.fill(FG_NUM)(Module(new FgMeshWithDelays(config)))
 
   val a_mux_seq = Seq.fill(FG_NUM)(Vec(FG_DIM, inputType)))
   val b_mux_seq = Seq.fill(FG_NUM)(Vec(FG_DIM, inputType)))
@@ -45,25 +47,33 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
       if (i == 0 && j == 0) {
         a_mux_seq(0) := io.a.bits(0)
         b_mux_seq(0) := io.b.bits(0)
-      } else if ((i*SQRT_FG_NUM + j) % FG_NUM == 0) {
-        a_mux_seq(i*SQRT_FG_NUM + j) := Mux(a_mux_ctrl(i*SQRT_FG_NUM + j), io.a.bits(i*SQRT_FG_NUM + j), a_mux_seq((i-1)*SQRT_FG_NUM + j))
-        b_mux_seq(j*SQRT_FG_NUM + i) := Mux(b_mux_ctrl(j*SQRT_FG_NUM + i), io.b.bits(j*SQRT_FG_NUM + i), b_mux_seq((j-1)*SQRT_FG_NUM + i))
+      } else if ((j*SQRT_FG_NUM + i) % FG_NUM == 0) {
+        a_mux_seq(j*SQRT_FG_NUM + i) := Mux(a_mux_ctrl(j*SQRT_FG_NUM + i),
+                                            io.a.bits(j*SQRT_FG_NUM + i),
+                                            a_mux_seq((j-1)*SQRT_FG_NUM + i))
+        b_mux_seq(j*SQRT_FG_NUM + i) := Mux(b_mux_ctrl(j*SQRT_FG_NUM + i),
+                                            io.b.bits(j*SQRT_FG_NUM + i),
+                                            b_mux_seq((j-1)*SQRT_FG_NUM + i))
       } else {
-        a_mux_seq(i*SQRT_FG_NUM + j) := Mux(a_mux_ctrl(i*SQRT_FG_NUM + j), io.a.bits(i*SQRT_FG_NUM + j), a_mux_seq(i*SQRT_FG_NUM + j - 1))
-        b_mux_seq(j*SQRT_FG_NUM + i) := Mux(b_mux_ctrl(j*SQRT_FG_NUM + i), io.b.bits(j*SQRT_FG_NUM + i), b_mux_seq(j*SQRT_FG_NUM + i - 1))
+        a_mux_seq(j*SQRT_FG_NUM + i) := Mux(a_mux_ctrl(j*SQRT_FG_NUM + i),
+                                            io.a.bits(j*SQRT_FG_NUM + i),
+                                            a_mux_seq(j*SQRT_FG_NUM + i - 1))
+        b_mux_seq(j*SQRT_FG_NUM + i) := Mux(b_mux_ctrl(j*SQRT_FG_NUM + i),
+                                            io.b.bits(j*SQRT_FG_NUM + i),
+                                            b_mux_seq(j*SQRT_FG_NUM + i - 1))
       }
     }
   }
 
   for (i <- 0 until SQRT_FG_NUM) {
     for (j <- 0 until SQRT_FG_NUM) {
-      fg_mesh(j*SQRT_FG_NUM + i).io.a.bits := a_mux_seq(j*SQRT_FG_NUM + i)
+      fg_mesh(j*SQRT_FG_NUM + i).io.a.bits  := a_mux_seq(j*SQRT_FG_NUM + i)
       fg_mesh(j*SQRT_FG_NUM + i).io.a.valid := io.a.valid
       fg_mesh(j*SQRT_FG_NUM + i).io.b.bits := b_mux_seq(j*SQRT_FG_NUM + i)
       fg_mesh(j*SQRT_FG_NUM + i).io.b.valid := io.b.valid
       fg_mesh(j*SQRT_FG_NUM + i).io.tag_in <> io.tag_in
       fg_mesh(j*SQRT_FG_NUM + i).io.pe_ctrl := io.pe_ctrl
-      fg_mesh(j*SQRT_FG_NUM + i).io.prof := io.prof
+      fg_mesh(j*SQRT_FG_NUM + i).io.prof    := io.prof
 
       io.out.bits(j*SQRT_FG_NUM + i) := fg_mesh(j*SQRT_FG_NUM + i).io.out.bits
     }
@@ -72,16 +82,16 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
 
   //TODO move firing logic out of sub-arrays into this hierarchy level
   io.a.ready := fg_mesh(0).io.a.ready
-  io.d.ready := fg_mesh(0).io.d.ready
+  io.b.ready := fg_mesh(0).io.b.ready
 
   io.out.valid := fg_mesh(0).io.out.valid
   // Add muxing of inputs
 //  fg_mesh(0).io.a <> io.a(0)
-//  fg_mesh(0).io.d <> io.d(0)
+//  fg_mesh(0).io.b <> io.b(0)
 //  for (i <- 1 until FG_NUM) {
 //    for (j <- 1 until FG_NUM) {
 //      fg_mesh(j*FG_NUM + i).io.a <> io.a(j*FG_NUM + i)
-//      fg_mesh(j*FG_NUM + i).io.d <> io.d(j*FG_NUM + i)
+//      fg_mesh(j*FG_NUM + i).io.b <> io.b(j*FG_NUM + i)
 //    }
 //  }
 //
@@ -104,7 +114,7 @@ class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
   io.busy := tag_queue.valid || current_tag.rob_id.valid
 
   // TODO: this is hardcoded to output DIM rows
-  val output_counter = RegInit(0.U(log2Up(FG_DIM + 1).W))
+  val output_counter = RegInit(0.U(FG_DIM_CTR.W))
   val is_last_row_output = (output_counter === (FG_DIM-1).U)
   output_counter := wrappingAdd(output_counter, io.out.valid, FG_DIM)
 
