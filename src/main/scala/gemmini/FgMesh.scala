@@ -47,12 +47,10 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
 
   val fg_mesh = Seq.fill(FG_NUM)(Module(new FgMeshWithDelays(config)))
 
-  //val a_mux_seq = Wire(Vec(FG_NUM, Vec(FG_DIM, inputType)))
-  //val b_mux_seq = Wire(Vec(FG_NUM, Vec(FG_DIM, inputType)))
-
-  //TODO: convert thermometer to binary (00000 -> 000; 10000 -> 001; 11100 -> 011)
-  val a_mux_sel = BINARY(a_mux_ctrl)
-  val b_mux_sel = BINARY(b_mux_ctrl)
+  //TODO: check this is legal/functionally correct
+  //Convert thermometer to binary (00000 -> 000; 10000 -> 001; 11100 -> 011)
+  val a_mux_sel = io.a_mux_ctrl.map{ b => b.asUInt }.reduce(_ + _)
+  val b_mux_sel = io.b_mux_ctrl.map{ b => b.asUInt }.reduce(_ + _)
 
   val mesh_partition_list = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
@@ -64,8 +62,6 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
 
   var idx_divs = 0 //TODO better way to do this (gets reassigned in the for loop)
   // Routing the possible inputs to each sub-array
-
-
   for (i <- 0 until SQRT_FG_NUM) {
     for (j <- 0 until SQRT_FG_NUM) {
       idx_divs = mesh_partition_list.map{ e => (i*SQRT_FG_NUM+j) / e }.reverse //this must be floordiv
@@ -76,12 +72,6 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
     }
   }
 
-  //for (i <- 0 until FG_NUM) {
-  //  idx_divs = mesh_partition_list.map{ e => i / e }.reverse //this must be floordiv
-  //  for (j <- 0 until mesh_partition_list.length) {
-  //    a_mesh_muxes(i)(j) := io.a(idx_divs(j))
-  //  }
-  //}
 
   for (i <- 0 until FG_NUM) {
     fg_mesh(i).io.in_valid  := io.in_valid
@@ -95,41 +85,6 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   //TODO is this alright?
   io.out_valid := fg_mesh(0).io.out_valid
 
-  // Connect up all of the muxing of inputs
-  //for (i <- 0 until SQRT_FG_NUM) {
-  //  for (j <- 0 until SQRT_FG_NUM) {
-  //    if (i == 0 && j == 0) {
-  //      a_mux_seq(0) := io.a(0)
-  //      b_mux_seq(0) := io.b(0)
-  //    } else if ((j*SQRT_FG_NUM + i) % FG_NUM == 0) {
-  //      a_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.a_mux_ctrl(j*SQRT_FG_NUM + i),
-  //                                          io.a(j*SQRT_FG_NUM + i),
-  //                                          a_mux_seq((j-1)*SQRT_FG_NUM + i))
-  //      b_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.b_mux_ctrl(j*SQRT_FG_NUM + i),
-  //                                          io.b(j*SQRT_FG_NUM + i),
-  //                                          b_mux_seq((j-1)*SQRT_FG_NUM + i))
-  //    } else {
-  //      a_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.a_mux_ctrl(j*SQRT_FG_NUM + i),
-  //                                          io.a(j*SQRT_FG_NUM + i),
-  //                                          a_mux_seq(j*SQRT_FG_NUM + i - 1))
-  //      b_mux_seq(j*SQRT_FG_NUM + i) := Mux(io.b_mux_ctrl(j*SQRT_FG_NUM + i),
-  //                                          io.b(j*SQRT_FG_NUM + i),
-  //                                          b_mux_seq(j*SQRT_FG_NUM + i - 1))
-  //    }
-  //  }
-  //}
-
-
-  //for (i <- 0 until SQRT_FG_NUM) {
-  //  for (j <- 0 until SQRT_FG_NUM) {
-  //    fg_mesh(j*SQRT_FG_NUM + i).io.in_valid := io.in_valid
-  //    fg_mesh(j*SQRT_FG_NUM + i).io.a        := a_mux_seq(j*SQRT_FG_NUM + i)
-  //    fg_mesh(j*SQRT_FG_NUM + i).io.b        := b_mux_seq(j*SQRT_FG_NUM + i)
-  //    fg_mesh(j*SQRT_FG_NUM + i).io.flipped  := io.flipped
-
-  //    io.out(j*SQRT_FG_NUM + i) := fg_mesh(j*SQRT_FG_NUM + i).io.out
-  //  }
-  //}
 
   //=========================================================================
   // Tags
