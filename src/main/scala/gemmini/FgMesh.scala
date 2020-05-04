@@ -12,7 +12,7 @@ import gemmini.Util._
 import GemminiISA._
 
 
-class FgMesh[T <: Data : Arithmetic](config: GemminiConfig[T])
+class FgMesh[T <: Data : Arithmetic](config: FgGemminiConfig[T])
   (implicit val p: Parameters)
   extends Module with HasCoreParameters {
     import config._
@@ -24,16 +24,16 @@ class FgMesh[T <: Data : Arithmetic](config: GemminiConfig[T])
 
 
   val io = IO(new Bundle {
-    val a = Flipped(Valid(ROW_TYPE))
-    val b = Flipped(Valid(COL_TYPE))
+    val a          = Flipped(Valid(ROW_TYPE))
+    val b          = Flipped(Valid(COL_TYPE))
     val a_mux_ctrl = UInt(FG_NUM.W)
     val b_mux_ctrl = UInt(FG_NUM.W)
-    val tag_in = Flipped(Decoupled(new MeshQueueTag2(config)))
-    val pe_ctrl = Input(new PEControl(accType))
-    val out = Valid(COL_TYPE)
-    val tag_out = Output(new MeshQueueTag(config))
-    val busy = Output(Bool())
-    val prof = Input(new Profiling)
+    val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
+    val pe_ctrl    = Input(new PEControl(accType))
+    val out        = Valid(COL_TYPE)
+    val tag_out    = Output(new MeshQueueTag(config))
+    val busy       = Output(Bool())
+    val prof       = Input(new Profiling)
   }
 
 

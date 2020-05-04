@@ -12,31 +12,19 @@ import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 import gemmini.Util._
 
-class MeshQueueTag2[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
+class FgMeshQueueTag[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends Bundle with TagQueueTag {
   import config._
-
-  val rob_id = UDValid(UInt(log2Up(rob_entries).W))
-  val rows = UInt(log2Up(FG_DIM + 1).W)
-  val cols = UInt(log2Up(FG_DIM + 1).W)
-  val fg_col_start = UInt()
-  val bank_start = UInt()
-  val banks = UInt()
-  val garbage = Bool()
-  val accum = Bool()
+  val rob_id   = UInt(ROB_ENTRIES_IDX.W)
+  val c_lrange = new LocalRange(config)
 
   override def make_this_garbage(dummy: Int = 0): Unit = {
-    rob_id.valid := false.B
-    addr.make_this_garbage()
+    c_lrange.garbage := true.B
   }
-  override def cloneType: MeshQueueTag2.this.type
-    = new MeshQueueTag2(config).asInstanceOf[this.type]
 }
 
-
-class MeshWithDelays2[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
-  (implicit val p: Parameters)
-  extends Module with HasCoreParameters {
+class FgMeshWithDelays[T <: Data: Arithmetic](config: FgGemminiArrayConfig[T])
+  (implicit val p: Parameters) extends Module with HasCoreParameters {
   import config._
   //=========================================================================
   // module interface

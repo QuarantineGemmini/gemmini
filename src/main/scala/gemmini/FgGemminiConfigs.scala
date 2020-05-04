@@ -88,6 +88,12 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def OTYPE_BYTES_IDX = log2Ceil(OTYPE_BYTES) // can be 0
 
   //==========================================================================
+  // scratchpad/acc latency
+  //==========================================================================
+  def SP_RD_LATENCY  = 2
+  def ACC_RD_LATENCY = 2
+
+  //==========================================================================
   // scratchpad/accumulator banks/rows
   //==========================================================================
   def BANK_ROWS               = FG_DIM

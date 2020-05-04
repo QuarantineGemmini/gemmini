@@ -42,7 +42,6 @@ class FgAccumulatorBankWriteReq[T <: Data](val config:FgGemminiArrayConfig[T])
 class FgAccumulatorBankConfigIO[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val in_rshift    = Output(UInt(OTYPE_BITS_IDX.W))
   val acc_rshift   = Output(UInt(OTYPE_BITS_IDX.W))
   val relu6_lshift = Output(UInt(OTYPE_BITS_IDX.W))
   val act          = Output(UInt(2.W))
@@ -66,7 +65,6 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   })
   val mem = SyncReadMem(FG_DIM, ROW_TYPE)
 
-  val in_rshift    = io.acc_config.in_rshift
   val acc_rshift   = io.acc_config.acc_rshift
   val relu6_lshift = io.acc_config.relu6_lshift
   val activation   = io.acc_config.act
