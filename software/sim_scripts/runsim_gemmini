@@ -42,6 +42,14 @@ HW_CONFIG_G2_DSE6=Gemmini2dim32sp64acc16bus128
 HW_CONFIG_G2_DSE7=Gemmini2dim16sp16acc64bus128
 HW_CONFIG_G2_DSE8=Gemmini2dim32sp16acc64bus128
 
+# FgGemmini2 DSEs
+HW_CONFIG_FG_DSE1=FgGemmini2dim32fg32
+HW_CONFIG_FG_DSE2=FgGemmini2dim32fg16
+HW_CONFIG_FG_DSE3=FgGemmini2dim32fg8
+HW_CONFIG_FG_DSE4=FgGemmini2dim16fg16
+HW_CONFIG_FG_DSE5=FgGemmini2dim16fg8
+HW_CONFIG_FG_DSE6=FgGemmini2dim16fg4
+
 # workloads (vcs, verilator)
 TEST_0=echo
 TEST_1=padded
@@ -158,6 +166,13 @@ cat <<EOF
   -hw_g2_dse6   --> the $HW_CONFIG_G2_DSE6
   -hw_g2_dse7   --> the $HW_CONFIG_G2_DSE7
   -hw_g2_dse8   --> the $HW_CONFIG_G2_DSE8
+
+  -hw_fg_dse1   --> the $HW_CONFIG_FG_DSE1
+  -hw_fg_dse2   --> the $HW_CONFIG_FG_DSE2
+  -hw_fg_dse3   --> the $HW_CONFIG_FG_DSE3
+  -hw_fg_dse4   --> the $HW_CONFIG_FG_DSE4
+  -hw_fg_dse5   --> the $HW_CONFIG_FG_DSE5
+  -hw_fg_dse6   --> the $HW_CONFIG_FG_DSE6
   
   -trace_start <c>  --> start tracing at this cycle (defaults to 0)
   -vcd_full         --> capture all signals in design
@@ -405,6 +420,13 @@ while [ $# -ne 0 ] ; do
     -hw_g2_dse6) HW_CONFIG="hw_g2_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE6";;
     -hw_g2_dse7) HW_CONFIG="hw_g2_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE7";;
     -hw_g2_dse8) HW_CONFIG="hw_g2_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE8";;
+
+    -hw_fg_dse1) HW_CONFIG="hw_fg_dse1"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE1";;
+    -hw_fg_dse2) HW_CONFIG="hw_fg_dse2"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE2";;
+    -hw_fg_dse3) HW_CONFIG="hw_fg_dse3"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE3";;
+    -hw_fg_dse4) HW_CONFIG="hw_fg_dse4"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE4";;
+    -hw_fg_dse5) HW_CONFIG="hw_fg_dse5"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE5";;
+    -hw_fg_dse6) HW_CONFIG="hw_fg_dse6"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE6";;
     #-------------------------------------------------------------------------
     -noisy)       IS_NOISY=1    ;;
     -verbose)     IS_VERBOSE=1  ;;

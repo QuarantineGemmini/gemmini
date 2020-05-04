@@ -172,7 +172,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_rd_fg_col_start = ex_rd_req.fg_col_start
     val ex_rd_bank_start   = ex_rd_req.bank_start
     val ex_rd_banks        = ex_rd_req.banks
-    assert((ex_rd_bank_start % ex_rd_banks) === 0.U, "bank_start not aligned")
+    when (ex_rd_en) {
+      assert((ex_rd_bank_start % ex_rd_banks) === 0.U)
+    }
 
     // forward configs 2-cycle to match scratchpad latency
     val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
@@ -207,8 +209,10 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     loadA.module.io.resp.ready    := dma_wr_ready
     io.dma.loadA.resp.valid       := dma_wr_valid
     io.dma.loadA.resp.bits.rob_id := loadA.module.io.resp.bits.rob_id
-    assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
-    assert(dma_wr_bank < FG_NUM.U)
+    when (dma_wr_fire) {
+      assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
+      assert(dma_wr_bank < FG_NUM.U)
+    }
 
     banks.zipWithIndex.foreach { case (bank, i) =>
       bank.io.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
@@ -236,7 +240,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_rd_fg_col_start = ex_rd_req.fg_col_start
     val ex_rd_bank_start   = ex_rd_req.bank_start
     val ex_rd_banks        = ex_rd_req.banks
-    assert(ex_rd_banks === 1.U && ex_rd_bank_start < 2.U)
+    when (ex_rd_en) {
+      assert(ex_rd_banks === 1.U && ex_rd_bank_start < 2.U)
+    }
 
     // forward configs 2-cycle to match scratchpad latency
     val ex_rd_bank_start_buf = ShiftRegister(ex_rd_bank_start, 2)
@@ -271,8 +277,10 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     loadB.module.io.resp.ready    := dma_wr_ready
     io.dma.loadB.resp.valid       := dma_wr_valid
     io.dma.loadB.resp.bits.rob_id := loadB.module.io.resp.bits.rob_id
-    assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
-    assert(dma_wr_bank < 2.U)
+    when (dma_wr_fire) {
+      assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
+      assert(dma_wr_bank < 2.U)
+    }
 
     banks.zipWithIndex.foreach { case (bank, i) =>
       bank.io.write.en           := (dma_wr_fire && (dma_wr_bank === i.U))
@@ -302,7 +310,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val ex_wr_bank_end     = ex_wr_bank_start + ex_wr_banks - 1.U
     val ex_wr_accum        = ex_wr_req.accum
     val ex_wr_data         = ex_wr_req.data
-    assert((ex_wr_bank_start % ex_wr_banks) === 0.U, "banks not aligned")
+    when (ex_wr_en) {
+      assert((ex_wr_bank_start % ex_wr_banks) === 0.U, "banks not aligned")
+    }
 
     // dma-loadD
     val dma_wr_ready        = !ex_wr_en && io.dma.loadD.resp.ready
@@ -320,7 +330,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     loadD.module.io.resp.ready    := dma_wr_ready
     io.dma.loadD.resp.valid       := dma_wr_valid
     io.dma.loadD.resp.bits.rob_id := loadD.module.io.resp.bits.rob_id
-    assert(dma_wr_rows === 1.U, "dma cannot write >1 row at a time")
+    when (dma_wr_fire) {
+      assert(dma_wr_rows === 1.U, "dma cannot write >1 row at a time")
+    }
 
     val is_writing = ex_wr_en || dma_wr_fire
     banks.zipWithIndex.foreach { case (bank, i) =>
@@ -369,7 +381,6 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_bank         = dma_rd_lrange.bank_start()
     val dma_rd_cols         = dma_rd_lrange.cols
     val dma_rd_fg_col_start = dma_rd_lrange.fg_col_start
-    assert(dma_rd_rows === 1.U, "dma cannot read >1 acc rows per request")
 
     val store_is_blocked = WireDefault(false.B)
     io.dma.storeC.req.ready := MuxCase(false.B, 
@@ -377,6 +388,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
         (dma_rd_bank === i.U) -> (!bank.io.write.en && !store_is_blocked)
       })
     val dma_rd_fire = io.dma.storeC.req.fire()
+    when (dma_rd_fire) {
+      assert(dma_rd_rows === 1.U, "dma cannot read >1 acc rows per request")
+    }
 
     banks.zipWithIndex.foreach { case (bank, i) =>
       bank.io.read.req.en           := dma_rd_fire && (dma_rd_bank === i.U)
