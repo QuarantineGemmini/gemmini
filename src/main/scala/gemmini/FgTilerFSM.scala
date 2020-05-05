@@ -321,9 +321,36 @@ class FgTilerFSM[T <: Data : Arithmetic]
           w => (g_FG_TILE_COL_END < w.U) -> w.U
         })))
 
-      // update next state
-      state := s_FINISH_INIT2
+      //-------------------------------------------------------------------
+      // configure loadA/loadB MemOp unit one time
+      //-------------------------------------------------------------------
+      val A_mem_stride = g_A_BYTES_PER_ROW
+      val configA = Wire(new FgConfigRs1)
+      configA.garbage := 0.U
+      configA.is_acc  := false.B
+      configA.is_B_sp := false.B
+      configA.cfgtype := CONFIG_LOAD
+
+      val B_mem_stride = g_B_BYTES_PER_ROW
+      val configB = Wire(new FgConfigRs1)
+      configB.garbage := 0.U
+      configB.is_acc  := false.B
+      configB.is_B_sp := true.B
+      configB.cfgtype := CONFIG_LOAD
+
       assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
+      when(sched.ready >= 2.U) {
+        sched.push               := 2.U
+        sched.bits(0).rs1        := configA.asUInt()
+        sched.bits(0).rs2        := A_mem_stride
+        sched.bits(0).inst.funct := CONFIG_CMD
+        sched.bits(1).rs1        := configB.asUInt()
+        sched.bits(1).rs2        := B_mem_stride
+        sched.bits(1).inst.funct := CONFIG_CMD
+
+        // update next state
+        state := s_FINISH_INIT2
+      }
     }
     is (s_FINISH_INIT2) {
       //-------------------------------------------------------------------
@@ -366,9 +393,25 @@ class FgTilerFSM[T <: Data : Arithmetic]
       g_ITEM_COLS_PER_TILE := g_FG_TILE_COLS_PER_TILE * FG_DIM.U
       g_ITEM_ROWS_PER_TILE := g_FG_TILE_ROWS_PER_TILE * FG_DIM.U
 
-      // update next state
-      state := s_FINISH_INIT3
+      //-------------------------------------------------------------------
+      // configure loadD MemOp unit
+      //-------------------------------------------------------------------
+      val D_mem_stride = Mux(g_REPEATING_BIAS, 0.U, g_D_BYTES_PER_ROW)
+      val configD = Wire(new FgConfigRs1)
+      configD.garbage := 0.U
+      configD.is_acc  := true.B
+      configD.is_B_sp := false.B
+      configD.cfgtype := CONFIG_LOAD
+
       assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
+      when(sched.ready >= 1.U) {
+        sched.push               := 1.U
+        sched.bits(0).rs1        := configD.asUInt()
+        sched.bits(0).rs2        := D_mem_stride
+        sched.bits(0).inst.funct := CONFIG_CMD
+        // update next state
+        state := s_FINISH_INIT3
+      }
     }
     is (s_FINISH_INIT3) {
       val l_FG_TILE_COLS_PER_GROUP = g_TILE_COLS_PER_GROUP *
@@ -424,23 +467,25 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // ready AND the output queue has 2 slots available to write to
       //-------------------------------------------------------------------
       assert(io.cmd_in.valid, "cmd must remain valid for 4 init cycles")
-      io.cmd_in.ready := (sched.ready >= 2.U)
+      when(sched.ready >= 2.U) {
+        io.cmd_in.ready := true.B
 
-      // issue gemmini commands
-      sched.push               := 2.U
-      sched.bits(0).inst.funct := CONFIG_CMD
-      sched.bits(0).rs1        := (g_ACC_OUT_RSHIFT << 32) |
-                                  (g_ACTIVATION << 3) |
-                                  (g_DATAFLOW << 2) |
-                                  CONFIG_EX
-      sched.bits(0).rs2        := (g_RELU6_IN_LSHIFT << 32) |
-                                   g_SYSTOLIC_OUT_RSHIFT
-      sched.bits(1).inst.funct := CONFIG_CMD
-      sched.bits(1).rs1        := CONFIG_STORE
-      sched.bits(1).rs2        := g_C_BYTES_PER_ROW
+        // issue gemmini commands
+        sched.push               := 2.U
+        sched.bits(0).inst.funct := CONFIG_CMD
+        sched.bits(0).rs1        := (g_ACC_OUT_RSHIFT << 32) |
+                                    (g_ACTIVATION << 3) |
+                                    (g_DATAFLOW << 2) |
+                                    CONFIG_EX
+        sched.bits(0).rs2        := (g_RELU6_IN_LSHIFT << 32) |
+                                     g_SYSTOLIC_OUT_RSHIFT
+        sched.bits(1).inst.funct := CONFIG_CMD
+        sched.bits(1).rs1        := CONFIG_STORE
+        sched.bits(1).rs2        := g_C_BYTES_PER_ROW
 
-      // update next state
-      state := s_RESET_OUTPUT_GROUP
+        // update next state
+        state := s_RESET_OUTPUT_GROUP
+      }
     }
     //=======================================================================
     is (s_RESET_OUTPUT_GROUP) {
@@ -491,15 +536,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_MOVE_FIRST_B_TILE_INTO_SP) {
       // calculate mvin parameters
-      val B_mem_addr    = loop2_B_mem_addr
-      val B_mem_stride  = g_B_BYTES_PER_ROW
-
-      val configB = Wire(new FgConfigRs1)
-      configB.garbage := 0.U
-      configB.is_acc  := false.B
-      configB.is_B_sp := true.B
-      configB.cfgtype := CONFIG_LOAD
-
+      val B_mem_addr = loop2_B_mem_addr
       val rangeB = Wire(new FgLocalRange(config))
       rangeB.rows         := loop2_k_item_dims
       rangeB.cols         := gbl_item_cols
@@ -511,14 +548,11 @@ class FgTilerFSM[T <: Data : Arithmetic]
       rangeB.row_start    := gbl_B_cur_row_addr
 
       // issue gemmini commands
-      when(sched.ready >= 2.U) {
-        sched.push               := 2.U
-        sched.bits(0).rs1        := configB.asUInt()
-        sched.bits(0).rs2        := B_mem_stride
-        sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1        := B_mem_addr
-        sched.bits(1).rs2        := rangeB.asUInt()
-        sched.bits(1).inst.funct := LOAD_CMD
+      when(sched.ready >= 1.U) {
+        sched.push               := 1.U
+        sched.bits(0).rs1        := B_mem_addr
+        sched.bits(0).rs2        := rangeB.asUInt()
+        sched.bits(0).inst.funct := LOAD_CMD
 
         // update next state
         state := s_RESET_B_TILE_SUBCOL_IN_SUBROW
@@ -537,15 +571,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_MAYBE_MOVE_NEXT_B_TILE_INTO_SP) {
       // calculate mvin parameters
-      val B_mem_addr    = loop3_B_mem_addr + g_I_BYTE_COLS_PER_TILE
-      val B_mem_stride  = g_B_BYTES_PER_ROW
-
-      val configB = Wire(new FgConfigRs1)
-      configB.garbage := 0.U
-      configB.is_acc  := false.B
-      configB.is_B_sp := true.B
-      configB.cfgtype := CONFIG_LOAD
-
+      val B_mem_addr = loop3_B_mem_addr + g_I_BYTE_COLS_PER_TILE
       val rangeB = Wire(new FgLocalRange(config))
       rangeB.rows         := loop2_k_item_dims
       rangeB.cols         := Mux(gbl_tile_col === g_TILE_COL_END-1.U,
@@ -563,14 +589,11 @@ class FgTilerFSM[T <: Data : Arithmetic]
       when (gbl_tile_col === loop1_tile_col_end) {
         state := s_RESET_A_TILE_SUBROW_IN_SUBCOL
       }
-      .elsewhen (sched.ready >= 2.U) {
-        sched.push               := 2.U
-        sched.bits(0).rs1        := configB.asUInt()
-        sched.bits(0).rs2        := B_mem_stride
-        sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1        := B_mem_addr
-        sched.bits(1).rs2        := rangeB.asUInt()
-        sched.bits(1).inst.funct := LOAD_CMD
+      .elsewhen (sched.ready >= 1.U) {
+        sched.push               := 1.U
+        sched.bits(0).rs1        := B_mem_addr
+        sched.bits(0).rs2        := rangeB.asUInt()
+        sched.bits(0).inst.funct := LOAD_CMD
 
         // update next state
         state := s_RESET_A_TILE_SUBROW_IN_SUBCOL
@@ -594,15 +617,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_MAYBE_MOVE_A_TILE_INTO_SP) {
       // calculate mvin parameters
-      val A_mem_addr   = loop4_A_mem_addr
-      val A_mem_stride = g_A_BYTES_PER_ROW
-
-      val configA = Wire(new FgConfigRs1)
-      configA.garbage := 0.U
-      configA.is_acc  := false.B
-      configA.is_B_sp := false.B
-      configA.cfgtype := CONFIG_LOAD
-
+      val A_mem_addr = loop4_A_mem_addr
       val rangeA = Wire(new FgLocalRange(config))
       rangeA.rows         := gbl_item_rows
       rangeA.cols         := loop2_k_item_dims
@@ -617,14 +632,11 @@ class FgTilerFSM[T <: Data : Arithmetic]
       when (gbl_tile_col =/= loop1_tile_col_start) {
         state := s_MAYBE_MOVE_D_TILE_INTO_ACC
       }
-      .elsewhen (sched.ready >= 2.U) {
-        sched.push               := 2.U
-        sched.bits(0).rs1        := configA.asUInt()
-        sched.bits(0).rs2        := A_mem_stride
-        sched.bits(0).inst.funct := CONFIG_CMD
-        sched.bits(1).rs1        := A_mem_addr
-        sched.bits(1).rs2        := rangeA.asUInt()
-        sched.bits(1).inst.funct := LOAD_CMD
+      .elsewhen (sched.ready >= 1.U) {
+        sched.push               := 1.U
+        sched.bits(0).rs1        := A_mem_addr
+        sched.bits(0).rs2        := rangeA.asUInt()
+        sched.bits(0).inst.funct := LOAD_CMD
 
         // update next state
         state := s_MAYBE_MOVE_D_TILE_INTO_ACC
@@ -633,15 +645,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
     //=======================================================================
     is (s_MAYBE_MOVE_D_TILE_INTO_ACC) {
       // calculate mvin parameters (NOTE: we know D is valid at this point)
-      val D_mem_addr   = loop4_D_mem_addr
-      val D_mem_stride = Mux(g_REPEATING_BIAS, 0.U, g_D_BYTES_PER_ROW)
-
-      val configD = Wire(new FgConfigRs1)
-      configD.garbage := 0.U
-      configD.is_acc  := true.B
-      configD.is_B_sp := false.B
-      configD.cfgtype := CONFIG_LOAD
-
+      val D_mem_addr = loop4_D_mem_addr
       val rangeD = Wire(new FgLocalRange(config))
       rangeD.rows         := gbl_item_rows
       rangeD.cols         := gbl_item_cols
@@ -657,11 +661,8 @@ class FgTilerFSM[T <: Data : Arithmetic]
       when((loop2_k_tile_col =/= 0.U) || !g_HAS_BIAS) {
         state := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
       }
-      .elsewhen (sched.ready >= 2.U) {
-        sched.push               := 2.U
-        sched.bits(0).rs1        := configD.asUInt()
-        sched.bits(0).rs2        := D_mem_stride
-        sched.bits(0).inst.funct := CONFIG_CMD
+      .elsewhen (sched.ready >= 1.U) {
+        sched.push               := 1.U
         sched.bits(1).rs1        := D_mem_addr
         sched.bits(1).rs2        := rangeD.asUInt()
         sched.bits(1).inst.funct := LOAD_CMD

@@ -288,8 +288,8 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   val wb_valid           = mesh.io.out_valid
   val wb_data            = mesh.io.out
-  val wb_rob_id          = mesh.io.tag_out.rob_id
-  val wb_lrange          = mesh.io.tag_out.wb_lrange
+  val wb_rob_id          = mesh.io.tag_out.bits.rob_id
+  val wb_lrange          = mesh.io.tag_out.bits.wb_lrange
   val wb_cols            = wb_lrange.cols
   val wb_fg_col_start    = wb_lrange.fg_col_start
   val wb_bank_start      = wb_lrange.bank_start()
@@ -298,7 +298,11 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_garbage         = wb_lrange.garbage
   val wb_row             = wb_lrange.row_start
   val is_outputting      = wb_valid && !wb_garbage
-  val is_outputting_last = is_outputting && (wb_row === (FG_DIM-1).U)
+  val is_outputting_last = mesh.io.tag_out.valid
+
+  TODO TODO TODO TODO
+  1) clean up the accept/issue/final logs. they are ugly when using %d
+  2) remove D-input from ex.acc and ex.pre completely. it is not a real input
 
   io.writeC.en           := is_outputting
   io.writeC.row          := wb_row

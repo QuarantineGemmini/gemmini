@@ -41,7 +41,7 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
     val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
     val out_valid  = Output(Bool())
     val out        = Output(Vec(FG_NUM, Vec(FG_DIM, accType)))
-    val tag_out    = Output(new FgMeshQueueTag(config))
+    val tag_out    = Valid(new FgMeshQueueTag(config))
     val busy       = Output(Bool())
     val prof       = Input(new Profiling)
   })
@@ -91,7 +91,8 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   garbage_tag.pop()
   garbage_tag.bits.make_this_garbage()
   val current_tag = RegInit(garbage_tag)
-  io.tag_out := current_tag.bits
+  io.tag_out.valid := false.B
+  io.tag_out.bits := current_tag.bits
 
   // we are busy if we still have unfinished, valid tags
   io.busy := tag_queue.valid || current_tag.valid
@@ -101,6 +102,7 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   output_counter := wrappingAdd(output_counter, io.out_valid, FG_DIM)
 
   when (is_last_row_output && io.out_valid) {
+    io.tag_out.valid := true.B
     current_tag.pop()
     tag_queue.ready := true.B
     when (tag_queue.fire()) {

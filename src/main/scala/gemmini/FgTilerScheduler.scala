@@ -146,19 +146,19 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     val dst = new_entry.dst.bits
     when(new_entry.is_config) {
       when (new_entry.is_loadA) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvinA[stride=%x]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvinA[stride=%d]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .elsewhen (new_entry.is_loadB) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvinB[stride=%x]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvinB[stride=%d]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .elsewhen (new_entry.is_loadD) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvinD[stride=%x]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvinD[stride=%d]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .elsewhen (new_entry.is_storeC) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvoutC[stride=%x]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvoutC[stride=%d]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .otherwise {
@@ -172,49 +172,47 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     }
     .elsewhen (new_entry.is_loadA) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "mvinA[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
+        "mvinA[dram=%x, spad=(%d,%d), rows=%d, cols=%d]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, dst.row_start, dst.fg_col_start, dst.rows, dst.cols)
     }
     .elsewhen (new_entry.is_loadB) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "mvinB[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
+        "mvinB[dram=%x, spad=(%d,%d), rows=%d, cols=%d]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, dst.row_start, dst.fg_col_start, dst.rows, dst.cols)
     }
     .elsewhen (new_entry.is_loadD) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "mvinD[dram=%x, acc=(%x,%x), rows=%x, cols=%x]\n",
+        "mvinD[dram=%x, spad=(%d,%d), rows=%d, cols=%d]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, dst.row_start, dst.fg_col_start, dst.rows, dst.cols)
     }
     .elsewhen (new_entry.is_storeC) {
       printf("cycle[%d], entry[%d], accept[%d], " + 
-        "mvoutC[dram=%x, acc=(%x,%x), rows=%x, cols=%x]\n",
+        "mvoutC[dram=%x, acc=(%d,%d), rows=%d, cols=%d]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         cmd.rs1, op2.row_start, op2.fg_col_start, op2.rows, op2.cols)
     }
     .elsewhen (new_entry.is_preload) {
-      printf("cycle[%d], entry[%d], accept[%d], preload[B=%x, C=%x]\n",
-        debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1(31,0), cmd.rs2(31,0))
-    }
-    .elsewhen (new_entry.is_execflip) {
-      printf(
-        "cycle[%d], entry[%d], accept[%d], " +
-        "ex.pre[A=(%x,%x), D=(%x,%x), rows=%x, cols=%x]\n",
+      printf("cycle[%d], entry[%d], accept[%d], " + 
+        "preload[B=(%d,%d), C=(%d,%d), rows=%d, cols=%d]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
         op1.row_start, op1.fg_col_start, 
         op2.row_start, op2.fg_col_start, op2.rows, op2.cols)
+    }
+    .elsewhen (new_entry.is_execflip) {
+      printf("cycle[%d], entry[%d], accept[%d], " +
+        "ex.pre[A=(%d,%d), rows=%d, cols=%d]\n",
+        debug_cycle, new_entry_id, cmd_id.value, 
+        op1.row_start, op1.fg_col_start, op1.rows, op1.cols)
     }
     .otherwise {
       assert(new_entry.is_exec)
-      printf(
-        "cycle[%d], entry[%d], accept[%d], " +
-        "ex.acc[A=(%x,%x), D=(%x,%x), rows=%x, cols=%x]\n",
+      printf("cycle[%d], entry[%d], accept[%d], " +
+        "ex.acc[A=(%d,%d), rows=%d, cols=%d]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        op1.row_start, op1.fg_col_start, 
-        op2.row_start, op2.fg_col_start, op2.rows, op2.cols)
+        op1.row_start, op1.fg_col_start, op1.rows, op1.cols)
     }
 
     //======================================================================
