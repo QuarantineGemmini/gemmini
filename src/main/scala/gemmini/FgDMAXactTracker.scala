@@ -24,7 +24,7 @@ class FgDMATrackerEntry[T <: Data]
   val txn_useful_bytes = UInt(DMA_TXN_BYTES_CTR.W)
   val txn_bytes        = UInt(DMA_TXN_BYTES_CTR.W)
   val txn_log2_bytes   = UInt(DMA_TXN_BYTES_CTR_IDX.W)
-  val txn_start_idx    = UInt(DMA_TXN_BYTES.W)
+  val txn_start_idx    = UInt(DMA_TXN_BYTES_IDX.W)
   val paddr            = UInt(coreMaxAddrBits.W)
 }
 

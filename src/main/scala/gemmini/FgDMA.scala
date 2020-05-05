@@ -64,7 +64,7 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // track outstanding transactions for each operation
     //-----------------------------------------------
-    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 2))
+    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 1))
 
     //-----------------------------------------------
     // tlb translations and tilelink txn dispatch
@@ -87,14 +87,12 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tile-link A-channel request
     //-----------------------------------------------
-    val tl_a_xactid = control.io.dispatch.bits.xactid
     tl.a.valid := control.io.dispatch.valid
     control.io.dispatch.ready := tl.a.ready
-    tracker.io.peek(1).xactid := tl_a_xactid
     tl.a.bits := edge.Get(
-      fromSource = tl_a_xactid,
-      toAddress  = tracker.io.peek(1).entry.paddr,
-      lgSize     = tracker.io.peek(1).entry.txn_log2_bytes
+      fromSource = control.io.dispatch.bits.xactid,
+      toAddress  = control.io.dispatch.bits.paddr,
+      lgSize     = control.io.dispatch.bits.txn_log2_bytes,
     )._2
 
     //-----------------------------------------------

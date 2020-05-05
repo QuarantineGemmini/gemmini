@@ -44,7 +44,7 @@ class FgMemOpTracker[T <: Data](config: FgGemminiArrayConfig[T])
   when (io.progress.fire()) {
     val rob_id = io.progress.bits.rob_id
     cmds(rob_id).rows_left := cmds(rob_id).rows_left - 1.U
-    assert(cmds(rob_id).rows_left > 1.U)
+    assert(cmds(rob_id).rows_left >= 1.U)
   }
 
   // complete outstanding command logic

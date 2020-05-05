@@ -217,7 +217,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
   // which tile-column in A we are in
   val (loop2_k_tile_col, loop2_k_tile_col_n) = regwire(TILES_IDX)
   // how many elems in k-dim is this tile
-  val loop2_k_item_dims = Reg(UInt(FG_DIM_IDX.W))
+  val loop2_k_item_dims = Reg(UInt(FG_DIM_CTR.W))
   // initialized from loop1 values
   val loop2_A_mem_addr = Reg(UInt(xLen.W))
   val loop2_B_mem_addr = Reg(UInt(xLen.W))
@@ -415,9 +415,9 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // the last tile indexes
       // - TODO: don't use division here
       //-------------------------------------------------------------------
-      g_TILE_ROW_END   := (cmd.m/g_ITEM_ROWS_PER_TILE) + l_extra_m_elems.orR
-      g_TILE_COL_END   := (cmd.n/g_ITEM_COLS_PER_TILE) + l_extra_n_elems.orR
-      g_K_TILE_COL_END := (cmd.k/FG_DIM.U)             + l_extra_k_elems.orR
+      g_TILE_ROW_END   := (cmd.m-1.U) / g_ITEM_ROWS_PER_TILE
+      g_TILE_COL_END   := (cmd.n-1.U) / g_ITEM_COLS_PER_TILE
+      g_K_TILE_COL_END := (cmd.k-1.U) / FG_DIM.U            
 
       //-------------------------------------------------------------------
       // update interface signals. we are only ready when an input cmd is
@@ -606,7 +606,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
       val rangeA = Wire(new FgLocalRange(config))
       rangeA.rows         := gbl_item_rows
       rangeA.cols         := loop2_k_item_dims
-      rangeA.is_acc       := true.B
+      rangeA.is_acc       := false.B
       rangeA.is_accum     := false.B
       rangeA.is_B_sp      := false.B
       rangeA.garbage      := false.B

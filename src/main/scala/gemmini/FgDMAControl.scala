@@ -26,7 +26,9 @@ class FgDMAControlRequest[T <: Data](val config: FgGemminiArrayConfig[T])
 class FgDMADispatch[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val xactid = UInt(DMA_REQS_IDX.W)
+  val xactid         = UInt(DMA_REQS_IDX.W)
+  val paddr          = UInt(coreMaxAddrBits.W)
+  val txn_log2_bytes = UInt(DMA_TXN_BYTES_CTR_IDX.W)
 }
 
 //===========================================================================
@@ -52,6 +54,9 @@ class FgDMAControl[T <: Data]
     val dispatch = Decoupled(new FgDMADispatch(config))
     val busy     = Output(Bool())
   })
+  io.req.ready      := false.B
+  io.alloc.valid    := false.B
+  io.dispatch.valid := false.B
 
   //-----------------------------------------------
   // active request
@@ -115,17 +120,17 @@ class FgDMAControl[T <: Data]
   val best_txn = candidate_txns.reduce { (best, cur) =>
     Mux(cur.useful_bytes > best.useful_bytes, cur, best)
   }
-  val cur_useful_bytes   = best_txn.useful_bytes
-  val cur_txn_bytes      = best_txn.bytes
-  val cur_txn_log2_bytes = best_txn.log2_bytes
-  val cur_data_start_idx = best_txn.data_start_idx
-  val cur_aligned_paddr  = best_txn.paddr
+  val cur_txn_useful_bytes = best_txn.useful_bytes
+  val cur_txn_bytes        = best_txn.bytes
+  val cur_txn_log2_bytes   = best_txn.log2_bytes
+  val cur_data_start_idx   = best_txn.data_start_idx
+  val cur_aligned_paddr    = best_txn.paddr
 
   //-----------------------------------------------
   // allocate new tag for the tile-link request
   //-----------------------------------------------
   val first_txn_data_start_idx = RegInit(0.U(DMA_TXN_BYTES_IDX.W))
-  val is_last_txn              = (cur_useful_bytes === useful_bytes_left)
+  val is_last_txn              = (cur_txn_useful_bytes === useful_bytes_left)
   val is_first_txn             = (useful_bytes_requested === 0.U)
 
   io.alloc.valid                 := false.B
@@ -134,13 +139,16 @@ class FgDMAControl[T <: Data]
   io.alloc.bits.req_useful_bytes := total_useful_bytes
   io.alloc.bits.data_start_idx   := first_txn_data_start_idx
   io.alloc.bits.txn_start_idx    := total_bytes_requested
+  io.alloc.bits.txn_useful_bytes := cur_txn_useful_bytes   
   io.alloc.bits.txn_bytes        := cur_txn_bytes
   io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
   io.alloc.bits.paddr            := cur_aligned_paddr
 
   // output transaction towards tile-link A-channel
-  io.dispatch.valid       := false.B
-  io.dispatch.bits.xactid := io.nextid
+  io.dispatch.valid               := false.B
+  io.dispatch.bits.xactid         := io.nextid
+  io.dispatch.bits.paddr          := cur_aligned_paddr
+  io.dispatch.bits.txn_log2_bytes := cur_txn_log2_bytes
 
   //-----------------------------------------------
   // FSM
@@ -156,9 +164,9 @@ class FgDMAControl[T <: Data]
     // TODO: remove this 1-row restriction, (a quite complicated task)
     assert(io.req.bits.lrange.rows === 1.U, 
       "cannot request more than 1 row at a time")
-    val tmp_vpn = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
+    val tmp_vpn         = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
     val tmp_vpn_mapped  = cur_ppn_valid && (cur_vpn === tmp_vpn)
-    val tmp_total_bytes = lrange.total_bytes()
+    val tmp_total_bytes = io.req.bits.lrange.total_bytes()
     req                   := io.req.bits
     total_bytes_requested := 0.U
     total_useful_bytes    := tmp_total_bytes
@@ -192,7 +200,7 @@ class FgDMAControl[T <: Data]
       io.alloc.valid := io.dispatch.ready
       io.dispatch.valid      := io.alloc.ready
       when(io.dispatch.fire()) {
-        val next_vaddr      = cur_vaddr + cur_useful_bytes
+        val next_vaddr      = cur_vaddr + cur_txn_useful_bytes
         val next_vpn        = next_vaddr(coreMaxAddrBits-1, pgIdxBits)
         val needs_translate = (next_vpn =/= cur_vpn)
 
@@ -201,7 +209,7 @@ class FgDMAControl[T <: Data]
           first_txn_data_start_idx     := cur_data_start_idx
         }
         total_bytes_requested := total_bytes_requested + cur_txn_bytes
-        useful_bytes_left := useful_bytes_left - cur_useful_bytes
+        useful_bytes_left := useful_bytes_left - cur_txn_useful_bytes
         cur_vaddr := next_vaddr
 
         when (is_last_txn) {
