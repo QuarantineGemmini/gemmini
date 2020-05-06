@@ -300,9 +300,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val is_outputting      = wb_valid && !wb_garbage
   val is_outputting_last = mesh.io.tag_out.valid
 
-  TODO TODO TODO TODO
-  1) clean up the accept/issue/final logs. they are ugly when using %d
-  2) remove D-input from ex.acc and ex.pre completely. it is not a real input
+  //TODO TODO TODO TODO
+  //1) clean up the accept/issue/final logs. they are ugly when using %d
+  //2) remove D-input from ex.acc and ex.pre completely. it is not a real input
 
   io.writeC.en           := is_outputting
   io.writeC.row          := wb_row

@@ -21,11 +21,11 @@ class Tile[T <: Data : Arithmetic]
     val in_a     = Input(Vec(rows, inputType))
     val in_b     = Input(Vec(columns, outputType)) 
     val in_d     = Input(Vec(columns, outputType))
-    val in_ctrl  = Input(Vec(columns, new PEControl(accType)))
+    val in_ctrl  = Input(Vec(columns, new PEControl))
     val out_a    = Output(Vec(rows, inputType))
     val out_c    = Output(Vec(columns, outputType))
     val out_b    = Output(Vec(columns, outputType))
-    val out_ctrl = Output(Vec(columns, new PEControl(accType)))
+    val out_ctrl = Output(Vec(columns, new PEControl))
 
     val in_valid = Input(Vec(columns, Bool()))
     val out_valid = Output(Vec(columns, Bool()))
