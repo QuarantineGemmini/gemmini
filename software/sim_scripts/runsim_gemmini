@@ -266,16 +266,17 @@ runsim() {
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
     info "interactive debug started, no logfile generated!"
     stty -echo
-    $NUMACTL $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
+    $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
     stty echo
   elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
-    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
+    echo "Running BIN=$BIN"
+    $BIN $extra_opts "$workload_binary" $workload_args \
       |& spike-dasm |& tee -a "$logfile"
     stty echo
     set +x
   else
-    $NUMACTL $BIN $extra_opts "$workload_binary" $workload_args \
+    $BIN $extra_opts "$workload_binary" $workload_args \
       |& spike-dasm &>> "$logfile"
     stty echo
   fi
