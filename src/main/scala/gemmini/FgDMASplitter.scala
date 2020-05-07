@@ -109,7 +109,8 @@ class FgDMASplitter[T <: Data]
   // outputs
   //---------------------------------
   io.tl_a.valid           := false.B
-  io.tl_a.bits.is_full    := is_full
+  //io.tl_a.bits.is_full    := is_full
+  io.tl_a.bits.is_full    := (txn_bytes === txn_useful_bytes)
   io.tl_a.bits.xactid     := cur_txn.xactid
   io.tl_a.bits.paddr      := paddr
   io.tl_a.bits.log2_bytes := txn_log2_bytes
@@ -120,9 +121,12 @@ class FgDMASplitter[T <: Data]
   // next-state logic
   //---------------------------------
   val txn_bytes_sent_next    = txn_bytes_sent + DMA_BUS_BYTES.U
-  val useful_bytes_sent_next = useful_bytes_sent + txn_useful_bytes
   val txn_finished_next      = (txn_bytes_sent_next === txn_bytes)
-  val xfer_finished_next     = (useful_bytes_sent_next === req_useful_bytes)
+  val useful_bytes_sent_next = Mux(txn_finished_next, 
+                                   useful_bytes_sent + txn_useful_bytes,
+                                   useful_bytes_sent)
+  val xfer_finished_next     = (req_useful_bytes > 0.U) &&
+                               (useful_bytes_sent_next === req_useful_bytes)
 
   //---------------------------------
   // FSM
@@ -164,12 +168,12 @@ class FgDMASplitter[T <: Data]
       io.tl_a.valid := true.B
       when(io.tl_a.fire()) {
         txn_bytes_sent := txn_bytes_sent_next
+        useful_bytes_sent := useful_bytes_sent_next
         beat_idx := beat_idx + 1.U
         when (xfer_finished_next) {
           assert(txn_finished_next, "req finished but one of its txn did not")
           start_next_req()
         } .elsewhen (txn_finished_next) {
-          useful_bytes_sent := useful_bytes_sent_next
           start_next_txn()
         }
       }

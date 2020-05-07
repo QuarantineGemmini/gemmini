@@ -15,6 +15,7 @@ import GemminiISA._
 class FgMeshQueueTag[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends Bundle with TagQueueTag {
   import config._
+  val valid = Bool() // false if just a dummy when COMPUTE only (not PRELOAD)
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
   val wb_lrange = new FgLocalRange(config)
 
@@ -51,8 +52,8 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   // Each sub-mesh selects from a set of values that are indexed into various 
   // portiions of the a and b inputs based upon the fine-grainedness of the 
   // array, the size of the array, and the sub-meshes position in the full mesh
-  val a_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM, inputType))))
-  val b_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM, inputType))))
+  val a_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM,inputType))))
+  val b_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM,inputType))))
   val fg_pow2s = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
   // Routing the possible inputs to each sub-array's mux
@@ -87,7 +88,7 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   // we load the tag for the preload, and have to write the tag out after
   // the FOLLOWING compute
   val garbage_tag = Wire(UDValid(new FgMeshQueueTag(config)))
-  garbage_tag := DontCare
+  garbage_tag.bits := DontCare
   garbage_tag.pop()
   garbage_tag.bits.make_this_garbage()
   val current_tag = RegInit(garbage_tag)
@@ -102,10 +103,10 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   output_counter := wrappingAdd(output_counter, io.out_valid, FG_DIM)
 
   when (is_last_row_output && io.out_valid) {
-    io.tag_out.valid := true.B
+    io.tag_out.valid := current_tag.valid
     current_tag.pop()
     tag_queue.ready := true.B
-    when (tag_queue.fire()) {
+    when (tag_queue.fire() && tag_queue.bits.valid) {
       current_tag.push(tag_queue.bits)
     }
   }

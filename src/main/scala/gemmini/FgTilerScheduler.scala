@@ -62,9 +62,12 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     //-----------------------
 
     // dependency tracking fields
-    val op1 = UDValid(new FgLocalRange(config))
-    val op2 = UDValid(new FgLocalRange(config))
-    val dst = UDValid(new FgLocalRange(config))
+    val srcA  = UDValid(new FgLocalRange(config))
+    val srcB  = UDValid(new FgLocalRange(config))
+    val srcCD = UDValid(new FgLocalRange(config))
+    val dstA  = UDValid(new FgLocalRange(config))
+    val dstB  = UDValid(new FgLocalRange(config))
+    val dstCD = UDValid(new FgLocalRange(config))
     val issued = Bool()
     val complete_on_issue = Bool()
     val deps = Vec(ROB_ENTRIES, Bool())
@@ -121,12 +124,19 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     new_entry.issued      := false.B
     new_entry.cmd         := cmd
 
-    new_entry.op1.valid   := is_preload || is_exec
-    new_entry.op1.bits    := rs1_laddr
-    new_entry.op2.valid   := is_exec || is_store
-    new_entry.op2.bits    := rs2_laddr
-    new_entry.dst.valid   := is_preload || is_load
-    new_entry.dst.bits    := rs2_laddr
+    new_entry.srcA.valid  := is_exec
+    new_entry.srcA.bits   := rs1_laddr
+    new_entry.srcB.valid  := is_preload
+    new_entry.srcB.bits   := rs1_laddr
+    new_entry.srcCD.valid := is_store
+    new_entry.srcCD.bits  := rs2_laddr
+
+    new_entry.dstA.valid  := is_loadA
+    new_entry.dstA.bits   := rs2_laddr
+    new_entry.dstB.valid  := is_loadB
+    new_entry.dstB.bits   := rs2_laddr
+    new_entry.dstCD.valid := is_loadD || is_preload
+    new_entry.dstCD.bits  := rs2_laddr
 
     // ALL THE FOLLOWING FOR DEBUGGING ONLY
     new_entry.cmd_id      := cmd_id.value                
@@ -141,24 +151,28 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     //======================================================================
     // debug
     //======================================================================
-    val op1 = new_entry.op1.bits
-    val op2 = new_entry.op2.bits
-    val dst = new_entry.dst.bits
+    val srcA  = new_entry.srcA.bits
+    val srcB  = new_entry.srcB.bits
+    val srcCD = new_entry.srcCD.bits
+    val dstA  = new_entry.dstA.bits
+    val dstB  = new_entry.dstB.bits
+    val dstCD = new_entry.dstCD.bits
+
     when(new_entry.is_config) {
       when (new_entry.is_loadA) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvinA[stride=%d]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvinA[stride=%x]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .elsewhen (new_entry.is_loadB) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvinB[stride=%d]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvinB[stride=%x]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .elsewhen (new_entry.is_loadD) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvinD[stride=%d]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvinD[stride=%x]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .elsewhen (new_entry.is_storeC) {
-        printf("cycle[%d], entry[%d], accept[%d], config_mvoutC[stride=%d]\n", 
+        printf("cycle[%d], entry[%d], accept[%d], config_mvoutC[stride=%x]\n", 
           debug_cycle, new_entry_id, cmd_id.value, new_entry.cmd.rs2)
       }
       .otherwise {
@@ -172,85 +186,85 @@ class FgTilerScheduler[T <: Data: Arithmetic]
     }
     .elsewhen (new_entry.is_loadA) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "mvinA[dram=%x, spad=(%d,%d), rows=%d, cols=%d]\n",
+        "mvinA[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, dst.row_start, dst.fg_col_start, dst.rows, dst.cols)
+        cmd.rs1, dstA.row_start, dstA.fg_col_start, dstA.rows, dstA.cols)
     }
     .elsewhen (new_entry.is_loadB) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "mvinB[dram=%x, spad=(%d,%d), rows=%d, cols=%d]\n",
+        "mvinB[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, dst.row_start, dst.fg_col_start, dst.rows, dst.cols)
+        cmd.rs1, dstB.row_start, dstB.fg_col_start, dstB.rows, dstB.cols)
     }
     .elsewhen (new_entry.is_loadD) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "mvinD[dram=%x, spad=(%d,%d), rows=%d, cols=%d]\n",
+        "mvinD[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, dst.row_start, dst.fg_col_start, dst.rows, dst.cols)
+        cmd.rs1, dstCD.row_start, dstCD.fg_col_start, dstCD.rows, dstCD.cols)
     }
     .elsewhen (new_entry.is_storeC) {
       printf("cycle[%d], entry[%d], accept[%d], " + 
-        "mvoutC[dram=%x, acc=(%d,%d), rows=%d, cols=%d]\n",
+        "mvoutC[dram=%x, acc=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, op2.row_start, op2.fg_col_start, op2.rows, op2.cols)
+        cmd.rs1, srcCD.row_start, srcCD.fg_col_start, srcCD.rows, srcCD.cols)
     }
     .elsewhen (new_entry.is_preload) {
       printf("cycle[%d], entry[%d], accept[%d], " + 
-        "preload[B=(%d,%d), C=(%d,%d), rows=%d, cols=%d]\n",
+        "preload[B=(%x,%x), C=(%x,%x), rows=%x, cols=%x, k-cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        op1.row_start, op1.fg_col_start, 
-        op2.row_start, op2.fg_col_start, op2.rows, op2.cols)
+        srcB.row_start, srcB.fg_col_start, 
+        dstCD.row_start, dstCD.fg_col_start, dstCD.rows, dstCD.cols,
+        srcB.cols)
     }
     .elsewhen (new_entry.is_execflip) {
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "ex.pre[A=(%d,%d), rows=%d, cols=%d]\n",
+        "ex.pre[A=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        op1.row_start, op1.fg_col_start, op1.rows, op1.cols)
+        srcA.row_start, srcA.fg_col_start, srcA.rows, srcA.cols)
     }
     .otherwise {
       assert(new_entry.is_exec)
       printf("cycle[%d], entry[%d], accept[%d], " +
-        "ex.acc[A=(%d,%d), rows=%d, cols=%d]\n",
+        "ex.acc[A=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        op1.row_start, op1.fg_col_start, op1.rows, op1.cols)
+        srcA.row_start, srcA.fg_col_start, srcA.rows, srcA.cols)
     }
 
     //======================================================================
-    new_entry.q := Mux1H(Seq(
-      new_entry.is_loadA   -> ldaq,
-      new_entry.is_loadB   -> ldbq,
-      new_entry.is_loadD   -> lddq,
-      new_entry.is_storeC  -> stcq,
-      new_entry.is_exec    -> exq,
+    val n_e = new_entry
+    n_e.q := Mux1H(Seq(
+      new_entry.is_loadA  -> ldaq,
+      new_entry.is_loadB  -> ldbq,
+      new_entry.is_loadD  -> lddq,
+      new_entry.is_storeC -> stcq,
+      new_entry.is_exec   -> exq,
     ))
 
     // We search for all entries which write to an address which we read from
-    val raws = entries.map { e => 
-      e.valid && 
-      e.bits.dst.valid && (
-      (e.bits.dst.bits.overlaps(new_entry.op1.bits) && new_entry.op1.valid) ||
-      (e.bits.dst.bits.overlaps(new_entry.op2.bits) && new_entry.op2.valid)
-    )}
+    val raws = entries.map { e => val eb = e.bits
+      e.valid && (
+      (n_e.srcA.valid  && eb.dstA.valid  && srcA.overlaps(eb.dstA.bits)) ||
+      (n_e.srcB.valid  && eb.dstB.valid  && srcB.overlaps(eb.dstB.bits)) ||
+      (n_e.srcCD.valid && eb.dstCD.valid && srcCD.overlaps(eb.dstCD.bits)))}
 
     // We search for all entries which read from an address that we write to
-    val wars = entries.map { e => 
-      e.valid && 
-      new_entry.dst.valid &&
-      (new_entry.dst.bits.overlaps(e.bits.op1.bits) && e.bits.op1.valid) ||
-      (new_entry.dst.bits.overlaps(e.bits.op2.bits) && e.bits.op2.valid)
-    }
+    val wars = entries.map { e => val eb = e.bits
+      e.valid && (
+      (n_e.dstA.valid  && eb.srcA.valid  && dstA.overlaps(eb.srcA.bits)) ||
+      (n_e.dstB.valid  && eb.srcB.valid  && dstB.overlaps(eb.srcB.bits)) ||
+      (n_e.dstCD.valid && eb.srcCD.valid && dstCD.overlaps(eb.srcCD.bits)))}
 
-    // We search for all entries which write to an address that we write to
-    val waws = entries.map { e => 
-      e.valid && 
-      e.bits.dst.valid &&
-      new_entry.dst.valid &&
-      new_entry.dst.bits.conflicts(e.bits.dst.bits)
-    }
+    // We search for all entries which read from an address that we write to
+    val waws = entries.map { e => val eb = e.bits
+      e.valid && (
+      (n_e.dstA.valid  && eb.dstA.valid  && dstA.conflicts(eb.dstA.bits)) ||
+      (n_e.dstB.valid  && eb.dstB.valid  && dstB.conflicts(eb.dstB.bits)) ||
+      (n_e.dstCD.valid && eb.dstCD.valid && dstCD.conflicts(eb.dstCD.bits)))}
 
     val older_in_same_q = entries.map { e => 
       e.valid && 
       e.bits.q === new_entry.q && 
+      e.bits.q === exq && // load{A,B,D} and storeC don't need this
       !e.bits.issued
     }
 

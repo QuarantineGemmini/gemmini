@@ -410,12 +410,12 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_data  = dma_rd_datas(dma_rd_bank_buf)
 
     val dma_rd_q_type = new FgDMAStoreRequest(config, C_STORE_ROW_BYTES)
-    val dma_rd_q = Module(new Queue(dma_rd_q_type, 3))
+    val dma_rd_q = Module(new Queue(dma_rd_q_type, 4))
     dma_rd_q.io.deq.ready := false.B
 
     // we can only be SURE that the io.dma.storeC.req can be handled 2 cycles
     // later if the queue has a slot open for it if the dma engine blocks
-    store_is_blocked := (dma_rd_q.io.count =/= 0.U)
+    store_is_blocked := (dma_rd_q.io.count > 1.U)
 
     // queue accumulator read if can't send to dma-store unit this cycle
     dma_rd_q.io.enq.valid := dma_rd_en_buf && (!storeC.module.io.req.ready || 

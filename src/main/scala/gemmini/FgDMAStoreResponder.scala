@@ -35,7 +35,8 @@ class FgDMAStoreResponder[T <: Data]
 
   val useful_bytes_completed      = RegInit(0.U(log2Ceil(max_xfer_bytes+1).W))
   val useful_bytes_completed_next = useful_bytes_completed + txn_useful_bytes
-  val finished_all_bytes          = (useful_bytes_completed_next === 
+  val finished_all_bytes          = (total_useful_bytes > 0.U) &&
+                                    (useful_bytes_completed_next === 
                                      total_useful_bytes)
 
   val last_xactid    = RegInit(0.U(DMA_REQS_IDX.W))
@@ -45,7 +46,7 @@ class FgDMAStoreResponder[T <: Data]
   io.peek.xactid      := io.tl_d.bits.xactid
   io.tl_d.ready       := false.B
   io.pop.valid        := false.B
-  io.pop.bits         := rob_id
+  io.pop.bits         := io.tl_d.bits.xactid
   io.resp.valid       := false.B
   io.resp.bits.rob_id := rob_id
         

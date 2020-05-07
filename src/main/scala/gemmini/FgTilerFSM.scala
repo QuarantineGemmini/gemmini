@@ -663,9 +663,9 @@ class FgTilerFSM[T <: Data : Arithmetic]
       }
       .elsewhen (sched.ready >= 1.U) {
         sched.push               := 1.U
-        sched.bits(1).rs1        := D_mem_addr
-        sched.bits(1).rs2        := rangeD.asUInt()
-        sched.bits(1).inst.funct := LOAD_CMD
+        sched.bits(0).rs1        := D_mem_addr
+        sched.bits(0).rs2        := rangeD.asUInt()
+        sched.bits(0).inst.funct := LOAD_CMD
 
         // update next state
         state := s_PRELOAD_B_TILE_INTO_ARRAY_AND_SET_C_ADDR_IN_ACC
@@ -721,16 +721,12 @@ class FgTilerFSM[T <: Data : Arithmetic]
       rangeA.fg_col_start := gbl_A_fg_col_start
       rangeA.row_start    := gbl_A_row_addr
 
-      // don't care about D
-      val rangeD = Wire(new FgLocalRange(config))
-      rangeD := DontCare
-
       // on first tile in 4th loop: compute_preloaded
       // else: compute_accumulated
       when (sched.ready >= 1.U) {
         sched.push               := 1.U
         sched.bits(0).rs1        := rangeA.asUInt()
-        sched.bits(0).rs2        := rangeD.asUInt()
+        sched.bits(0).rs2        := 0.U
         sched.bits(0).inst.funct := Mux(gbl_tile_row === loop1_tile_row_start,
                                         COMPUTE_AND_FLIP_CMD,
                                         COMPUTE_AND_STAY_CMD)

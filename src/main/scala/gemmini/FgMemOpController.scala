@@ -25,8 +25,8 @@ class FgMemOpController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   val cmd = Queue(io.cmd, MEM_OP_QUEUE_LENGTH)
   val is_config_cmd = cmd.valid && (cmd.bits.cmd.inst.funct === CONFIG_CMD)
-  val is_load_cmd   = cmd.valid && (cmd.bits.cmd.inst.funct === CONFIG_LOAD)
-  val is_store_cmd  = cmd.valid && (cmd.bits.cmd.inst.funct === CONFIG_STORE)
+  val is_load_cmd   = cmd.valid && (cmd.bits.cmd.inst.funct === LOAD_CMD)
+  val is_store_cmd  = cmd.valid && (cmd.bits.cmd.inst.funct === STORE_CMD)
   val rob_id        = cmd.bits.rob_id
   val mstatus       = cmd.bits.cmd.status
   val vaddr         = cmd.bits.cmd.rs1

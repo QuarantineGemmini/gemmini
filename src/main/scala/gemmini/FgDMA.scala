@@ -154,8 +154,11 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
       val flush = Input(Bool())
     })
 
+    val control_ready = WireDefault(false.B)
+    val splitter_ready = WireDefault(false.B)
     val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
-    io.req.ready    := req.ready
+    io.req.ready    := control_ready && splitter_ready
+    req.ready       := io.req.ready
     req.valid       := io.req.valid
     req.bits.vaddr  := io.req.bits.vaddr
     req.bits.lrange := io.req.bits.lrange
@@ -171,18 +174,20 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     // tlb translations and tilelink txn dispatch
     //-----------------------------------------------
     val control = Module(new FgDMAControl(config, max_xfer_bytes, false))
-    control.io.req    <> req
-    control.io.nextid := tracker.io.nextid
-    tracker.io.alloc  <> control.io.alloc
-    io.tlb            <> control.io.tlb
-    control.io.flush  := io.flush
+    control_ready        := control.io.req.ready
+    control.io.req.valid := req.fire()
+    control.io.req.bits  := req.bits
+    control.io.nextid    := tracker.io.nextid
+    tracker.io.alloc     <> control.io.alloc
+    io.tlb               <> control.io.tlb
+    control.io.flush     := io.flush
 
     //-----------------------------------------------
     // track outstanding requests
     //-----------------------------------------------
     val splitter = Module(new FgDMASplitter(config, max_xfer_bytes))
-    assert(splitter.io.req.ready === true.B, "splitter blocked on req")
-    splitter.io.req.valid := io.req.valid
+    splitter_ready        := splitter.io.req.ready
+    splitter.io.req.valid := io.req.fire()
     splitter.io.req.bits  := io.req.bits
     splitter.io.txn       <> control.io.dispatch
     tracker.io.peek(0)    <> splitter.io.peek

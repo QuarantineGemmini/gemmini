@@ -68,6 +68,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val multiply_garbage = compute_rs1.garbage // A bits garbage
   val preload_zeros    = preload_rs1.garbage // B bits garbage
   val c_garbage        = preload_rs2.garbage
+  assert(!multiply_garbage)
 
   //=========================================================================
   // configuration state
@@ -239,6 +240,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //=========================================================================
   class ComputeCntrlSignals extends Bundle {
     val in_valid      = Bool()
+    val has_preload   = Bool()
     val a_fg_mux_sel  = UInt(FG_NUM_CTR_CTR.W)
     val b_fg_mux_sel  = UInt(FG_NUM_CTR_CTR.W)
     val rob_id        = UInt(ROB_ENTRIES_IDX.W)
@@ -256,6 +258,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh_ctrl.in_valid     := state === s_PRELOAD ||
                             state === s_MUL_PRE ||
                             state === s_MUL
+  mesh_ctrl.has_preload  := state === s_PRELOAD || state === s_MUL_PRE
   mesh_ctrl.a_fg_mux_sel := a_fg_mux_sel
   mesh_ctrl.b_fg_mux_sel := b_fg_mux_sel
   mesh_ctrl.rob_id       := cmd.bits(preload_idx).rob_id
@@ -279,6 +282,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh.io.b_mux_sel             := mesh_ctrl_buf.b_fg_mux_sel
   mesh.io.flipped               := mesh_ctrl_buf.flipped
   mesh.io.tag_in.valid          := mesh_ctrl_buf.last_row
+  mesh.io.tag_in.bits.valid     := mesh_ctrl_buf.has_preload
   mesh.io.tag_in.bits.rob_id    := mesh_ctrl_buf.rob_id
   mesh.io.tag_in.bits.wb_lrange := mesh_in_c_lrange
   mesh.io.prof                  := io.prof
@@ -299,10 +303,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_row             = wb_lrange.row_start
   val is_outputting      = wb_valid && !wb_garbage
   val is_outputting_last = mesh.io.tag_out.valid
-
-  //TODO TODO TODO TODO
-  //1) clean up the accept/issue/final logs. they are ugly when using %d
-  //2) remove D-input from ex.acc and ex.pre completely. it is not a real input
 
   io.writeC.en           := is_outputting
   io.writeC.row          := wb_row

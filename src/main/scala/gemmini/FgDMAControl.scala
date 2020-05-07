@@ -39,7 +39,7 @@ class FgDMADispatch[T <: Data](val config: FgGemminiArrayConfig[T])
 // - achieves max throughput of 1 dispatch/cycle
 //===========================================================================
 class FgDMAControl[T <: Data]
-  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int, is_read_mode:Boolean)
+  (config: FgGemminiArrayConfig[T], max_xfer_bytes: Int, is_load_mode:Boolean)
   (implicit p: Parameters) extends CoreModule with MemoryOpConstants {
   import config._
   //-----------------------------------------------
@@ -88,7 +88,7 @@ class FgDMAControl[T <: Data]
   io.tlb.req.bits.tlb_req.vaddr       := Cat(cur_vpn, 0.U(pgIdxBits.W))
   io.tlb.req.bits.tlb_req.passthrough := false.B
   io.tlb.req.bits.tlb_req.size        := 0.U
-  io.tlb.req.bits.tlb_req.cmd         := (if(is_read_mode) M_XRD else M_XWR)
+  io.tlb.req.bits.tlb_req.cmd         := (if(is_load_mode) M_XRD else M_XWR)
   io.tlb.req.bits.status              := mstatus
 
   //-----------------------------------------------
@@ -118,7 +118,9 @@ class FgDMAControl[T <: Data]
     txn
   }
   val best_txn = candidate_txns.reduce { (best, cur) =>
-    Mux(cur.useful_bytes > best.useful_bytes, cur, best)
+    Mux(cur.useful_bytes === best.useful_bytes, 
+      Mux(cur.log2_bytes < best.log2_bytes, cur, best),
+      Mux(cur.useful_bytes > best.useful_bytes, cur, best))
   }
   val cur_txn_useful_bytes = best_txn.useful_bytes
   val cur_txn_bytes        = best_txn.bytes
@@ -164,9 +166,11 @@ class FgDMAControl[T <: Data]
     // TODO: remove this 1-row restriction, (a quite complicated task)
     assert(io.req.bits.lrange.rows === 1.U, 
       "cannot request more than 1 row at a time")
-    val tmp_vpn         = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
-    val tmp_vpn_mapped  = cur_ppn_valid && (cur_vpn === tmp_vpn)
-    val tmp_total_bytes = io.req.bits.lrange.total_bytes()
+    val tmp_vpn            = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
+    val tmp_vpn_mapped     = cur_ppn_valid && (cur_vpn === tmp_vpn)
+    val tmp_total_bytes    = if(is_load_mode)
+                                io.req.bits.lrange.total_write_bytes() else
+                                io.req.bits.lrange.total_read_bytes()
     req                   := io.req.bits
     total_bytes_requested := 0.U
     total_useful_bytes    := tmp_total_bytes
@@ -198,7 +202,7 @@ class FgDMAControl[T <: Data]
     }
     is (s_REQ_NEXT_CHUNK) {
       io.alloc.valid := io.dispatch.ready
-      io.dispatch.valid      := io.alloc.ready
+      io.dispatch.valid := io.alloc.ready
       when(io.dispatch.fire()) {
         val next_vaddr      = cur_vaddr + cur_txn_useful_bytes
         val next_vpn        = next_vaddr(coreMaxAddrBits-1, pgIdxBits)
