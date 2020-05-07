@@ -92,8 +92,6 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   garbage_tag.pop()
   garbage_tag.bits.make_this_garbage()
   val current_tag = RegInit(garbage_tag)
-  io.tag_out.valid := false.B
-  io.tag_out.bits := current_tag.bits
 
   // we are busy if we still have unfinished, valid tags
   io.busy := tag_queue.valid || current_tag.valid
@@ -101,6 +99,11 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   val output_counter = RegInit(0.U(FG_DIM_IDX.W))
   val is_last_row_output = (output_counter === (FG_DIM-1).U)
   output_counter := wrappingAdd(output_counter, io.out_valid, FG_DIM)
+
+  io.tag_out.valid := false.B
+  io.tag_out.bits := current_tag.bits
+  io.tag_out.bits.wb_lrange.row_start := 
+                      current_tag.bits.wb_lrange.row_start + output_counter
 
   when (is_last_row_output && io.out_valid) {
     io.tag_out.valid := current_tag.valid

@@ -89,8 +89,8 @@ class FgScratchpadBank[T <: Data]
   //--------------------------------------
   // read path
   //--------------------------------------
-  val rd_row          = RegNext(io.read.req.row)
-  val rd_fg_col_start = RegNext(io.read.req.fg_col_start)
+  val rd_row          = io.read.req.row
+  val rd_fg_col_start = io.read.req.fg_col_start
   val rd_en           = io.read.req.en
   val rd_data         = mem.read(rd_row, rd_en).asUInt()
   val rd_bitshift     = (rd_fg_col_start * FG_DIM.U * ITYPE_BITS.U)

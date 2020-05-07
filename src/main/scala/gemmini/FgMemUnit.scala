@@ -187,7 +187,8 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     }
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val ex_rd_datas     = Cat(banks.map { bank => bank.io.read.resp.data })
+    val ex_rd_datas     = Cat(banks.reverse.map { 
+                              bank => bank.io.read.resp.data })
     val ex_rd_data_cast = ex_rd_datas.asTypeOf(UInt(AB_EXEC_PORT_BITS.W))
     val ex_rd_bitshift  = ex_rd_bank_start_buf * FG_DIM.U * ITYPE_BITS.U
     io.exec.readA.resp.data := (ex_rd_data_cast >> ex_rd_bitshift)
@@ -406,7 +407,8 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_rob_id_buf = ShiftRegister(dma_rd_rob_id, 2)
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val dma_rd_datas = VecInit(banks.map { bank => bank.io.read.resp.data })
+    val dma_rd_datas = VecInit(banks.reverse.map { 
+                               bank => bank.io.read.resp.data })
     val dma_rd_data  = dma_rd_datas(dma_rd_bank_buf)
 
     val dma_rd_q_type = new FgDMAStoreRequest(config, C_STORE_ROW_BYTES)

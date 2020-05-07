@@ -109,11 +109,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //----------------------------------------
   val is_reading_a     = WireInit(false.B)
   val a_nonzero_cycles = Mux(a_lrange.rows > FG_DIM.U,FG_DIM.U,a_lrange.rows)
-  val a_maxbank_rows   = a_lrange.rows(FG_DIM_IDX-1,0)
+  val a_maxbank_rows   = a_lrange.rows(15,FG_DIM_IDX)
   val a_nonzero_cols   = a_lrange.cols
-  val a_banks          = Mux(sp_read_counter < a_maxbank_rows,
-                             a_lrange.total_banks(),
-                             a_lrange.total_banks() - 1.U)
+  val a_banks          = a_lrange.total_banks() //ok to write to junk pad rows
   val a_read_en        = (sp_read_counter < a_nonzero_cycles) && is_reading_a
 
   io.readA.req.en           := a_read_en
@@ -245,7 +243,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
     val b_fg_mux_sel  = UInt(FG_NUM_CTR_CTR.W)
     val rob_id        = UInt(ROB_ENTRIES_IDX.W)
     val c_lrange      = new FgLocalRange(config)
-    val row_idx       = UInt(FG_DIM_CTR.W)
     val flipped       = Bool()
     val last_row      = Bool()
   }
@@ -263,7 +260,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh_ctrl.b_fg_mux_sel := b_fg_mux_sel
   mesh_ctrl.rob_id       := cmd.bits(preload_idx).rob_id
   mesh_ctrl.c_lrange     := c_lrange
-  mesh_ctrl.row_idx      := sp_read_counter
   mesh_ctrl.flipped      := in_flipped && (sp_read_counter === 0.U)
   mesh_ctrl.last_row     := sp_read_counter === (FG_DIM-1).U
 
@@ -271,10 +267,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   // Instantiate the actual mesh and connect non-blocking inputs
   //========================================================================
   val mesh = Module(new FgMesh(config))
-  val mesh_in_c_lrange = Wire(new FgLocalRange(config))
-  mesh_in_c_lrange           := mesh_ctrl_buf.c_lrange
-  mesh_in_c_lrange.row_start := mesh_ctrl_buf.row_idx
-
   mesh.io.in_valid              := mesh_ctrl_buf.in_valid
   mesh.io.a                     := a_data
   mesh.io.b                     := b_data
@@ -284,7 +276,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh.io.tag_in.valid          := mesh_ctrl_buf.last_row
   mesh.io.tag_in.bits.valid     := mesh_ctrl_buf.has_preload
   mesh.io.tag_in.bits.rob_id    := mesh_ctrl_buf.rob_id
-  mesh.io.tag_in.bits.wb_lrange := mesh_in_c_lrange
+  mesh.io.tag_in.bits.wb_lrange := mesh_ctrl_buf.c_lrange
   mesh.io.prof                  := io.prof
 
   //=========================================================================
@@ -300,7 +292,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_banks           = wb_lrange.total_banks()
   val wb_accum           = wb_lrange.is_accum
   val wb_garbage         = wb_lrange.garbage
-  val wb_row             = wb_lrange.row_start
+  val wb_row             = wb_lrange.row_start_within_bank()
   val is_outputting      = wb_valid && !wb_garbage
   val is_outputting_last = mesh.io.tag_out.valid
 
