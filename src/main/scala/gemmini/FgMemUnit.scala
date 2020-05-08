@@ -70,7 +70,7 @@ class FgMemUnitExecWriteReq[T <: Data](val config: FgGemminiArrayConfig[T])
   val bank_start   = Output(UInt(FG_NUM_IDX.W))
   val banks        = Output(UInt(FG_NUM_CTR.W))
   val accum        = Output(Bool())
-  val data         = Output(UInt(C_STORE_ROW_BITS.W))
+  val data         = Output(UInt(D_LOAD_ROW_BITS.W))
 }
 
 //============================================================================

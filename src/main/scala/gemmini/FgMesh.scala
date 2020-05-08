@@ -15,11 +15,12 @@ import GemminiISA._
 class FgMeshQueueTag[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit val p: Parameters) extends Bundle with TagQueueTag {
   import config._
-  val valid = Bool() // false if just a dummy when COMPUTE only (not PRELOAD)
+  val do_writeback = Bool()
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
   val wb_lrange = new FgLocalRange(config)
 
   override def make_this_garbage(dummy: Int = 0): Unit = {
+    do_writeback := false.B
     wb_lrange.garbage := true.B
   }
 }
@@ -42,7 +43,10 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
     val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
     val out_valid  = Output(Bool())
     val out        = Output(Vec(FG_NUM, Vec(FG_DIM, accType)))
-    val tag_out    = Valid(new FgMeshQueueTag(config))
+    val tag_out    = Output(new Bundle {
+      val bits     = new FgMeshQueueTag(config)
+      val commit   = Bool()
+    })
     val busy       = Output(Bool())
     val prof       = Input(new Profiling)
   })
@@ -89,30 +93,29 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   // we load the tag for the preload, and have to write the tag out after
   // the FOLLOWING compute
   val garbage_tag = Wire(UDValid(new FgMeshQueueTag(config)))
-  garbage_tag.bits := DontCare
   garbage_tag.pop()
+  garbage_tag.bits := DontCare
   garbage_tag.bits.make_this_garbage()
   val current_tag = RegInit(garbage_tag)
 
   // we are busy if we still have unfinished, valid tags
-  io.busy := tag_queue.valid || current_tag.valid
+  io.busy := tag_queue.valid || 
+             (current_tag.valid && current_tag.bits.do_writeback)
 
   val output_counter = RegInit(0.U(FG_DIM_IDX.W))
   val is_last_row_output = (output_counter === (FG_DIM-1).U)
   output_counter := wrappingAdd(output_counter, io.out_valid, FG_DIM)
 
-  io.tag_out.valid := false.B
+  io.tag_out.commit := false.B
   io.tag_out.bits := current_tag.bits
   io.tag_out.bits.wb_lrange.row_start := 
                       current_tag.bits.wb_lrange.row_start + output_counter
 
   when (is_last_row_output && io.out_valid) {
-    io.tag_out.valid := current_tag.valid
-    current_tag.pop()
+    io.tag_out.commit := current_tag.valid
     tag_queue.ready := true.B
-    when (tag_queue.fire() && tag_queue.bits.valid) {
-      current_tag.push(tag_queue.bits)
-    }
+    current_tag.push(tag_queue.bits)
+    assert(tag_queue.fire(), "fg-mesh missing next tag!")
   }
 
   //=========================================================================
