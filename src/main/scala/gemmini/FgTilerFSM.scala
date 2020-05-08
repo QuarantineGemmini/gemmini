@@ -450,7 +450,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // for calculating DRAM addresses each iteration
       //-------------------------------------------------------------------
       g_A_BYTES_PER_TILE_ROW  := l_A_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
-      g_B_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * g_ITEM_ROWS_PER_TILE 
+      g_B_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * FG_DIM.U
       g_C_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * g_ITEM_ROWS_PER_TILE 
       g_D_BYTES_PER_TILE_ROW  := l_D_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
 

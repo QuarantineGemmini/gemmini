@@ -51,7 +51,8 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
 
   // Each sub-mesh selects from a set of values that are indexed into various 
   // portiions of the a and b inputs based upon the fine-grainedness of the 
-  // array, the size of the array, and the sub-meshes position in the full mesh
+  // array, the size of the array, and the sub-meshes position in the 
+  // full mesh
   val a_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM,inputType))))
   val b_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM,inputType))))
   val fg_pow2s = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }

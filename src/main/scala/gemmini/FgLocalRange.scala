@@ -28,9 +28,9 @@ class FgLocalRange[T <: Data](val config: FgGemminiArrayConfig[T])
   // inclusive
   def col_start(dummy: Int = 0) = fg_col_start * FG_DIM.U
   def col_end(dummy: Int = 0)   = col_start() + cols - 1.U
-  def row_end(dummy: Int = 0)   = row_start + (((rows-1.U)/FG_DIM.U)*FG_DIM.U)
 
   // which bank does this start/end read/write to
+  def row_end(dummy: Int = 0)   = row_start + (((rows-1.U)/FG_DIM.U)*FG_DIM.U)
   def bank_start(dummy: Int = 0)  = row_start(15, FG_DIM_IDX)
   def bank_end(dummy: Int = 0)    = row_end()(15, FG_DIM_IDX)
   def total_banks(dummy: Int = 0) = bank_end() - bank_start() + 1.U

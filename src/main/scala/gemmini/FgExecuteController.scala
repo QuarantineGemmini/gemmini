@@ -91,12 +91,12 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val b_fg_mux_sel  = Wire(UInt(FG_NUM_CTR_CTR.W))
 
   // Bucket the computation for assigning to FG arrays
-  for (i <- 0 until FG_NUM_CTR) {
-    a_fg_mux_ctrl(i) := (a_lrange.rows <= (fg_pow2s(i) * FG_DIM).U)
+  fg_pow2s.zipWithIndex.foreach { case(fg_pow2, i) => 
+    a_fg_mux_ctrl(i) := (a_lrange.rows <= (fg_pow2 * FG_DIM).U)
   }
   // Convert thermometer to binary (a,b) = (4,0),(3,1),(2,2),(1,3),(0,4), 
   // where a = 4 when 1 a-tile is broadcast to all fg-meshes
-  a_fg_mux_sel := PopCount(a_fg_mux_ctrl)
+  a_fg_mux_sel := PopCount(a_fg_mux_ctrl) - 1.U
   b_fg_mux_sel := FG_NUM_CTR.U - a_fg_mux_sel
 
   //=========================================================================
@@ -291,7 +291,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_bank_start      = wb_lrange.bank_start()
   val wb_banks           = wb_lrange.total_banks()
   val wb_accum           = wb_lrange.is_accum
-  val wb_garbage         = wb_lrange.garbage
+  val wb_garbage         = wb_lrange.garbage || !mesh.io.tag_out.bits.valid
   val wb_row             = wb_lrange.row_start_within_bank()
   val is_outputting      = wb_valid && !wb_garbage
   val is_outputting_last = mesh.io.tag_out.valid
