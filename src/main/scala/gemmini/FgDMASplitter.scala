@@ -58,13 +58,23 @@ class FgDMASplitter[T <: Data]
   val data_end_idx     = data_start_idx + req_useful_bytes - 1.U
   val txn_useful_bytes = io.peek.entry.txn_useful_bytes
   val txn_bytes        = io.peek.entry.txn_bytes
-  val txn_log2_bytes   = io.peek.entry.txn_log2_bytes
   val txn_start_idx    = io.peek.entry.txn_start_idx
-  val paddr            = io.peek.entry.paddr       
+
+  val is_last_txn      = cur_txn.bits.is_last_txn
+  val txn_log2_bytes   = cur_txn.bits.txn_log2_bytes
+  val paddr            = cur_txn.bits..paddr       
  
   val useful_bytes_sent = RegInit(0.U(log2Ceil(max_xfer_bytes+1).W))
   val txn_bytes_sent    = RegInit(0.U(DMA_TXN_BYTES_CTR.W))
   val beat_idx          = RegInit(0.U(DMA_TXN_BEATS_IDX.W))
+
+  // if (data_start_idx >= txn_start_idx)
+  //   lshift data by (data_start_idx - txn_start_idx)
+  //   remove low mask bits by (data_start_idx - txn_start_idx)
+  //   decrement useful bytes sent by (data_start_idx - txn_start_idx)
+  // else
+  //   leave data starting at index 0
+  //   lshift data 
 
   //---------------------------------
   // output logic
@@ -84,23 +94,24 @@ class FgDMASplitter[T <: Data]
                            data << lshift_bits)
   val beat_data = beat_data_full(DMA_BUS_BITS-1, 0)
 
+
   // beat write-mask calculations
   val is_full  = (beat_start_idx >= data_start_idx) &&
                  (beat_end_idx   <= data_end_idx)
   val is_empty = (beat_start_idx  > data_end_idx) ||
                  (beat_end_idx    < data_start_idx)
-  val start_mask_offset = Mux(is_full || is_empty, 0.U, 
+  val start_byte_offset = Mux(is_full || is_empty, 0.U, 
                               Mux(beat_start_idx >= data_start_idx, 0.U,
                                   data_start_idx - beat_start_idx))
-  val end_mask_offset   = Mux(is_full || is_empty, 0.U, 
+  val end_byte_offset   = Mux(is_full || is_empty, 0.U, 
                               Mux(beat_end_idx <= data_end_idx, 0.U,
                                   beat_start_idx - data_start_idx))
 
   // firrtl requires < 20 bits to represent the shift-amount
   val p1_mask_bits = Wire(UInt(log2Ceil(max_xfer_bytes+1).W))
   val p2_mask_bits = Wire(UInt(log2Ceil(max_xfer_bytes+1).W))
-  p1_mask_bits := DMA_BUS_BYTES.U - end_mask_offset
-  p2_mask_bits := start_mask_offset
+  p1_mask_bits := DMA_BUS_BYTES.U - end_byte_offset
+  p2_mask_bits := start_byte_offset
   val beat_mask = Mux(is_full || is_empty, 0.U,
                       (((1.U << p1_mask_bits) - 1.U) & 
                       ~((1.U << p2_mask_bits) - 1.U)))
@@ -120,13 +131,10 @@ class FgDMASplitter[T <: Data]
   //---------------------------------
   // next-state logic
   //---------------------------------
-  val txn_bytes_sent_next    = txn_bytes_sent + DMA_BUS_BYTES.U
-  val txn_finished_next      = (txn_bytes_sent_next === txn_bytes)
-  val useful_bytes_sent_next = Mux(txn_finished_next, 
-                                   useful_bytes_sent + txn_useful_bytes,
-                                   useful_bytes_sent)
-  val xfer_finished_next     = (req_useful_bytes > 0.U) &&
-                               (useful_bytes_sent_next === req_useful_bytes)
+  val cur_useful_bytes       = DMA_BEAT_BYTES.U - 
+                                (start_byte_offset + end_byte_offset)
+  val useful_bytes_sent_next = useful_bytes_sent + cur_useful_bytes
+  val txn_finished_next      = useful_bytes_sent_next === txn_useful_bytes
 
   //---------------------------------
   // FSM
@@ -135,7 +143,7 @@ class FgDMASplitter[T <: Data]
   val state = RegInit(s_PENDING_REQ)
 
   def start_next_txn(dummy: Int = 0) = {
-    txn_bytes_sent := 0.U
+    useful_bytes_sent := 0.U
     beat_idx := 0.U
     txn.ready := true.B
     when (txn.fire()) {
@@ -147,7 +155,6 @@ class FgDMASplitter[T <: Data]
   }
 
   def start_next_req(dummy: Int = 0) = {
-    useful_bytes_sent := 0.U
     req.ready := true.B
     when (req.fire()) {
       cur_req := req.bits
@@ -167,11 +174,10 @@ class FgDMASplitter[T <: Data]
     is (s_SEND_BEAT) {
       io.tl_a.valid := true.B
       when(io.tl_a.fire()) {
-        txn_bytes_sent := txn_bytes_sent_next
         useful_bytes_sent := useful_bytes_sent_next
         beat_idx := beat_idx + 1.U
-        when (xfer_finished_next) {
-          assert(txn_finished_next, "req finished but one of its txn did not")
+        when (is_last_txn) {
+          assert(txn_finished_next,"req finished but one of its txn did not")
           start_next_req()
         } .elsewhen (txn_finished_next) {
           start_next_txn()

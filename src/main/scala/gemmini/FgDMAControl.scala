@@ -29,6 +29,7 @@ class FgDMADispatch[T <: Data](val config: FgGemminiArrayConfig[T])
   val xactid         = UInt(DMA_REQS_IDX.W)
   val paddr          = UInt(coreMaxAddrBits.W)
   val txn_log2_bytes = UInt(DMA_TXN_BYTES_CTR_IDX.W)
+  val is_last_txn    = Bool()
 }
 
 //===========================================================================
@@ -49,14 +50,12 @@ class FgDMAControl[T <: Data]
     val req      = Flipped(Decoupled(new FgDMAControlRequest(config)))
     val nextid   = Input(UInt(DMA_REQS_IDX.W))
     val alloc    = Decoupled(new FgDMATrackerEntry(config, max_xfer_bytes))
+    val incr     = Valid(new FgDMAReqIncr(config))
+    val dispatch = Decoupled(new FgDMADispatch(config))
     val tlb      = new FrontendTLBIO
     val flush    = Input(Bool())
-    val dispatch = Decoupled(new FgDMADispatch(config))
-    val busy     = Output(Bool())
   })
-  io.req.ready      := false.B
-  io.alloc.valid    := false.B
-  io.dispatch.valid := false.B
+  io.req.ready := false.B
 
   //-----------------------------------------------
   // active request
@@ -103,7 +102,7 @@ class FgDMAControl[T <: Data]
   }
 
   val candidate_txns = (DMA_BUS_BYTES to DMA_TXN_BYTES by DMA_BUS_BYTES)
-                       .filter(bytes => isPow2(bytes)).map { bytes =>
+                         .filter(bytes => isPow2(bytes)).map { bytes =>
     val log2_bytes    = log2Ceil(bytes)
     val paddr_aligned = Cat(cur_paddr(paddrBits-1, log2_bytes),
                             0.U(log2_bytes.W))
@@ -138,19 +137,24 @@ class FgDMAControl[T <: Data]
   io.alloc.valid                 := false.B
   io.alloc.bits.lrange           := lrange
   io.alloc.bits.rob_id           := rob_id
-  io.alloc.bits.req_useful_bytes := total_useful_bytes
+  //io.alloc.bits.req_useful_bytes := total_useful_bytes
   io.alloc.bits.data_start_idx   := first_txn_data_start_idx
   io.alloc.bits.txn_start_idx    := total_bytes_requested
   io.alloc.bits.txn_useful_bytes := cur_txn_useful_bytes   
-  io.alloc.bits.txn_bytes        := cur_txn_bytes
-  io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
-  io.alloc.bits.paddr            := cur_aligned_paddr
+  //io.alloc.bits.txn_bytes        := cur_txn_bytes
+  //io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
+  //io.alloc.bits.paddr            := cur_aligned_paddr
 
   // output transaction towards tile-link A-channel
   io.dispatch.valid               := false.B
   io.dispatch.bits.xactid         := io.nextid
   io.dispatch.bits.paddr          := cur_aligned_paddr
   io.dispatch.bits.txn_log2_bytes := cur_txn_log2_bytes
+
+  // increment transactions pending for this request
+  io.incr.valid              := false.B
+  io.incr.bits.all_txns_sent := is_last_txn
+  io.incr.bits.rob_id        := rob_id
 
   //-----------------------------------------------
   // FSM
@@ -163,7 +167,6 @@ class FgDMAControl[T <: Data]
   val state = RegInit(s_IDLE)
 
   def init_transfer(dummy : Int = 0) = {
-    // TODO: remove this 1-row restriction, (a quite complicated task)
     assert(io.req.bits.lrange.rows === 1.U, 
       "cannot request more than 1 row at a time")
     val tmp_vpn            = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
@@ -201,9 +204,11 @@ class FgDMAControl[T <: Data]
       }
     }
     is (s_REQ_NEXT_CHUNK) {
-      io.alloc.valid := io.dispatch.ready
       io.dispatch.valid := io.alloc.ready
+      io.alloc.valid    := io.dispatch.ready
       when(io.dispatch.fire()) {
+        io.incr.valid := true.B
+
         val next_vaddr      = cur_vaddr + cur_txn_useful_bytes
         val next_vpn        = next_vaddr(coreMaxAddrBits-1, pgIdxBits)
         val needs_translate = (next_vpn =/= cur_vpn)
@@ -212,6 +217,7 @@ class FgDMAControl[T <: Data]
           io.alloc.bits.data_start_idx := cur_data_start_idx
           first_txn_data_start_idx     := cur_data_start_idx
         }
+        
         total_bytes_requested := total_bytes_requested + cur_txn_bytes
         useful_bytes_left := useful_bytes_left - cur_txn_useful_bytes
         cur_vaddr := next_vaddr
@@ -228,8 +234,4 @@ class FgDMAControl[T <: Data]
       }
     }
   }
-  //-----------------------------------------------
-  // busy signal
-  //-----------------------------------------------
-  io.busy := (state =/= s_IDLE)
 }

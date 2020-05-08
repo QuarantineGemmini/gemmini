@@ -184,6 +184,16 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
 
   def AB_EXEC_PORT_FG_COLS  = FG_NUM
   def AB_EXEC_PORT_BITS     = AB_EXEC_PORT_FG_COLS * FG_DIM * ITYPE_BITS
+
+  //==========================================================================
+  // Memory-Operation constants (mem-op === multiple related DMA ops)
+  //==========================================================================
+  def MEM_OP_QUEUE_LENGTH = mem_op_queue_length
+
+  def MEM_OP_ROWS     = FG_NUM * FG_DIM
+  def MEM_OP_ROWS_IDX = log2Up(MEM_OP_ROWS)
+  def MEM_OP_ROWS_CTR = log2Up(MEM_OP_ROWS+1)
+
   //==========================================================================
   // DMA-related constants
   //==========================================================================
@@ -208,13 +218,8 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def DMA_TXN_BEATS_IDX = log2Ceil(DMA_TXN_BEATS)
   def DMA_TXN_BEATS_CTR = log2Ceil(DMA_TXN_BEATS+1)
 
-  //==========================================================================
-  // Memory-Operation constants (mem-op === multiple related DMA ops)
-  //==========================================================================
-  def MEM_OP_QUEUE_LENGTH = mem_op_queue_length
-
-  def MEM_OP_ROWS     = FG_NUM * FG_DIM
-  def MEM_OP_ROWS_IDX = log2Up(MEM_OP_ROWS)
-  def MEM_OP_ROWS_CTR = log2Up(MEM_OP_ROWS+1)
+  def DMA_REQ_TXNS      = D_LOAD_ROW_BYTES / DMA_TXN_BYTES 
+  def DMA_REQ_TXNS_IDX  = log2Ceil(DMA_REQ_TXNS)
+  def DMA_REQ_TXNS_CTR  = log2Ceil(DMA_REQ_TXNS+1)
 }
 

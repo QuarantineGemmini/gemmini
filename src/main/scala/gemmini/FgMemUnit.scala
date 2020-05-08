@@ -407,8 +407,7 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_rd_rob_id_buf = ShiftRegister(dma_rd_rob_id, 2)
 
     // read datapath out of scratchpads and output data (2 cycle latency)
-    val dma_rd_datas = VecInit(banks.reverse.map { 
-                               bank => bank.io.read.resp.data })
+    val dma_rd_datas = VecInit(banks.map { bank => bank.io.read.resp.data })
     val dma_rd_data  = dma_rd_datas(dma_rd_bank_buf)
 
     val dma_rd_q_type = new FgDMAStoreRequest(config, C_STORE_ROW_BYTES)

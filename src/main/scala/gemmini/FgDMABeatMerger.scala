@@ -8,9 +8,8 @@ import Util._
 
 //============================================================================
 // FgDMABeatMerger
-// - merges multiple beats from multiple tilelink txns into a single buffer 
-//   for a DMA read (dram -> scratchpad)
-// - achieves max throughput of 1 resp/cycle
+// - merge multiple beats in to a txn buffer and sends txn to MemUnit
+// - multiple txns may make up a Load Request, but we don't merge txns here
 //============================================================================
 class FgDMABeatMerger[T <: Data]
   (config: FgGemminiArrayConfig[T], max_xfer_bytes:Int)
@@ -21,86 +20,66 @@ class FgDMABeatMerger[T <: Data]
   // I/O interface
   //---------------------------------
   val io = IO(new Bundle {
-    val peek = new FgDMATrackerPeekIO(config, max_xfer_bytes)
-    val pop  = Output(Valid(UInt(DMA_REQS_IDX.W)))
     val beat = Flipped(Decoupled(new Bundle {
       val xactid       = UInt(DMA_REQS_IDX.W)
       val data         = UInt(DMA_BUS_BITS.W)
       val beat_idx     = UInt(DMA_TXN_BEATS_IDX.W)
       val is_last_beat = Bool()
     }))
-    val resp = Decoupled(new FgDMALoadResponse(config, max_xfer_bytes))
-    val busy = Output(Bool())
+    val peek  = new FgDMATrackerPeekIO(config, max_xfer_bytes)
+    val pop   = Output(Valid(UInt(DMA_REQS_IDX.W)))
+    val decr  = Decoupled(UInt(ROB_ENTRIES_IDX.W)))
+    val chunk = Decoupled(new FgDMALoadChunk(config, max_xfer_bytes))
   })
-
   //---------------------------------
   // internal state
   //---------------------------------
   val data = RegInit(0.U((max_xfer_bits).W))
-  val useful_bytes_merged = RegInit(0.U(log2Ceil(max_xfer_bytes+1).W))
 
   //---------------------------------
-  // output/next-state logic
-  // - TODO: possibly pipeline this massive barrel shifter if its too slow
+  // if (data_start_idx >= txn_start_idx)
+  //   shift data right by (data_start_idx - txn_start_idx)
+  //   set fg_col_start = 0
+  // else 
+  //   leave data starting at index 0
+  //   set fg_col_start = (txn_start_idx - data_start_idx) / FG_DIM
   //---------------------------------
   val lrange           = io.peek.entry.lrange
-  val rob_id           = io.peek.entry.rob_id
-  val req_useful_bytes = io.peek.entry.req_useful_bytes
-  val data_start_idx   = io.peek.entry.data_start_idx
+  val elem_bytes       = Mux(lrange.is_acc, OTYPE_BYTES.U, ITYPE_BYTES.U)
   val txn_useful_bytes = io.peek.entry.txn_useful_bytes
-  val txn_bytes        = io.peek.entry.txn_bytes
+  val txn_useful_elems = txn_useful_bytes / elem_bytes
+  val data_start_idx   = io.peek.entry.data_start_idx
   val txn_start_idx    = io.peek.entry.txn_start_idx
+  val beat_data        = io.beat.bits.data
+  val beat_idx         = io.beat.bits.beat_idx
+  val is_last_beat     = io.beat.bits.is_last_beat
 
-  val beat_start_idx = txn_start_idx + (io.beat.bits.beat_idx*DMA_BUS_BYTES.U)
-  val beat_data = io.beat.bits.data
+  val is_first_txn          = data_start_idx >= txn_start_idx
+  val first_rshift_bits     = (data_start_idx - txn_start_idx) * 8.U
+  val nonfirst_fg_col_start = (txn_start_idx - data_start_idx) / FG_DIM.U
+ 
+  val fg_col_start     = Mux(is_first_txn, 0.U, nonfirst_fg_col_start)
+  val txn_rshift_bits  = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
+  val beat_lshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
+  txn_rshift_bits     := Mux(is_first_txn, first_rshift_bits, 0.U)
+  beat_rshift_bits    := beat_idx * DMA_BUS_BYTES.U
+  val data_next = data | (Mux(is_first_txn, beat_data >> txn_rshift_bits, 
+                              beat_data) << beat_lshift_bits)
 
-  // firrtl requires < 20 bits to represent the shift-amount
-  val lshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
-  val rshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
-  lshift_bits := (beat_start_idx - data_start_idx)*8.U
-  rshift_bits := (data_start_idx - beat_start_idx)*8.U
-
-  val data_next = data | Mux(beat_start_idx > data_start_idx,
-                             beat_data << lshift_bits,
-                             beat_data >> rshift_bits)
-
-  val is_last_beat_in_txn = io.beat.bits.is_last_beat
-  val useful_bytes_merged_next = useful_bytes_merged + txn_useful_bytes
-
-  //---------------------------------
-  // output signals
-  //---------------------------------
+  //----------------------------------------
+  // assign I/O/next state
+  //----------------------------------------
+  io.beat.ready  := io.decr.ready && io.chunk.ready
   io.peek.xactid := io.beat.bits.xactid
+  io.pop.valid   := io.beat.fire()
+  io.pop.bits    := io.beat.bits.xactid
+  io.decr.valid  := io.beat.fire()
+  io.decr.bits   := io.peek.entry.rob_id
+  io.chunk.valid                    := io.beat.fire()
+  io.chunk.bits.lrange              := lrange
+  io.chunk.bits.lrange.cols         := txn_useful_elems
+  io.chunk.bits.lrange.fg_col_start := fg_col_start
+  io.chunk.bits.lrange.data         := data_next
 
-  io.pop.valid := false.B
-  io.pop.bits  := io.beat.bits.xactid
-
-  io.beat.ready := false.B
-
-  io.resp.valid       := false.B
-  io.resp.bits.data   := data_next
-  io.resp.bits.lrange := lrange
-  io.resp.bits.rob_id := rob_id
-
-  io.busy := (useful_bytes_merged =/= 0.U)
-
-  //---------------------------------
-  // state update logic
-  //---------------------------------
-  when (io.resp.ready) {
-    // we only continue if we are able to output a resp this cycle
-    io.beat.ready := true.B
-    when (io.beat.fire()) {
-      data := data_next
-      when (is_last_beat_in_txn) {
-        io.pop.valid := true.B
-        useful_bytes_merged := useful_bytes_merged_next
-        when(useful_bytes_merged_next === req_useful_bytes) {
-          io.resp.valid := true.B
-          data := 0.U
-          useful_bytes_merged := 0.U
-        }
-      }
-    }
-  }
+  data := Mux(io.beat.fire(), Mux(is_last_beat, 0.U, data_next), data)
 }

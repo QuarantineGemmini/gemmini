@@ -24,13 +24,18 @@ class FgDMALoadRequest[T <: Data](val config: FgGemminiArrayConfig[T])
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMALoadResponse[T <: Data]
+class FgDMALoadResponse[T <: Data](val config: FgGemminiArrayConfig[T])
+  (implicit p: Parameters) extends CoreBundle {
+  import config._
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
+}
+
+class FgDMALoadDataChunk[T <: Data]
   (val config: FgGemminiArrayConfig[T], val max_xfer_bytes: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val data   = UInt((max_xfer_bytes*8).W)
   val lrange = new FgLocalRange(config)
-  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
 class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T], 
@@ -47,12 +52,27 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
 
     val io = IO(new Bundle {
       val req   = Flipped(Decoupled(new FgDMALoadRequest(config)))
-      val resp  = Decoupled(new FgDMALoadResponse(config, max_xfer_bytes))
+      val chunk = Decoupled(new FgDMALoadDataChunk(config, max_xfer_bytes))
+      val resp  = Decoupled(new FgDMALoadResponse(config))
       val tlb   = new FrontendTLBIO
       val busy  = Output(Bool())
       val flush = Input(Bool())
     })
 
+    //-----------------------------------------------
+    // track outstanding transactions for each operation
+    //-----------------------------------------------
+    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 1))
+
+    val req_tracker = Module(new FgDMAReqTracker(config))
+    req_tracker.io.alloc.valid := io.req.fire()
+    req_tracker.io.alloc.bits  := io.req.bits.rob_id
+    io.resp                    <> req_tracker.io.resp
+    io.busy                    := req_tracker.io.busy
+
+    //-----------------------------------------------
+    // tlb translations and tilelink txn dispatch
+    //-----------------------------------------------
     val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
     io.req.ready    := req.ready
     req.valid       := io.req.valid
@@ -61,20 +81,13 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     req.bits.status := io.req.bits.status
     req.bits.rob_id := io.req.bits.rob_id
 
-    //-----------------------------------------------
-    // track outstanding transactions for each operation
-    //-----------------------------------------------
-    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 1))
-
-    //-----------------------------------------------
-    // tlb translations and tilelink txn dispatch
-    //-----------------------------------------------
     val control = Module(new FgDMAControl(config, max_xfer_bytes, true))
-    control.io.req    <> req
-    control.io.nextid := tracker.io.nextid
-    tracker.io.alloc  <> control.io.alloc
-    io.tlb            <> control.io.tlb
-    control.io.flush  := io.flush
+    control.io.req      <> req
+    control.io.nextid   := tracker.io.nextid
+    tracker.io.alloc    <> control.io.alloc
+    req_tracker.io.incr := control.io.incr
+    io.tlb              <> control.io.tlb
+    control.io.flush    := io.flush
 
     //-----------------------------------------------
     // merge response beats into buffer
@@ -82,7 +95,8 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     val merger = Module(new FgDMABeatMerger(config, max_xfer_bytes))
     tracker.io.peek(0) <> merger.io.peek
     tracker.io.pop     <> merger.io.pop
-    io.resp            <> merger.io.resp
+    req_tracker.decr   <> merger.io.decr
+    io.chunk           <> merger.io.chunk
 
     //-----------------------------------------------
     // tile-link A-channel request
@@ -104,11 +118,6 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     merger.io.beat.bits.data         := tl.d.bits.data
     merger.io.beat.bits.beat_idx     := edge.count(tl.d)._4 
     merger.io.beat.bits.is_last_beat := edge.last(tl.d)
-
-    //-----------------------------------------------
-    // busy signal
-    //-----------------------------------------------
-    io.busy := tracker.io.busy || control.io.busy || merger.io.busy
   }
 }
 
@@ -146,39 +155,46 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     val (tl, edge) = node.out(0)
     
     val io = IO(new Bundle {
-      val req  = Flipped(Decoupled(
-                    new FgDMAStoreRequest(config, max_xfer_bytes)))
-      val resp = Decoupled(new FgDMAStoreResponse(config))
-      val tlb  = new FrontendTLBIO
-      val busy = Output(Bool())
+      val req   = Flipped(Decoupled(
+                   new FgDMAStoreRequest(config, max_xfer_bytes)))
+      val resp  = Decoupled(new FgDMAStoreResponse(config))
+      val tlb   = new FrontendTLBIO
+      val busy  = Output(Bool())
       val flush = Input(Bool())
     })
 
+    //-----------------------------------------------
+    // track outstanding transactions for each operation
+    //-----------------------------------------------
+    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 1))
+
+    val req_tracker = Module(new FgDMAReqTracker(config))
+    req_tracker.io.alloc.valid := io.req.fire()
+    req_tracker.io.alloc.bits  := io.req.bits.rob_id
+    io.resp                    <> req_tracker.io.resp
+    io.busy                    := req_tracker.io.busy
+
+    //-----------------------------------------------
+    // tlb translations and tilelink txn dispatch
+    //-----------------------------------------------
     val control_ready = WireDefault(false.B)
     val splitter_ready = WireDefault(false.B)
     val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
     io.req.ready    := control_ready && splitter_ready
-    req.ready       := io.req.ready
+    req.ready       := control_ready && splitter_ready
     req.valid       := io.req.valid
     req.bits.vaddr  := io.req.bits.vaddr
     req.bits.lrange := io.req.bits.lrange
     req.bits.status := io.req.bits.status
     req.bits.rob_id := io.req.bits.rob_id
 
-    //-----------------------------------------------
-    // track outstanding requests
-    //-----------------------------------------------
-    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 2))
-
-    //-----------------------------------------------
-    // tlb translations and tilelink txn dispatch
-    //-----------------------------------------------
     val control = Module(new FgDMAControl(config, max_xfer_bytes, false))
     control_ready        := control.io.req.ready
     control.io.req.valid := req.fire()
     control.io.req.bits  := req.bits
     control.io.nextid    := tracker.io.nextid
     tracker.io.alloc     <> control.io.alloc
+    req_tracker.io.incr  := control.io.incr
     io.tlb               <> control.io.tlb
     control.io.flush     := io.flush
 
@@ -191,14 +207,6 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     splitter.io.req.bits  := io.req.bits
     splitter.io.txn       <> control.io.dispatch
     tracker.io.peek(0)    <> splitter.io.peek
-
-    //-----------------------------------------------
-    // send response when all tilelink txns are complete
-    //-----------------------------------------------
-    val responder = Module(new FgDMAStoreResponder(config, max_xfer_bytes))
-    tracker.io.peek(1) <> responder.io.peek
-    tracker.io.pop     <> responder.io.pop
-    io.resp            <> responder.io.resp
 
     //-----------------------------------------------
     // tile-link A-channel request
@@ -223,13 +231,11 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tile-link D-channel response
     //-----------------------------------------------
-    responder.io.tl_d.valid       := tl.d.valid
-    tl.d.ready                    := responder.io.tl_d.ready
-    responder.io.tl_d.bits.xactid := tl.d.bits.source
+    tl.d.ready             := req_tracker.decr.ready
+    req_tracker.decr.valid := tl.d.valid
+    req_tracker.decr.bits  := tl.d.bits.source
 
-    //-----------------------------------------------
-    // busy tracker
-    //-----------------------------------------------
-    io.busy := control.io.busy || tracker.io.busy || responder.io.busy
+    tracker.io.pop.valid := tl.d.fire()
+    tracker.io.pop.bits  := tl.d.bits.source
   }
 }

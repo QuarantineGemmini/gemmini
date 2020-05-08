@@ -33,6 +33,8 @@ CFLAGS_HW_TILER="-DUSE_HW_TILER"
 FSIM_SW_ORIG="$FCFG_SW_DIR/orig_tiler.json"
 FSIM_SW_FSM="$FCFG_SW_DIR/fsm_tiler.json"
 FSIM_SW_HW="$FCFG_SW_DIR/hw_tiler.json"
+FSIM_SW_ORIG_GEMM="$FCFG_SW_DIR/orig_tiler_gemm_sweep.json"
+FSIM_SW_FSM_GEMM="$FCFG_SW_DIR/fsm_tiler_gemm_sweep.json"
 
 DEBUG_CFLAGS=""
 NODEBUG_CFLAGS="-DNODEBUG"
@@ -53,6 +55,11 @@ display_usage() {
   orig_tiler: use the original tiler algorithm on the old ISA
   fsm_tiler:  use FSM-based tiler algorithm on the old ISA
   hw_tiler:   use the new gemmini2 ISA hardware tiler
+  
+  Firesim only Loads
+  ------------------
+  orig_tiler_gemm: big gemm sweep on orig tiler
+  fsm_tiler_gemm:  big gemm sweep on fsm tiler
 
   other options
   -------------
@@ -158,6 +165,8 @@ while [ $# -ne 0 ] ; do
     orig_tiler) run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_ORIG" ;;
     fsm_tiler)  run $arg "$CFLAGS_FSM_TILER"  "$FSIM_SW_FSM" ;;
     hw_tiler)   run $arg "$CFLAGS_HW_TILER"   "$FSIM_SW_HW" ;;
+    orig_tiler_gemm) run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_ORIG_GEMM" ;;
+    fsm_tiler_gemm)  run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_FSM_GEMM" ;;
     #------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac

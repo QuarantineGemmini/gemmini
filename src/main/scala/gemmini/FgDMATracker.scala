@@ -33,14 +33,14 @@ class FgDMATrackerEntry[T <: Data]
 //===========================================================================
 class FgDMATrackerPeekIO[T <: Data]
   (val config: FgGemminiArrayConfig[T], val max_xfer_bytes: Int)
-  (implicit p: Parameters) extends CoreBundle { 
+  (implicit p: Parameters) extends CoreBundle {
   import config._
   val xactid = Output(UInt(DMA_REQS_IDX.W))
   val entry  = Input(new FgDMATrackerEntry(config, max_xfer_bytes))
 }
 
 //===========================================================================
-// DMATracker 
+// DMATracker
 // - track outstanding DMA requests with their offset/length
 // - all outstanding DMA reqs are merged to/split from a single acc/sp row!
 //===========================================================================
@@ -53,7 +53,7 @@ class FgDMATracker[T <: Data]
     val nextid = Output(UInt(DMA_REQS_IDX.W))
     val alloc = Flipped(Decoupled(
                   new FgDMATrackerEntry(config, max_xfer_bytes)))
-    val peek = Vec(peeks, 
+    val peek = Vec(peeks,
                    Flipped(new FgDMATrackerPeekIO(config, max_xfer_bytes)))
     val pop = Input(Valid(UInt(DMA_REQS_IDX.W)))
     val busy = Output(Bool())
@@ -68,8 +68,8 @@ class FgDMATracker[T <: Data]
   io.busy := entries.map(_.valid).reduce(_ || _)
 
   // interface to allocator
-  val free_entry = MuxCase((DMA_REQS-1).U, entries.zipWithIndex.map { 
-    case (e, i) => !e.valid -> i.U 
+  val free_entry = MuxCase((DMA_REQS-1).U, entries.zipWithIndex.map {
+    case (e, i) => !e.valid -> i.U
   })
   io.nextid := free_entry
   io.alloc.ready := !entries.map(_.valid).reduce(_ && _)
