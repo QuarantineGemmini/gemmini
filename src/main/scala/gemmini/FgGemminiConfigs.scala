@@ -214,6 +214,10 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def DMA_TXN_BYTES_CTR     = log2Ceil(DMA_TXN_BYTES+1)
   def DMA_TXN_BYTES_CTR_IDX = log2Ceil(DMA_TXN_BYTES_CTR) // TL-A log2_size
 
+  def DMA_TXN_BITS      = dma_max_req_bytes * 8 // in single TileLink txn
+  def DMA_TXN_BITS_IDX  = log2Ceil(DMA_TXN_BITS)
+  def DMA_TXN_BITS_CTR  = log2Ceil(DMA_TXN_BITS+1)
+
   def DMA_TXN_BEATS     = DMA_TXN_BYTES / DMA_BUS_BYTES
   def DMA_TXN_BEATS_IDX = log2Ceil(DMA_TXN_BEATS)
   def DMA_TXN_BEATS_CTR = log2Ceil(DMA_TXN_BEATS+1)

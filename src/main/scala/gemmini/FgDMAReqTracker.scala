@@ -13,7 +13,7 @@ class FgDMAReqIncr[T <: Data](val config: FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
   val all_txns_sent = Bool()
-  val rob_id = Valid(ROB_ENTRIES_IDX.W)
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
 //===========================================================================
@@ -26,11 +26,11 @@ class FgDMAReqTracker[T <: Data](config: FgGemminiArrayConfig[T])
   // I/O interface
   //-------------------------------------------
   val io = IO(new Bundle {
-    val alloc = Flipped(Valid(ROB_ENTRIES_IDX.W))
-    val incr = Flipped(Valid(new FgDMAReqIncr(config)))
-    val decr = Flipped(Decoupled(ROB_ENTRIES_IDX.W))
-    val resp = Decoupled(new FgDMAResponse(config))
-    val busy = Output(Bool())
+    val alloc = Flipped(Valid(UInt(ROB_ENTRIES_IDX.W)))
+    val incr  = Flipped(Valid(new FgDMAReqIncr(config)))
+    val decr  = Flipped(Decoupled(UInt(ROB_ENTRIES_IDX.W)))
+    val resp  = Decoupled(new FgDMAResponse(config))
+    val busy  = Output(Bool())
   })
 
   //-------------------------------------------
@@ -54,7 +54,7 @@ class FgDMAReqTracker[T <: Data](config: FgGemminiArrayConfig[T])
   io.busy             := entries.map(_.valid).reduce(_ || _)
   io.decr.ready       := false.B
   io.resp.valid       := false.B
-  io.resp.bits.rob_id := entries(io.decr.bits)
+  io.resp.bits.rob_id := io.decr.bits
 
   //-------------------------------------------
   // the first txn was sent off for this dma request

@@ -11,6 +11,12 @@ import testchipip.TLHelper
 
 import Util._
 
+class FgDMAResponse[T <: Data](val config: FgGemminiArrayConfig[T])
+  (implicit p: Parameters) extends CoreBundle {
+  import config._
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
+}
+
 //===========================================================================
 // DMA read interface (dram -> scratchpad)
 // - max_xfer_bytes: max bytes read from dram in a multi-tilelink-txn request
@@ -21,12 +27,6 @@ class FgDMALoadRequest[T <: Data](val config: FgGemminiArrayConfig[T])
   val vaddr  = UInt(coreMaxAddrBits.W)
   val lrange = new FgLocalRange(config)
   val status = new MStatus
-  val rob_id = UInt(ROB_ENTRIES_IDX.W)
-}
-
-class FgDMALoadResponse[T <: Data](val config: FgGemminiArrayConfig[T])
-  (implicit p: Parameters) extends CoreBundle {
-  import config._
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
@@ -53,7 +53,7 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     val io = IO(new Bundle {
       val req   = Flipped(Decoupled(new FgDMALoadRequest(config)))
       val chunk = Decoupled(new FgDMALoadDataChunk(config, max_xfer_bytes))
-      val resp  = Decoupled(new FgDMALoadResponse(config))
+      val resp  = Decoupled(new FgDMAResponse(config))
       val tlb   = new FrontendTLBIO
       val busy  = Output(Bool())
       val flush = Input(Bool())
@@ -93,10 +93,10 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     // merge response beats into buffer
     //-----------------------------------------------
     val merger = Module(new FgDMABeatMerger(config, max_xfer_bytes))
-    tracker.io.peek(0) <> merger.io.peek
-    tracker.io.pop     <> merger.io.pop
-    req_tracker.decr   <> merger.io.decr
-    io.chunk           <> merger.io.chunk
+    tracker.io.peek(0)  <> merger.io.peek
+    tracker.io.pop      <> merger.io.pop
+    req_tracker.io.decr <> merger.io.decr
+    io.chunk            <> merger.io.chunk
 
     //-----------------------------------------------
     // tile-link A-channel request
@@ -136,12 +136,6 @@ class FgDMAStoreRequest[T <: Data]
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
-class FgDMAStoreResponse[T <: Data](val config: FgGemminiArrayConfig[T])
-  (implicit p: Parameters) extends CoreBundle {
-  import config._
-  val rob_id = UInt(ROB_ENTRIES_IDX.W)
-}
-
 class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T], 
   name: String = "dma-store", max_xfer_bytes: Int)
   (implicit p: Parameters) extends LazyModule {
@@ -157,7 +151,7 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     val io = IO(new Bundle {
       val req   = Flipped(Decoupled(
                    new FgDMAStoreRequest(config, max_xfer_bytes)))
-      val resp  = Decoupled(new FgDMAStoreResponse(config))
+      val resp  = Decoupled(new FgDMAResponse(config))
       val tlb   = new FrontendTLBIO
       val busy  = Output(Bool())
       val flush = Input(Bool())
@@ -231,9 +225,9 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tile-link D-channel response
     //-----------------------------------------------
-    tl.d.ready             := req_tracker.decr.ready
-    req_tracker.decr.valid := tl.d.valid
-    req_tracker.decr.bits  := tl.d.bits.source
+    tl.d.ready                := req_tracker.io.decr.ready
+    req_tracker.io.decr.valid := tl.d.valid
+    req_tracker.io.decr.bits  := tl.d.bits.source
 
     tracker.io.pop.valid := tl.d.fire()
     tracker.io.pop.bits  := tl.d.bits.source

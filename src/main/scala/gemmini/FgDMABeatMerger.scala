@@ -28,13 +28,13 @@ class FgDMABeatMerger[T <: Data]
     }))
     val peek  = new FgDMATrackerPeekIO(config, max_xfer_bytes)
     val pop   = Output(Valid(UInt(DMA_REQS_IDX.W)))
-    val decr  = Decoupled(UInt(ROB_ENTRIES_IDX.W)))
-    val chunk = Decoupled(new FgDMALoadChunk(config, max_xfer_bytes))
+    val decr  = Decoupled(UInt(ROB_ENTRIES_IDX.W))
+    val chunk = Decoupled(new FgDMALoadDataChunk(config, max_xfer_bytes))
   })
   //---------------------------------
   // internal state
   //---------------------------------
-  val data = RegInit(0.U((max_xfer_bits).W))
+  val data = RegInit(0.U(DMA_TXN_BITS.W))
 
   //---------------------------------
   // if (data_start_idx >= txn_start_idx)
@@ -62,7 +62,7 @@ class FgDMABeatMerger[T <: Data]
   val txn_rshift_bits  = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
   val beat_lshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
   txn_rshift_bits     := Mux(is_first_txn, first_rshift_bits, 0.U)
-  beat_rshift_bits    := beat_idx * DMA_BUS_BYTES.U
+  beat_lshift_bits    := beat_idx * DMA_BUS_BYTES.U
   val data_next = data | (Mux(is_first_txn, beat_data >> txn_rshift_bits, 
                               beat_data) << beat_lshift_bits)
 
@@ -79,7 +79,7 @@ class FgDMABeatMerger[T <: Data]
   io.chunk.bits.lrange              := lrange
   io.chunk.bits.lrange.cols         := txn_useful_elems
   io.chunk.bits.lrange.fg_col_start := fg_col_start
-  io.chunk.bits.lrange.data         := data_next
+  io.chunk.bits.data                := data_next
 
   data := Mux(io.beat.fire(), Mux(is_last_beat, 0.U, data_next), data)
 }

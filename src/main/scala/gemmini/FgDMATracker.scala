@@ -21,11 +21,10 @@ class FgDMATrackerEntry[T <: Data]
   val req_useful_bytes = UInt(log2Ceil(max_xfer_bytes+1).W)
   val data_start_idx   = UInt(DMA_TXN_BYTES_IDX.W)
   // different for all txns in a req
+  val txn_start_idx    = UInt(DMA_TXN_BYTES_IDX.W)
   val txn_useful_bytes = UInt(DMA_TXN_BYTES_CTR.W)
   val txn_bytes        = UInt(DMA_TXN_BYTES_CTR.W)
-  val txn_log2_bytes   = UInt(DMA_TXN_BYTES_CTR_IDX.W)
-  val txn_start_idx    = UInt(DMA_TXN_BYTES_IDX.W)
-  val paddr            = UInt(coreMaxAddrBits.W)
+  val is_last_txn      = Bool()
 }
 
 //===========================================================================

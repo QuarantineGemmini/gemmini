@@ -137,13 +137,12 @@ class FgDMAControl[T <: Data]
   io.alloc.valid                 := false.B
   io.alloc.bits.lrange           := lrange
   io.alloc.bits.rob_id           := rob_id
-  //io.alloc.bits.req_useful_bytes := total_useful_bytes
+  io.alloc.bits.req_useful_bytes := total_useful_bytes
   io.alloc.bits.data_start_idx   := first_txn_data_start_idx
   io.alloc.bits.txn_start_idx    := total_bytes_requested
   io.alloc.bits.txn_useful_bytes := cur_txn_useful_bytes   
-  //io.alloc.bits.txn_bytes        := cur_txn_bytes
-  //io.alloc.bits.txn_log2_bytes   := cur_txn_log2_bytes
-  //io.alloc.bits.paddr            := cur_aligned_paddr
+  io.alloc.bits.txn_bytes        := cur_txn_bytes
+  io.alloc.bits.is_last_txn      := is_last_txn
 
   // output transaction towards tile-link A-channel
   io.dispatch.valid               := false.B

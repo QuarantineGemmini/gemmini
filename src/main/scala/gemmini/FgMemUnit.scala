@@ -132,14 +132,10 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
   //--------------------------------------------
   // setup tile-link DMA load/stores
   //--------------------------------------------
-  Seq(loadA.module.io.req, loadB.module.io.req, loadD.module.io.req).zip(
+  Seq(loadA.module.io, loadB.module.io, loadD.module.io).zip(
     Seq(io.dma.loadA, io.dma.loadB, io.dma.loadD)).foreach { case(dma,io) => 
-      io.req.ready    := dma.ready
-      dma.valid       := io.req.valid
-      dma.bits.vaddr  := io.req.bits.vaddr
-      dma.bits.lrange := io.req.bits.lrange
-      dma.bits.status := io.req.bits.status
-      dma.bits.rob_id := io.req.bits.rob_id
+      dma.req <> io.req
+      io.resp <> dma.resp
     }
        
   io.tlb.loadA  <> loadA.module.io.tlb
@@ -196,20 +192,17 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     //--------------------------------------
     // write-datapath
     //--------------------------------------
-    val dma_wr_ready        = io.dma.loadA.resp.ready
-    val dma_wr_valid        = loadA.module.io.resp.valid
-    val dma_wr_fire         = dma_wr_ready && dma_wr_valid
-    val dma_wr_data         = loadA.module.io.resp.bits.data
-    val dma_wr_lrange       = loadA.module.io.resp.bits.lrange
+    loadA.module.io.chunk.ready := true.B
+
+    val dma_wr_fire         = loadA.module.io.chunk.fire()
+    val dma_wr_data         = loadA.module.io.chunk.bits.data
+    val dma_wr_lrange       = loadA.module.io.chunk.bits.lrange
     val dma_wr_rows         = dma_wr_lrange.rows
     val dma_wr_row          = dma_wr_lrange.row_start_within_bank()
     val dma_wr_bank         = dma_wr_lrange.bank_start()
     val dma_wr_cols         = dma_wr_lrange.cols
     val dma_wr_fg_col_start = dma_wr_lrange.fg_col_start
-
-    loadA.module.io.resp.ready    := dma_wr_ready
-    io.dma.loadA.resp.valid       := dma_wr_valid
-    io.dma.loadA.resp.bits.rob_id := loadA.module.io.resp.bits.rob_id
+    
     when (dma_wr_fire) {
       assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
       assert(dma_wr_bank < FG_NUM.U)
@@ -264,20 +257,17 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     //--------------------------------------
     // write-datapath (decoupled)
     //--------------------------------------
-    val dma_wr_ready        = io.dma.loadB.resp.ready
-    val dma_wr_valid        = loadB.module.io.resp.valid
-    val dma_wr_fire         = dma_wr_ready && dma_wr_valid
-    val dma_wr_data         = loadB.module.io.resp.bits.data
-    val dma_wr_lrange       = loadB.module.io.resp.bits.lrange
+    loadB.module.io.chunk.ready := true.B
+
+    val dma_wr_fire         = loadB.module.io.chunk.fire()
+    val dma_wr_data         = loadB.module.io.chunk.bits.data
+    val dma_wr_lrange       = loadB.module.io.chunk.bits.lrange
     val dma_wr_rows         = dma_wr_lrange.rows
     val dma_wr_row          = dma_wr_lrange.row_start_within_bank()
     val dma_wr_bank         = dma_wr_lrange.bank_start()
     val dma_wr_cols         = dma_wr_lrange.cols
     val dma_wr_fg_col_start = dma_wr_lrange.fg_col_start
 
-    loadB.module.io.resp.ready    := dma_wr_ready
-    io.dma.loadB.resp.valid       := dma_wr_valid
-    io.dma.loadB.resp.bits.rob_id := loadB.module.io.resp.bits.rob_id
     when (dma_wr_fire) {
       assert(dma_wr_rows === 1.U, "dma cannot write >1 row per request")
       assert(dma_wr_bank < 2.U)
@@ -316,11 +306,9 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     }
 
     // dma-loadD
-    val dma_wr_ready        = !ex_wr_en && io.dma.loadD.resp.ready
-    val dma_wr_valid        = loadD.module.io.resp.valid
-    val dma_wr_fire         = dma_wr_ready && dma_wr_valid
-    val dma_wr_data         = loadD.module.io.resp.bits.data
-    val dma_wr_lrange       = loadD.module.io.resp.bits.lrange
+    val dma_wr_fire         = loadD.module.io.chunk.fire()
+    val dma_wr_data         = loadD.module.io.chunk.bits.data
+    val dma_wr_lrange       = loadD.module.io.chunk.bits.lrange
     val dma_wr_rows         = dma_wr_lrange.rows
     val dma_wr_row          = dma_wr_lrange.row_start_within_bank()
     val dma_wr_bank         = dma_wr_lrange.bank_start()
@@ -328,9 +316,10 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     val dma_wr_fg_col_start = dma_wr_lrange.fg_col_start
     val dma_wr_accum        = false.B
 
-    loadD.module.io.resp.ready    := dma_wr_ready
-    io.dma.loadD.resp.valid       := dma_wr_valid
-    io.dma.loadD.resp.bits.rob_id := loadD.module.io.resp.bits.rob_id
+    loadD.module.io.chunk.ready := !ex_wr_en ||
+                                   (ex_wr_bank_start > dma_wr_bank) ||
+                                   (ex_wr_bank_end < dma_wr_bank)
+
     when (dma_wr_fire) {
       assert(dma_wr_rows === 1.U, "dma cannot write >1 row at a time")
     }
@@ -446,12 +435,4 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
     io.dma.storeC.resp.bits.rob_id := storeC.module.io.resp.bits.rob_id
   }
 }
-
-//!!!!!!!!!!!!!!!!!!!!!!!!TODO TODO TODO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-// TODO: 
-// 1) finish scrutinizing accumulator and IO
-//   - need to pipe the FgAccumulatorBankConfigIO from ex-unit to mem-unit
-// (DONE) 2) finish scrutinizing scratchpad and IO
-// (DONE) 3) finish scrutinizing exec-ctrl paths inside MemUnit and IO
-// 4) finish scrutinizing exec-ctrl
 
