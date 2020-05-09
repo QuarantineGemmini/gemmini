@@ -68,6 +68,9 @@ HWDB_CONFIG="$FCFG_DIR/config_hwdb.ini"
 FSIM_RT_LAB3_ORIG="$FCFG_DIR/config_runtime__lab3__orig_tiler.ini"
 FSIM_RT_LAB3_FSM="$FCFG_DIR/config_runtime__lab3__fsm_tiler.ini"
 FSIM_RT_LAB3_HW="$FCFG_DIR/config_runtime__lab3__hw_tiler.ini"
+FSIM_RT_ORIG_GEMM="$FCFG_DIR/config_runtime__orig_tiler_gemm.ini"
+FSIM_RT_FSM_GEMM="$FCFG_DIR/config_runtime__fsm_tiler_gemm.ini"
+FSIM_RT_HW_GEMM="$FCFG_DIR/config_runtime__hw_tiler_gemm.ini"
 
 #=============================================================================
 # defaults
@@ -131,6 +134,9 @@ cat <<EOF
   lab3_orig_tiler: orig_tiler variant of the ee290-lab3 workloads
   lab3_fsm_tiler:  fsm_tiler variant of the ee290-lab3 workloads
   lab3_hw_tiler:   hw_tiler variant of the ee290-lab3 workloads
+  orig_tiler_gemm: gemm-sweep on orig-tiler
+  fsm_tiler_gemm:  gemm-sweep on fsm-tiler
+  hw_tiler_gemm:   gemm-sweep on hw-tiler
   
   hw simulator
   ------------
@@ -470,6 +476,9 @@ while [ $# -ne 0 ] ; do
     lab3_orig_tiler) runfiresim "$arg" "$FSIM_RT_LAB3_ORIG" ;;
     lab3_fsm_tiler)  runfiresim "$arg" "$FSIM_RT_LAB3_FSM" ;;
     lab3_hw_tiler)   runfiresim "$arg" "$FSIM_RT_LAB3_HW" ;;
+    orig_tiler_gemm) runfiresim "$arg" "$FSIM_RT_ORIG_GEMM" ;;
+    fsm_tiler_gemm)  runfiresim "$arg" "$FSIM_RT_FSM_GEMM" ;;
+    hw_tiler_gemm)   runfiresim "$arg" "$FSIM_RT_HW_GEMM" ;;
     #-------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac
