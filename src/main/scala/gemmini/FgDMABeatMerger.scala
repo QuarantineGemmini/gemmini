@@ -28,7 +28,7 @@ class FgDMABeatMerger[T <: Data]
     }))
     val peek  = new FgDMATrackerPeekIO(config, max_xfer_bytes)
     val pop   = Output(Valid(UInt(DMA_REQS_IDX.W)))
-    val decr  = Decoupled(UInt(ROB_ENTRIES_IDX.W))
+    val decr  = Decoupled(UInt(DMA_REQS_IDX.W))
     val chunk = Decoupled(new FgDMALoadDataChunk(config, max_xfer_bytes))
   })
   //---------------------------------
@@ -71,11 +71,11 @@ class FgDMABeatMerger[T <: Data]
   //----------------------------------------
   io.beat.ready  := io.decr.ready && io.chunk.ready
   io.peek.xactid := io.beat.bits.xactid
-  io.pop.valid   := io.beat.fire()
+  io.pop.valid   := io.beat.fire() && is_last_beat
   io.pop.bits    := io.beat.bits.xactid
-  io.decr.valid  := io.beat.fire()
-  io.decr.bits   := io.peek.entry.rob_id
-  io.chunk.valid                    := io.beat.fire()
+  io.decr.valid  := io.beat.fire() && is_last_beat
+  io.decr.bits   := io.peek.entry.reqid
+  io.chunk.valid                    := io.beat.fire() && is_last_beat
   io.chunk.bits.lrange              := lrange
   io.chunk.bits.lrange.cols         := txn_useful_elems
   io.chunk.bits.lrange.fg_col_start := fg_col_start

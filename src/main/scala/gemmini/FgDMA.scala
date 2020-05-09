@@ -59,12 +59,23 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
       val flush = Input(Bool())
     })
 
+    val control_ready = WireDefault(false.B)
+    val req_tracker_ready = WireDefault(false.B)
+    val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
+    io.req.ready    := control_ready && req_tracker_ready
+    req.ready       := control_ready && req_tracker_ready
+    req.valid       := io.req.valid
+    req.bits.vaddr  := io.req.bits.vaddr
+    req.bits.lrange := io.req.bits.lrange
+    req.bits.status := io.req.bits.status
+
     //-----------------------------------------------
     // track outstanding transactions for each operation
     //-----------------------------------------------
     val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 1))
 
     val req_tracker = Module(new FgDMAReqTracker(config))
+    req_tracker_ready          := req_tracker.io.alloc.ready
     req_tracker.io.alloc.valid := io.req.fire()
     req_tracker.io.alloc.bits  := io.req.bits.rob_id
     io.resp                    <> req_tracker.io.resp
@@ -73,21 +84,16 @@ class FgDMALoad[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tlb translations and tilelink txn dispatch
     //-----------------------------------------------
-    val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
-    io.req.ready    := req.ready
-    req.valid       := io.req.valid
-    req.bits.vaddr  := io.req.bits.vaddr
-    req.bits.lrange := io.req.bits.lrange
-    req.bits.status := io.req.bits.status
-    req.bits.rob_id := io.req.bits.rob_id
-
     val control = Module(new FgDMAControl(config, max_xfer_bytes, true))
-    control.io.req      <> req
-    control.io.nextid   := tracker.io.nextid
-    tracker.io.alloc    <> control.io.alloc
-    req_tracker.io.incr := control.io.incr
-    io.tlb              <> control.io.tlb
-    control.io.flush    := io.flush
+    control_ready          := control.io.req.ready
+    control.io.req.valid   := req.fire()
+    control.io.req.bits    := req.bits
+    control.io.txn_nextid  := tracker.io.nextid
+    tracker.io.alloc       <> control.io.alloc
+    control.io.req_curid   := req_tracker.io.curid
+    req_tracker.io.incr    := control.io.incr
+    io.tlb                 <> control.io.tlb
+    control.io.flush       := io.flush
 
     //-----------------------------------------------
     // merge response beats into buffer
@@ -157,12 +163,24 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
       val flush = Input(Bool())
     })
 
+    val control_ready = WireDefault(false.B)
+    val splitter_ready = WireDefault(false.B)
+    val req_tracker_ready = WireDefault(false.B)
+    val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
+    io.req.ready    := control_ready && splitter_ready && req_tracker_ready 
+    req.ready       := control_ready && splitter_ready && req_tracker_ready
+    req.valid       := io.req.valid
+    req.bits.vaddr  := io.req.bits.vaddr
+    req.bits.lrange := io.req.bits.lrange
+    req.bits.status := io.req.bits.status
+
     //-----------------------------------------------
     // track outstanding transactions for each operation
     //-----------------------------------------------
-    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 1))
+    val tracker = Module(new FgDMATracker(config, max_xfer_bytes, 2))
 
     val req_tracker = Module(new FgDMAReqTracker(config))
+    req_tracker_ready          := req_tracker.io.alloc.ready
     req_tracker.io.alloc.valid := io.req.fire()
     req_tracker.io.alloc.bits  := io.req.bits.rob_id
     io.resp                    <> req_tracker.io.resp
@@ -171,26 +189,16 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tlb translations and tilelink txn dispatch
     //-----------------------------------------------
-    val control_ready = WireDefault(false.B)
-    val splitter_ready = WireDefault(false.B)
-    val req = Wire(Flipped(Decoupled(new FgDMAControlRequest(config))))
-    io.req.ready    := control_ready && splitter_ready
-    req.ready       := control_ready && splitter_ready
-    req.valid       := io.req.valid
-    req.bits.vaddr  := io.req.bits.vaddr
-    req.bits.lrange := io.req.bits.lrange
-    req.bits.status := io.req.bits.status
-    req.bits.rob_id := io.req.bits.rob_id
-
     val control = Module(new FgDMAControl(config, max_xfer_bytes, false))
-    control_ready        := control.io.req.ready
-    control.io.req.valid := req.fire()
-    control.io.req.bits  := req.bits
-    control.io.nextid    := tracker.io.nextid
-    tracker.io.alloc     <> control.io.alloc
-    req_tracker.io.incr  := control.io.incr
-    io.tlb               <> control.io.tlb
-    control.io.flush     := io.flush
+    control_ready         := control.io.req.ready
+    control.io.req.valid  := req.fire()
+    control.io.req.bits   := req.bits
+    control.io.txn_nextid := tracker.io.nextid
+    tracker.io.alloc      <> control.io.alloc
+    control.io.req_curid  := req_tracker.io.curid
+    req_tracker.io.incr   := control.io.incr
+    io.tlb                <> control.io.tlb
+    control.io.flush      := io.flush
 
     //-----------------------------------------------
     // track outstanding requests
@@ -225,9 +233,11 @@ class FgDMAStore[T <: Data](config: FgGemminiArrayConfig[T],
     //-----------------------------------------------
     // tile-link D-channel response
     //-----------------------------------------------
+    tracker.io.peek(1).xactid := tl.d.bits.source
+
     tl.d.ready                := req_tracker.io.decr.ready
     req_tracker.io.decr.valid := tl.d.valid
-    req_tracker.io.decr.bits  := tl.d.bits.source
+    req_tracker.io.decr.bits  := tracker.io.peek(1).entry.reqid
 
     tracker.io.pop.valid := tl.d.fire()
     tracker.io.pop.bits  := tl.d.bits.source

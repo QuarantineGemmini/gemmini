@@ -17,7 +17,6 @@ class FgDMAControlRequest[T <: Data](val config: FgGemminiArrayConfig[T])
   val vaddr  = UInt(coreMaxAddrBits.W)
   val lrange = new FgLocalRange(config)
   val status = new MStatus
-  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
 //===========================================================================
@@ -47,13 +46,14 @@ class FgDMAControl[T <: Data]
   // I/O interface
   //-----------------------------------------------
   val io = IO(new Bundle {
-    val req      = Flipped(Decoupled(new FgDMAControlRequest(config)))
-    val nextid   = Input(UInt(DMA_REQS_IDX.W))
-    val alloc    = Decoupled(new FgDMATrackerEntry(config, max_xfer_bytes))
-    val incr     = Valid(new FgDMAReqIncr(config))
-    val dispatch = Decoupled(new FgDMADispatch(config))
-    val tlb      = new FrontendTLBIO
-    val flush    = Input(Bool())
+    val req        = Flipped(Decoupled(new FgDMAControlRequest(config)))
+    val txn_nextid = Input(UInt(DMA_REQS_IDX.W))
+    val alloc      = Decoupled(new FgDMATrackerEntry(config, max_xfer_bytes))
+    val req_curid  = Input(UInt(DMA_REQS_IDX.W))
+    val incr       = Valid(new FgDMAReqIncr(config))
+    val dispatch   = Decoupled(new FgDMADispatch(config))
+    val tlb        = new FrontendTLBIO
+    val flush      = Input(Bool())
   })
   io.req.ready := false.B
 
@@ -62,7 +62,6 @@ class FgDMAControl[T <: Data]
   //-----------------------------------------------
   val req = Reg(new FgDMAControlRequest(config))
   val mstatus   = req.status
-  val rob_id    = req.rob_id
   val lrange    = req.lrange
   val item_rows = lrange.rows
   val item_cols = lrange.cols
@@ -135,8 +134,8 @@ class FgDMAControl[T <: Data]
   val is_first_txn             = (useful_bytes_requested === 0.U)
 
   io.alloc.valid                 := false.B
+  io.alloc.bits.reqid            := io.req_curid
   io.alloc.bits.lrange           := lrange
-  io.alloc.bits.rob_id           := rob_id
   io.alloc.bits.req_useful_bytes := total_useful_bytes
   io.alloc.bits.data_start_idx   := first_txn_data_start_idx
   io.alloc.bits.txn_start_idx    := total_bytes_requested
@@ -146,14 +145,14 @@ class FgDMAControl[T <: Data]
 
   // output transaction towards tile-link A-channel
   io.dispatch.valid               := false.B
-  io.dispatch.bits.xactid         := io.nextid
+  io.dispatch.bits.xactid         := io.txn_nextid
   io.dispatch.bits.paddr          := cur_aligned_paddr
   io.dispatch.bits.txn_log2_bytes := cur_txn_log2_bytes
 
   // increment transactions pending for this request
   io.incr.valid              := false.B
+  io.incr.bits.reqid         := io.req_curid
   io.incr.bits.all_txns_sent := is_last_txn
-  io.incr.bits.rob_id        := rob_id
 
   //-----------------------------------------------
   // FSM

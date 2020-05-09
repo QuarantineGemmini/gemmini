@@ -88,6 +88,8 @@ basicbuild() {
   cp "include/gemmini_params.h" "$dst_dir/"
 }
 
+# TODO: firemarshall does not delete the *-bin and *.img files when you rebuild
+# for some reason. figure out how to force overwrite these files!!!
 firesimbuild() {
   local name="$1"
   local fsim_sw_config="$2"

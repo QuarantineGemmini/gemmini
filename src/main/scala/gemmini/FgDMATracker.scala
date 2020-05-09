@@ -16,8 +16,8 @@ class FgDMATrackerEntry[T <: Data]
   (implicit p: Parameters) extends CoreBundle {
   import config._
   // same for all txns in a req
+  val reqid            = UInt(DMA_REQS_IDX.W)
   val lrange           = new FgLocalRange(config)
-  val rob_id           = UInt(ROB_ENTRIES_IDX.W)
   val req_useful_bytes = UInt(log2Ceil(max_xfer_bytes+1).W)
   val data_start_idx   = UInt(DMA_TXN_BYTES_IDX.W)
   // different for all txns in a req
@@ -55,7 +55,6 @@ class FgDMATracker[T <: Data]
     val peek = Vec(peeks,
                    Flipped(new FgDMATrackerPeekIO(config, max_xfer_bytes)))
     val pop = Input(Valid(UInt(DMA_REQS_IDX.W)))
-    val busy = Output(Bool())
   })
 
   // outstanding transaction registers
@@ -64,7 +63,6 @@ class FgDMATracker[T <: Data]
   when (reset.toBool()) {
     entries.foreach(_.valid := false.B)
   }
-  io.busy := entries.map(_.valid).reduce(_ || _)
 
   // interface to allocator
   val free_entry = MuxCase((DMA_REQS-1).U, entries.zipWithIndex.map {
