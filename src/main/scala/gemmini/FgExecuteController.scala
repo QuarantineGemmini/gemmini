@@ -74,7 +74,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val multiply_garbage = compute_rs1.garbage // A bits garbage
   val preload_zeros    = preload_rs1.garbage // B bits garbage
   val c_garbage        = preload_rs2.garbage
-  assert(!multiply_garbage)
 
   //=========================================================================
   // configuration state

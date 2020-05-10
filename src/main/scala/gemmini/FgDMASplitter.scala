@@ -21,8 +21,8 @@ class FgDMASplitter[T <: Data]
   // I/O interface
   //---------------------------------
   val io = IO(new Bundle {
-    val req  = Flipped(Decoupled(new FgDMAStoreRequest(config,max_xfer_bytes)))
-    val txn  = Flipped(Decoupled(new FgDMADispatch(config)))
+    val req = Flipped(Decoupled(new FgDMAStoreRequest(config,max_xfer_bytes)))
+    val txn = Flipped(Decoupled(new FgDMADispatch(config)))
     val peek = new FgDMATrackerPeekIO(config, max_xfer_bytes)
     val tl_a = Decoupled(new Bundle {
       val xactid     = UInt(DMA_REQS_IDX.W)
@@ -52,8 +52,8 @@ class FgDMASplitter[T <: Data]
   val paddr          = cur_txn.paddr       
  
   //--------------------------------------
-  val beat_idx = RegInit(0.U(DMA_TXN_BEATS_IDX.W))
-  val useful_bytes_sent = RegInit(0.U(log2Ceil(max_xfer_bytes+1).W))
+  val beat_idx = RegInit(0.U(DMA_TXN_BEATS_CTR.W))
+  val bytes_sent_next = (beat_idx + 1.U) * DMA_BUS_BYTES.U
 
   val is_last_txn      = io.peek.entry.is_last_txn
   val req_useful_bytes = io.peek.entry.req_useful_bytes
@@ -93,9 +93,6 @@ class FgDMASplitter[T <: Data]
                                         << mask_end_offset)
                                         >> mask_end_offset)
 
-  val cur_useful_bytes = DMA_BUS_BYTES.U - mask_start_offset - mask_end_offset
-  val useful_bytes_sent_next = useful_bytes_sent + cur_useful_bytes
-
   //---------------------------------
   // outputs
   //---------------------------------
@@ -114,24 +111,21 @@ class FgDMASplitter[T <: Data]
   val state = RegInit(s_PENDING_REQ)
 
   def start_next_txn(dummy: Int = 0) = {
-    useful_bytes_sent := 0.U
+    state := s_PENDING_TXN
     beat_idx := 0.U
     txn.ready := true.B
     when (txn.fire()) {
       cur_txn := txn.bits
       state := s_SEND_BEAT
-    } .otherwise {
-      state := s_PENDING_TXN
     }
   }
 
   def start_next_req(dummy: Int = 0) = {
+    state := s_PENDING_REQ
     req.ready := true.B
     when (req.fire()) {
       cur_req := req.bits
       start_next_txn()
-    } .otherwise {
-      state := s_PENDING_REQ
     }
   }
 
@@ -145,12 +139,13 @@ class FgDMASplitter[T <: Data]
     is (s_SEND_BEAT) {
       io.tl_a.valid := true.B
       when(io.tl_a.fire()) {
-        useful_bytes_sent := useful_bytes_sent_next
         beat_idx := beat_idx + 1.U
-        when (is_last_txn) {
-          start_next_req()
-        } .otherwise {
-          start_next_txn()
+        when (bytes_sent_next === txn_bytes) {
+          when (is_last_txn) {
+            start_next_req()
+          } .otherwise {
+            start_next_txn()
+          }
         }
       }
     }
