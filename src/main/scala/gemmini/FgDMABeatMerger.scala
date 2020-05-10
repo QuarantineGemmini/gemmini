@@ -35,6 +35,7 @@ class FgDMABeatMerger[T <: Data]
   // internal state
   //---------------------------------
   val data = RegInit(0.U(DMA_TXN_BITS.W))
+  val data_next = Wire(UInt(DMA_TXN_BITS.W))
 
   //---------------------------------
   // if (data_start_idx >= txn_start_idx)
@@ -62,9 +63,11 @@ class FgDMABeatMerger[T <: Data]
   val txn_rshift_bits  = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
   val beat_lshift_bits = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
   txn_rshift_bits     := Mux(is_first_txn, first_rshift_bits, 0.U)
-  beat_lshift_bits    := beat_idx * DMA_BUS_BYTES.U
-  val data_next = data | (Mux(is_first_txn, beat_data >> txn_rshift_bits, 
-                              beat_data) << beat_lshift_bits)
+  beat_lshift_bits    := beat_idx * DMA_BUS_BITS.U
+
+  val shifted_data = beat_data << beat_lshift_bits
+  data_next := data | Mux(is_first_txn, shifted_data >> txn_rshift_bits, 
+                           shifted_data)
 
   //----------------------------------------
   // assign I/O/next state

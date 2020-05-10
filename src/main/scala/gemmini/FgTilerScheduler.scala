@@ -214,7 +214,7 @@ class FgTilerScheduler[T <: Data: Arithmetic]
         debug_cycle, new_entry_id, cmd_id.value, 
         srcB.row_start, srcB.fg_col_start, 
         dstCD.row_start, dstCD.fg_col_start, dstCD.rows, dstCD.cols,
-        srcB.cols)
+        srcB.rows)
     }
     .elsewhen (new_entry.is_execflip) {
       printf("cycle[%d], entry[%d], accept[%d], " +

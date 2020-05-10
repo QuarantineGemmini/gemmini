@@ -62,6 +62,7 @@ case class FgGemminiArrayConfig[T <: Data : Arithmetic](
   def FG_NUM_IDX      = log2Up(FG_NUM)
   def FG_NUM_CTR      = log2Up(FG_NUM+1)
   def FG_NUM_CTR_CTR  = log2Up(FG_NUM_CTR+1)
+  def FG_POW2S        = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
   // element rows/cols per fg-tile
   def FG_DIM     = fg_dim

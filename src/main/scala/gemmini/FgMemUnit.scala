@@ -329,9 +329,8 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
       when (ex_wr_en) {
         val is_active     = (ex_wr_bank_start<=i.U) && (i.U<=ex_wr_bank_end)
         val bank_offset   = i.U - ex_wr_bank_start
-        val fg_per_bank   = (FG_NUM.U / ex_wr_banks)
-        val bits_per_bank = fg_per_bank * FG_DIM.U * OTYPE_BITS.U
-        val shifted_data  = ex_wr_data >> (i.U * bits_per_bank)
+        val bits_per_bank = ex_wr_cols * OTYPE_BITS.U
+        val shifted_data  = ex_wr_data >> (bank_offset * bits_per_bank)
 
         bank.io.write.en           := is_active
         bank.io.write.row          := ex_wr_row

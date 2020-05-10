@@ -34,49 +34,45 @@ class FgMesh[T <: Data : Arithmetic](val config: FgGemminiArrayConfig[T])
   // I/O interface
   //========================================================================
   val io = IO(new Bundle {
-    val in_valid   = Input(Bool())
-    val a          = Input(Vec(FG_NUM, Vec(FG_DIM, inputType)))
-    val b          = Input(Vec(FG_NUM, Vec(FG_DIM, inputType)))
-    val a_mux_sel  = Input(UInt(FG_NUM_CTR_CTR.W))
-    val b_mux_sel  = Input(UInt(FG_NUM_CTR_CTR.W))
-    val flipped    = Input(Bool())
-    val tag_in     = Flipped(Decoupled(new FgMeshQueueTag(config)))
-    val out_valid  = Output(Bool())
-    val out        = Output(Vec(FG_NUM, Vec(FG_DIM, accType)))
-    val tag_out    = Output(new Bundle {
-      val bits     = new FgMeshQueueTag(config)
-      val commit   = Bool()
+    val in_valid     = Input(Bool())
+    val a            = Input(Vec(FG_NUM, Vec(FG_DIM, inputType)))
+    val b            = Input(Vec(FG_NUM, Vec(FG_DIM, inputType)))
+    val flipped      = Input(Bool())
+    val tag_in       = Flipped(Decoupled(new FgMeshQueueTag(config)))
+    val out_valid    = Output(Bool())
+    val out          = Output(Vec(FG_NUM, Vec(FG_DIM, accType)))
+    val tag_out      = Output(new Bundle {
+      val bits   = new FgMeshQueueTag(config)
+      val commit = Bool()
     })
-    val busy       = Output(Bool())
-    val prof       = Input(new Profiling)
+    val busy = Output(Bool())
+    val prof = Input(new Profiling)
+    // from tiler-controller
+    val a_fg_mux_sel = Input(UInt(FG_NUM_CTR_CTR.W))
+    val b_fg_mux_sel = Input(UInt(FG_NUM_CTR_CTR.W))
   })
 
   val fg_mesh = Seq.fill(FG_NUM)(Module(new FgMeshWithDelays(config)))
 
   // Each sub-mesh selects from a set of values that are indexed into various 
-  // portiions of the a and b inputs based upon the fine-grainedness of the 
+  // portions of the a and b inputs based upon the fine-grainedness of the 
   // array, the size of the array, and the sub-meshes position in the 
   // full mesh
   val a_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM,inputType))))
   val b_mesh_muxes = Wire(Vec(FG_NUM, Vec(FG_NUM_CTR, Vec(FG_DIM,inputType))))
-  val fg_pow2s = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
 
   // Routing the possible inputs to each sub-array's mux
-  for (i <- 0 until SQRT_FG_NUM) {
-    for (j <- 0 until SQRT_FG_NUM) {
-      //this must be floordiv
-      val idx_divs = fg_pow2s.map{e => (i*SQRT_FG_NUM+j)/e}.reverse 
-      for (k <- 0 until FG_NUM_CTR) {
-        a_mesh_muxes(i*SQRT_FG_NUM + j)(k) := io.a(idx_divs(k))
-        b_mesh_muxes(j*SQRT_FG_NUM + i)(k) := io.b(idx_divs(k))
-      }
-    }
-  }
-
   for (i <- 0 until FG_NUM) {
+    val a_idx_div = FG_POW2S.map { e => (i * e) / FG_NUM}
+    val b_idx_div = FG_POW2S.map { e => (i % e)}
+    for (k <- 0 until FG_NUM_CTR) {
+      a_mesh_muxes(i)(k) := io.a(a_idx_div(k))
+      b_mesh_muxes(i)(k) := io.b(b_idx_div(k))
+    }
+
     fg_mesh(i).io.in_valid  := io.in_valid
-    fg_mesh(i).io.a         := a_mesh_muxes(i)(io.a_mux_sel)
-    fg_mesh(i).io.b         := b_mesh_muxes(i)(io.b_mux_sel)
+    fg_mesh(i).io.a         := a_mesh_muxes(i)(io.a_fg_mux_sel)
+    fg_mesh(i).io.b         := b_mesh_muxes(i)(io.b_fg_mux_sel)
     fg_mesh(i).io.flipped   := io.flipped
     io.out(i)               := fg_mesh(i).io.out
   }

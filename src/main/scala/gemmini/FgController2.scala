@@ -57,6 +57,8 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   // Execution
   //=========================================================================
   val exec = FgExecuteController(config)
+  exec.io.a_fg_mux_sel      := tiler.io.a_fg_mux_sel
+  exec.io.b_fg_mux_sel      := tiler.io.b_fg_mux_sel
   exec.io.cmd               <> tiler.io.issue.exec
   tiler.io.completed.exec   := exec.io.completed
   mem.module.io.exec.readA  <> exec.io.readA

@@ -20,9 +20,15 @@ class FgTilerFSM[T <: Data : Arithmetic]
   // interface
   //=========================================================================
   val io = IO(new Bundle {
-    val cmd_in    = Flipped(Decoupled(new TilerCmd(OTYPE_BITS_IDX)))
-    val sched_out = Decoupled(new RoCCCommand)
-    val busy      = Output(Bool())
+    val cmd_in       = Flipped(Decoupled(new TilerCmd(OTYPE_BITS_IDX)))
+    val sched_out    = Decoupled(new RoCCCommand)
+    val busy         = Output(Bool())
+    // WARNING TODO: pass this in with sched_out. this is only correct right
+    // now because we assume a software fence() is used to separate 
+    // consecutive gemm operations! If a fence() is not used, this is broken.
+    // to exec-unit
+    val a_fg_mux_sel = Output(UInt(FG_NUM_CTR_CTR.W))
+    val b_fg_mux_sel = Output(UInt(FG_NUM_CTR_CTR.W))
   })
   // hardcode 8 entries with up to 2 pushes per cycle
   val schedq = Module(new MultiTailedQueue(new RoCCCommand, 8, 2))
@@ -83,6 +89,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
   //------------------------------------------------------------------------
   // fg-tiler-fsm hardwired constants
   //------------------------------------------------------------------------
+  val I_BYTE_COLS_PER_FG_TILE   = FG_DIM * ITYPE_BYTES
   val I_BYTE_COLS_PER_TILE      = FG_DIM * FG_NUM * ITYPE_BYTES
   val O_BYTE_COLS_PER_TILE      = FG_DIM * FG_NUM * OTYPE_BYTES
   val I_BYTE_COLS_PER_GROUP     = I_BYTE_COLS_PER_TILE * FG_NUM
@@ -102,10 +109,15 @@ class FgTilerFSM[T <: Data : Arithmetic]
   val ELEMS_PER_TILE_CTR      = log2Up(ELEMS_PER_TILE+1)
 
   // TOTAL_ACC_TILES is how many square tiles can be output to accumulator
+  // OG_HEIGHT_MAP prefers tall/skinny over wide/short when both possible
   val TOTAL_ACC_TILES = FG_NUM
   val SQRT_ACC_TILES  = sqrt(TOTAL_ACC_TILES).toInt
-  val OG_HEIGHT_MAP   = (1 to TOTAL_ACC_TILES).sortWith((h1, h2) => {
-    (h1 - SQRT_ACC_TILES).abs > (h2 - SQRT_ACC_TILES).abs
+  val OG_HEIGHT_MAP   = (0 to log2Up(TOTAL_ACC_TILES)).map { 
+                          e => pow(2,e).toInt }.sortWith((h1, h2) => {
+    val h1b = if(h1>SQRT_ACC_TILES) h1/SQRT_ACC_TILES else SQRT_ACC_TILES/h1
+    val h2b = if(h2>SQRT_ACC_TILES) h2/SQRT_ACC_TILES else SQRT_ACC_TILES/h2
+    // pick the less-square one, or the taller one if equally non-square
+    (h1b >= h2b) || (h1 > h2)
   })
   // list of numbers of fg-arrays that are <= sqrt(FG_NUM). used to determine
   // what the width/height of the tile is in terms of fine-grained tiles
@@ -142,6 +154,23 @@ class FgTilerFSM[T <: Data : Arithmetic]
   //------------------------------------------------------------------------
   val g_FG_TILE_ROWS_PER_TILE = Reg(UInt(FG_NUM_CTR.W))
   val g_FG_TILE_COLS_PER_TILE = Reg(UInt(FG_NUM_CTR.W)) 
+
+  //------------------------------------------------------------------------
+  // TODO: move these somewhere else
+  //------------------------------------------------------------------------
+  val a_fg_mux_ctrl = Wire(Vec(FG_NUM_CTR, Bool())) 
+  val b_fg_mux_ctrl = Wire(Vec(FG_NUM_CTR, Bool())) 
+
+  // Bucket the computation for assigning to FG arrays (for preload)
+  FG_POW2S.zipWithIndex.foreach { case(fg_pow2, i) => 
+    a_fg_mux_ctrl(i) := (g_FG_TILE_ROWS_PER_TILE >= fg_pow2.U) 
+    b_fg_mux_ctrl(i) := (g_FG_TILE_COLS_PER_TILE >= fg_pow2.U) 
+  }
+  // Convert thermometer to binary (a,b) = (4,0),(3,1),(2,2),(1,3),(0,4), 
+  // where a = 4 when 1 a-tile is broadcast to all fg-meshes
+  io.a_fg_mux_sel := PopCount(a_fg_mux_ctrl) - 1.U
+  io.b_fg_mux_sel := PopCount(b_fg_mux_ctrl) - 1.U
+
   //------------------------------------------------------------------------
   // input data-specific constants AFTER TILE-SIZE CALCULATION (cycle 2)
   //------------------------------------------------------------------------
@@ -168,10 +197,10 @@ class FgTilerFSM[T <: Data : Arithmetic]
   val g_TILE_COL_END          = Reg(UInt(TILES_IDX.W))
   val g_K_TILE_COL_END        = Reg(UInt(TILES_IDX.W))
   // bytes in A-matrix row * rows-per-tile
-  val g_A_BYTES_PER_TILE_ROW  = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
-  val g_B_BYTES_PER_TILE_ROW  = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
-  val g_C_BYTES_PER_TILE_ROW  = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
-  val g_D_BYTES_PER_TILE_ROW  = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
+  val g_A_BYTES_PER_TILE_ROW    = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
+  val g_B_BYTES_PER_FG_TILE_ROW = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
+  val g_C_BYTES_PER_TILE_ROW    = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
+  val g_D_BYTES_PER_TILE_ROW    = Reg(UInt(BYTES_PER_TILE_ROW_CTR.W))
 
   //------------------------------------------------------------------------
   // global state persistent across all loops
@@ -306,20 +335,16 @@ class FgTilerFSM[T <: Data : Arithmetic]
     }
     is (s_FINISH_INIT1) {
       // set the number of fg-tiles per row/col of the tile 
-      g_FG_TILE_ROWS_PER_TILE := MuxCase(SQRT_FG_NUM.U, Seq(
-        (g_FG_TILE_ROW_END < SQRT_FG_NUM.U) -> Mux1H(FGS_LE_SQ_TILE.map { 
-          h => (g_FG_TILE_ROW_END < h.U) -> h.U
-        }),
-        (g_FG_TILE_COL_END < SQRT_FG_NUM.U) -> Mux1H(FGS_LE_SQ_TILE.map { 
-          w => (g_FG_TILE_COL_END < w.U) -> (FG_NUM/w).U
-        })))
-      g_FG_TILE_COLS_PER_TILE := MuxCase(SQRT_FG_NUM.U, Seq(
-        (g_FG_TILE_ROW_END < SQRT_FG_NUM.U) -> Mux1H(FGS_LE_SQ_TILE.map { 
-          h => (g_FG_TILE_ROW_END < h.U) -> (FG_NUM/h).U
-        }),
-        (g_FG_TILE_COL_END < SQRT_FG_NUM.U) -> Mux1H(FGS_LE_SQ_TILE.map { 
-          w => (g_FG_TILE_COL_END < w.U) -> w.U
-        })))
+      // NOTE: prefer tall/skinny if both tall/skinny and wide/short possible
+      val l_FG_TILE_ROWS_PER_TILE = MuxCase(SQRT_FG_NUM.U, Seq(
+        (g_FG_TILE_COL_END < SQRT_FG_NUM.U) -> MuxCase(FG_NUM.U,
+          FGS_LE_SQ_TILE.map{ w => (g_FG_TILE_COL_END < w.U) -> (FG_NUM/w).U}
+        ),
+        (g_FG_TILE_ROW_END < SQRT_FG_NUM.U) -> MuxCase(1.U, 
+          FGS_LE_SQ_TILE.map{ h => (g_FG_TILE_ROW_END < h.U) -> h.U }
+        )))
+      g_FG_TILE_ROWS_PER_TILE := l_FG_TILE_ROWS_PER_TILE
+      g_FG_TILE_COLS_PER_TILE := FG_NUM.U / l_FG_TILE_ROWS_PER_TILE 
 
       //-------------------------------------------------------------------
       // configure loadA/loadB MemOp unit one time
@@ -355,16 +380,15 @@ class FgTilerFSM[T <: Data : Arithmetic]
     is (s_FINISH_INIT2) {
       //-------------------------------------------------------------------
       // set tile shape and output-group shape (both in terms of fg-tiles)
+      // NOTE: prefer tall/skinny if both tall/skinny and wide/short possible
       //-------------------------------------------------------------------
-      val l_SQ_TILE_ROW_END = (cmd.m >> DIM_IDX) + 
-                               cmd.m(DIM_IDX-1,0).orR - 1.U
-      val l_SQ_TILE_COL_END = (cmd.n >> DIM_IDX) + 
-                               cmd.n(DIM_IDX-1,0).orR - 1.U
-      val l_OG_DIM_SELECT = OG_HEIGHT_MAP.zipWithIndex.map{ case(h,i) => 
+      val l_SQ_TILE_ROW_END = (cmd.m >> DIM_IDX) + cmd.m(DIM_IDX-1,0).orR -1.U
+      val l_SQ_TILE_COL_END = (cmd.n >> DIM_IDX) + cmd.n(DIM_IDX-1,0).orR -1.U
+      val l_OG_DIM_SELECT = OG_HEIGHT_MAP.map{ h => 
         val w = TOTAL_ACC_TILES/h
         if (h < w)      WireDefault(l_SQ_TILE_ROW_END < h.U)
         else if(h > w)  WireDefault(l_SQ_TILE_COL_END < w.U)
-        else            WireDefault((i == (OG_HEIGHT_MAP.size-1)).asBool)
+        else            WireDefault(true.B)
       }
       val l_SQ_TILE_ROWS_PER_GROUP = MuxCase(
         OG_HEIGHT_MAP(OG_HEIGHT_MAP.size-1).U,
@@ -376,9 +400,10 @@ class FgTilerFSM[T <: Data : Arithmetic]
         OG_HEIGHT_MAP.zipWithIndex.map{
           case(h,i) => (l_OG_DIM_SELECT(i) -> (TOTAL_ACC_TILES/h).U)
         })
+      assert(l_SQ_TILE_ROWS_PER_GROUP * l_SQ_TILE_COLS_PER_GROUP === FG_NUM.U)
 
-      val l_IS_SKINNY_TALL_TILE = (g_FG_TILE_COLS_PER_TILE < SQRT_FG_NUM.U)
       val l_IS_WIDE_SHORT_TILE  = (g_FG_TILE_COLS_PER_TILE > SQRT_FG_NUM.U)
+      val l_IS_SKINNY_TALL_TILE = (g_FG_TILE_COLS_PER_TILE < SQRT_FG_NUM.U)
 
       val l_SQ_TILE_ROWS_PER_TILE = Mux(l_IS_WIDE_SHORT_TILE, 1.U,
                                      g_FG_TILE_ROWS_PER_TILE / SQRT_FG_NUM.U)
@@ -449,10 +474,10 @@ class FgTilerFSM[T <: Data : Arithmetic]
       //-------------------------------------------------------------------
       // for calculating DRAM addresses each iteration
       //-------------------------------------------------------------------
-      g_A_BYTES_PER_TILE_ROW  := l_A_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
-      g_B_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * FG_DIM.U
-      g_C_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH * g_ITEM_ROWS_PER_TILE 
-      g_D_BYTES_PER_TILE_ROW  := l_D_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
+      g_A_BYTES_PER_TILE_ROW    := l_A_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
+      g_B_BYTES_PER_FG_TILE_ROW := l_BC_BYTE_WIDTH * FG_DIM.U
+      g_C_BYTES_PER_TILE_ROW    := l_BC_BYTE_WIDTH * g_ITEM_ROWS_PER_TILE 
+      g_D_BYTES_PER_TILE_ROW    := l_D_BYTE_WIDTH  * g_ITEM_ROWS_PER_TILE 
 
       //-------------------------------------------------------------------
       // the last tile indexes
@@ -842,8 +867,8 @@ class FgTilerFSM[T <: Data : Arithmetic]
         gbl_CD_row_addr    := 0.U
         update_tile_dims()
 
-        loop2_A_mem_addr := loop2_A_mem_addr + g_I_BYTE_COLS_PER_TILE
-        loop2_B_mem_addr := loop2_B_mem_addr + g_B_BYTES_PER_TILE_ROW
+        loop2_A_mem_addr := loop2_A_mem_addr + I_BYTE_COLS_PER_FG_TILE.U
+        loop2_B_mem_addr := loop2_B_mem_addr + g_B_BYTES_PER_FG_TILE_ROW
         loop2_C_mem_addr := loop2_C_mem_addr + 0.U
         loop2_D_mem_addr := loop2_D_mem_addr + 0.U
 

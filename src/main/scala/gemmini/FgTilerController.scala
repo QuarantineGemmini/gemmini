@@ -34,13 +34,18 @@ class FgTilerController[T <: Data: Arithmetic]
       val storeC = Flipped(Decoupled(UInt(ROB_ENTRIES_IDX.W)))
     }
     val busy = Output(Bool())
+    // to exec-unit
+    val a_fg_mux_sel = Output(UInt(FG_NUM_CTR_CTR.W))
+    val b_fg_mux_sel = Output(UInt(FG_NUM_CTR_CTR.W))
   })
 
   //=========================================================================
   // dispatch incoming commands
   //=========================================================================
   val fsm = FgTilerFSM(config)
-  fsm.io.cmd_in <> io.cmd_in
+  fsm.io.cmd_in   <> io.cmd_in
+  io.a_fg_mux_sel := fsm.io.a_fg_mux_sel
+  io.b_fg_mux_sel := fsm.io.b_fg_mux_sel
 
   val sched = FgTilerScheduler(config)
   sched.io.cmd_in <> fsm.io.sched_out

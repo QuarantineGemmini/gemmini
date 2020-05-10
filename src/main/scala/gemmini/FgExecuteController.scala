@@ -30,6 +30,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
     val completed  = Valid(UInt(ROB_ENTRIES_IDX.W))
     val busy       = Output(Bool())
     val prof       = Input(new Profiling)
+    // set by the TilerController
+    val a_fg_mux_sel = Input(UInt(FG_NUM_CTR_CTR.W))
+    val b_fg_mux_sel = Input(UInt(FG_NUM_CTR_CTR.W))
   })
 
   io.completed.valid := false.B
@@ -65,6 +68,9 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val b_lrange = preload_rs1
   val c_lrange = preload_rs2
 
+  // since a_lrange and b_lrange are computed separately
+  val b_lrange_last = Reg(new FgLocalRange(config))
+
   val multiply_garbage = compute_rs1.garbage // A bits garbage
   val preload_zeros    = preload_rs1.garbage // B bits garbage
   val c_garbage        = preload_rs2.garbage
@@ -81,23 +87,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   io.acc_config.acc_rshift   := acc_shift
   io.acc_config.relu6_lshift := relu6_shift
   io.acc_config.act          := activation
-
-  //=========================================================================
-  // FG Mesh Muxing Control
-  //=========================================================================
-  val fg_pow2s      = (0 to log2Up(FG_NUM)).map { e=>pow(2,e).toInt }
-  val a_fg_mux_ctrl = Wire(Vec(FG_NUM_CTR, Bool())) 
-  val a_fg_mux_sel  = Wire(UInt(FG_NUM_CTR_CTR.W))
-  val b_fg_mux_sel  = Wire(UInt(FG_NUM_CTR_CTR.W))
-
-  // Bucket the computation for assigning to FG arrays
-  fg_pow2s.zipWithIndex.foreach { case(fg_pow2, i) => 
-    a_fg_mux_ctrl(i) := (a_lrange.rows <= (fg_pow2 * FG_DIM).U)
-  }
-  // Convert thermometer to binary (a,b) = (4,0),(3,1),(2,2),(1,3),(0,4), 
-  // where a = 4 when 1 a-tile is broadcast to all fg-meshes
-  a_fg_mux_sel := PopCount(a_fg_mux_ctrl) - 1.U
-  b_fg_mux_sel := log2Up(FG_NUM).U - a_fg_mux_sel
 
   //=========================================================================
   // fix-latency scratchpad-inputs read
@@ -197,6 +186,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
 
       when (sp_read_counter === (FG_DIM-1).U) {
         cmd.pop         := 1.U
+        b_lrange_last   := b_lrange
         sp_read_counter := 0.U
         state           := s_IDLE
       }
@@ -208,7 +198,8 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
       sp_read_counter := sp_read_counter + 1.U
 
       when (sp_read_counter === (FG_DIM-1).U) {
-        cmd.pop := 2.U
+        cmd.pop             := 2.U
+        b_lrange_last       := b_lrange
         is_mul_tag_finished := true.B
         io.completed.valid  := true.B
         io.completed.bits   := cmd.bits(0).rob_id
@@ -222,7 +213,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
       sp_read_counter := sp_read_counter + 1.U
 
       when (sp_read_counter === (FG_DIM-1).U) {
-        cmd.pop := 1.U
+        cmd.pop             := 1.U
         is_mul_tag_finished := true.B
         io.completed.valid  := true.B
         io.completed.bits   := cmd.bits(0).rob_id
@@ -239,8 +230,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   class ComputeCntrlSignals extends Bundle {
     val in_valid      = Bool()
     val has_preload   = Bool()
-    val a_fg_mux_sel  = UInt(FG_NUM_CTR_CTR.W)
-    val b_fg_mux_sel  = UInt(FG_NUM_CTR_CTR.W)
     val rob_id        = UInt(ROB_ENTRIES_IDX.W)
     val c_lrange      = new FgLocalRange(config)
     val flipped       = Bool()
@@ -256,8 +245,6 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
                             state === s_MUL_PRE ||
                             state === s_MUL
   mesh_ctrl.has_preload  := (state === s_PRELOAD) || (state === s_MUL_PRE)
-  mesh_ctrl.a_fg_mux_sel := a_fg_mux_sel
-  mesh_ctrl.b_fg_mux_sel := b_fg_mux_sel
   mesh_ctrl.rob_id       := cmd.bits(preload_idx).rob_id
   mesh_ctrl.c_lrange     := c_lrange
   mesh_ctrl.flipped      := in_flipped && (sp_read_counter === 0.U)
@@ -270,14 +257,14 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   mesh.io.in_valid                 := mesh_ctrl_buf.in_valid
   mesh.io.a                        := a_data
   mesh.io.b                        := b_data
-  mesh.io.a_mux_sel                := mesh_ctrl_buf.a_fg_mux_sel
-  mesh.io.b_mux_sel                := mesh_ctrl_buf.b_fg_mux_sel
   mesh.io.flipped                  := mesh_ctrl_buf.flipped
   mesh.io.tag_in.valid             := mesh_ctrl_buf.last_row
   mesh.io.tag_in.bits.do_writeback := mesh_ctrl_buf.has_preload
   mesh.io.tag_in.bits.rob_id       := mesh_ctrl_buf.rob_id
   mesh.io.tag_in.bits.wb_lrange    := mesh_ctrl_buf.c_lrange
   mesh.io.prof                     := io.prof
+  mesh.io.a_fg_mux_sel             := io.a_fg_mux_sel
+  mesh.io.b_fg_mux_sel             := io.b_fg_mux_sel
 
   //=========================================================================
   // Mesh->Scratchpad/Accumulator write datapath
