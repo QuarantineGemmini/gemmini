@@ -51,7 +51,8 @@ class FgGemminiModule2[T <: Data: Arithmetic](outer: FgGemmini2[T])
   tlb.io.exp.flush_skip  := cmd_fsm.io.flush_skip
 
   val tiler = FgTilerController(config)
-  tiler.io.cmd_in <> cmd_fsm.io.tiler
+  tiler.io.cmd_in            <> cmd_fsm.io.tiler
+  mem.module.io.a_fg_mux_sel := tiler.io.a_fg_mux_sel
 
   //=========================================================================
   // Execution

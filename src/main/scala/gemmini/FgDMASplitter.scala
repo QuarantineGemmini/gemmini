@@ -69,7 +69,7 @@ class FgDMASplitter[T <: Data]
   req_data_lshift       := data_start_idx * 8.U
   val shifted_req_data   = (cur_req.data << req_data_lshift)
 
-  val beat_data_rshift   = Wire(UInt(log2Ceil(max_xfer_bits).W))
+  val beat_data_rshift   = Wire(UInt(log2Ceil(max_xfer_bits+DMA_TXN_BITS).W))
   beat_data_rshift      := (txn_start_idx * 8.U) + (beat_idx * DMA_BUS_BITS.U)
   val shifted_beat_data  = (shifted_req_data >> beat_data_rshift)
 
@@ -88,10 +88,11 @@ class FgDMASplitter[T <: Data]
                               (beat_end_idx - data_end_idx)))
 
   val unshifted_mask = WireInit(~0.U(DMA_BUS_BYTES.W))
-  val shifted_mask = ((((unshifted_mask >> mask_start_offset)
-                                        << mask_start_offset)
-                                        << mask_end_offset)
-                                        >> mask_end_offset)
+  val lshifted_mask  = WireInit(~0.U(DMA_BUS_BYTES.W))
+  lshifted_mask := (((unshifted_mask >> mask_start_offset)
+                                     << mask_start_offset)
+                                     << mask_end_offset)
+  val rshifted_mask = lshifted_mask >> mask_end_offset
 
   //---------------------------------
   // outputs
@@ -102,7 +103,7 @@ class FgDMASplitter[T <: Data]
   io.tl_a.bits.paddr      := paddr
   io.tl_a.bits.log2_bytes := txn_log2_bytes
   io.tl_a.bits.data       := shifted_beat_data
-  io.tl_a.bits.mask       := shifted_mask
+  io.tl_a.bits.mask       := rshifted_mask
 
   //---------------------------------
   // FSM

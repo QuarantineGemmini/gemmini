@@ -188,46 +188,46 @@ class FgTilerScheduler[T <: Data: Arithmetic]
       printf("cycle[%d], entry[%d], accept[%d], " +
         "mvinA[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, dstA.row_start, dstA.fg_col_start, dstA.rows, dstA.cols)
+        cmd.rs1, dstA.row_start, dstA.col_start, dstA.rows, dstA.cols)
     }
     .elsewhen (new_entry.is_loadB) {
       printf("cycle[%d], entry[%d], accept[%d], " +
         "mvinB[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, dstB.row_start, dstB.fg_col_start, dstB.rows, dstB.cols)
+        cmd.rs1, dstB.row_start, dstB.col_start, dstB.rows, dstB.cols)
     }
     .elsewhen (new_entry.is_loadD) {
       printf("cycle[%d], entry[%d], accept[%d], " +
         "mvinD[dram=%x, spad=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, dstCD.row_start, dstCD.fg_col_start, dstCD.rows, dstCD.cols)
+        cmd.rs1, dstCD.row_start, dstCD.col_start, dstCD.rows, dstCD.cols)
     }
     .elsewhen (new_entry.is_storeC) {
       printf("cycle[%d], entry[%d], accept[%d], " + 
         "mvoutC[dram=%x, acc=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        cmd.rs1, srcCD.row_start, srcCD.fg_col_start, srcCD.rows, srcCD.cols)
+        cmd.rs1, srcCD.row_start, srcCD.col_start, srcCD.rows, srcCD.cols)
     }
     .elsewhen (new_entry.is_preload) {
       printf("cycle[%d], entry[%d], accept[%d], " + 
         "preload[B=(%x,%x), C=(%x,%x), rows=%x, cols=%x, k-cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        srcB.row_start, srcB.fg_col_start, 
-        dstCD.row_start, dstCD.fg_col_start, dstCD.rows, dstCD.cols,
+        srcB.row_start, srcB.col_start, 
+        dstCD.row_start, dstCD.col_start, dstCD.rows, dstCD.cols,
         srcB.rows)
     }
     .elsewhen (new_entry.is_execflip) {
       printf("cycle[%d], entry[%d], accept[%d], " +
         "ex.pre[A=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        srcA.row_start, srcA.fg_col_start, srcA.rows, srcA.cols)
+        srcA.row_start, srcA.col_start, srcA.rows, srcA.cols)
     }
     .otherwise {
       assert(new_entry.is_exec)
       printf("cycle[%d], entry[%d], accept[%d], " +
         "ex.acc[A=(%x,%x), rows=%x, cols=%x]\n",
         debug_cycle, new_entry_id, cmd_id.value, 
-        srcA.row_start, srcA.fg_col_start, srcA.rows, srcA.cols)
+        srcA.row_start, srcA.col_start, srcA.rows, srcA.cols)
     }
 
     //======================================================================

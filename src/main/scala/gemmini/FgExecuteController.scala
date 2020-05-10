@@ -97,16 +97,16 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   //----------------------------------------
   val is_reading_a     = WireInit(false.B)
   val a_nonzero_cycles = Mux(a_lrange.rows > FG_DIM.U,FG_DIM.U,a_lrange.rows)
-  val a_maxbank_rows   = a_lrange.rows(15,FG_DIM_IDX)
+  val a_maxbank_rows   = a_lrange.rows(14,FG_DIM_IDX)
   val a_nonzero_cols   = a_lrange.cols
   val a_banks          = a_lrange.total_banks() //ok to write to junk pad rows
   val a_read_en        = (sp_read_counter < a_nonzero_cycles) && is_reading_a
 
-  io.readA.req.en           := a_read_en
-  io.readA.req.row          := sp_read_counter
-  io.readA.req.fg_col_start := a_lrange.fg_col_start
-  io.readA.req.bank_start   := a_lrange.bank_start()
-  io.readA.req.banks        := a_banks
+  io.readA.req.en         := a_read_en
+  io.readA.req.row        := sp_read_counter
+  io.readA.req.col_start  := a_lrange.col_start
+  io.readA.req.bank_start := a_lrange.bank_start()
+  io.readA.req.banks      := a_banks
 
   // get data back 2 cycles later
   val a_read_en_buf      = ShiftRegister(a_read_en, SP_RD_LATENCY)
@@ -128,11 +128,11 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val b_nonzero_cols  = b_lrange.cols
   val b_read_en       = (sp_read_counter < b_nonzero_rows) && is_reading_b
 
-  io.readB.req.en           := b_read_en
-  io.readB.req.row          := sp_read_counter
-  io.readB.req.fg_col_start := b_lrange.fg_col_start
-  io.readB.req.bank_start   := b_lrange.bank_start()
-  io.readB.req.banks        := 1.U
+  io.readB.req.en         := b_read_en
+  io.readB.req.row        := sp_read_counter
+  io.readB.req.col_start  := b_lrange.col_start
+  io.readB.req.bank_start := b_lrange.bank_start()
+  io.readB.req.banks      := 1.U
 
   // get data back 2 cycles later
   val b_read_en_buf      = ShiftRegister(b_read_en, SP_RD_LATENCY)
@@ -273,7 +273,7 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_rob_id             = mesh.io.tag_out.bits.rob_id
   val wb_lrange             = mesh.io.tag_out.bits.wb_lrange
   val wb_cols               = wb_lrange.cols
-  val wb_fg_col_start       = wb_lrange.fg_col_start
+  val wb_col_start          = wb_lrange.col_start
   val wb_bank_start         = wb_lrange.bank_start()
   val wb_banks              = wb_lrange.total_banks()
   val wb_accum              = wb_lrange.is_accum
@@ -283,14 +283,14 @@ class FgExecuteController[T <: Data](config: FgGemminiArrayConfig[T])
   val wb_is_outputting_last = wb_is_outputting && mesh.io.tag_out.commit
   assert(!(wb_is_outputting && wb_garbage))
 
-  io.writeC.en           := wb_is_outputting
-  io.writeC.row          := wb_row
-  io.writeC.cols         := wb_cols
-  io.writeC.fg_col_start := wb_fg_col_start
-  io.writeC.bank_start   := wb_bank_start
-  io.writeC.banks        := wb_banks
-  io.writeC.accum        := wb_accum
-  io.writeC.data         := wb_data.asTypeOf(UInt(D_LOAD_ROW_BITS.W))
+  io.writeC.en         := wb_is_outputting
+  io.writeC.row        := wb_row
+  io.writeC.cols       := wb_cols
+  io.writeC.col_start  := wb_col_start
+  io.writeC.bank_start := wb_bank_start
+  io.writeC.banks      := wb_banks
+  io.writeC.accum      := wb_accum
+  io.writeC.data       := wb_data.asTypeOf(UInt(D_LOAD_ROW_BITS.W))
 
   //-------------------------------------------------------------------------
   // commit the pending preload tag on the last output row

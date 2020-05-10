@@ -219,12 +219,12 @@ class FgTilerFSM[T <: Data : Arithmetic]
   // global state that is reset for each output-group
   //------------------------------------------------------------------------
   // where to put next A-tile in the A-scratchpad
-  val gbl_A_row_addr     = Reg(UInt(A_SP_ROWS_IDX.W))
-  val gbl_A_fg_col_start = Reg(UInt(A_SP_FG_COLS_IDX.W))
+  val gbl_A_row_addr  = Reg(UInt(A_SP_ROWS_IDX.W))
+  val gbl_A_col_start = Reg(UInt(A_SP_ROW_ELEMS_IDX.W))
 
   // where to put next C/D-tile in accumulator
-  val gbl_CD_row_addr     = Reg(UInt(CD_ACC_ROWS_IDX.W))
-  val gbl_CD_fg_col_start = Reg(UInt(CD_ACC_FG_COLS_IDX.W))
+  val gbl_CD_row_addr  = Reg(UInt(CD_ACC_ROWS_IDX.W))
+  val gbl_CD_col_start = Reg(UInt(CD_ACC_ROW_ELEMS_IDX.W))
 
   //------------------------------------------------------------------------
   // loop1-local state
@@ -522,8 +522,8 @@ class FgTilerFSM[T <: Data : Arithmetic]
       update_tile_dims()
 
       // define mutable gbl state, reset after each og
-      gbl_CD_row_addr     := 0.U
-      gbl_CD_fg_col_start := 0.U
+      gbl_CD_row_addr  := 0.U
+      gbl_CD_col_start := 0.U
 
       loop1_tile_col_start := gbl_tile_col_n
       loop1_tile_col_end   := MIN(gbl_tile_col_n + g_TILE_COLS_PER_GROUP-1.U,
@@ -547,7 +547,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
       gbl_tile_row_n      := loop1_tile_row_start
       gbl_tile_col_n      := loop1_tile_col_start
       gbl_CD_row_addr     := 0.U
-      gbl_CD_fg_col_start := 0.U
+      gbl_CD_col_start    := 0.U
       update_tile_dims()
 
       loop2_A_mem_addr := loop1_A_mem_addr
@@ -563,14 +563,14 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters
       val B_mem_addr = loop2_B_mem_addr
       val rangeB = Wire(new FgLocalRange(config))
-      rangeB.rows         := loop2_k_item_dims
-      rangeB.cols         := gbl_item_cols
-      rangeB.is_acc       := false.B
-      rangeB.is_accum     := false.B
-      rangeB.is_B_sp      := true.B
-      rangeB.garbage      := false.B
-      rangeB.fg_col_start := 0.U
-      rangeB.row_start    := gbl_B_cur_row_addr
+      rangeB.is_acc    := false.B
+      rangeB.is_accum  := false.B
+      rangeB.is_B_sp   := true.B
+      rangeB.garbage   := false.B
+      rangeB.rows      := loop2_k_item_dims
+      rangeB.cols      := gbl_item_cols
+      rangeB.row_start := gbl_B_cur_row_addr
+      rangeB.col_start := 0.U
 
       // issue gemmini commands
       when(sched.ready >= 1.U) {
@@ -598,16 +598,16 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters
       val B_mem_addr = loop3_B_mem_addr + g_I_BYTE_COLS_PER_TILE
       val rangeB = Wire(new FgLocalRange(config))
-      rangeB.rows         := loop2_k_item_dims
-      rangeB.cols         := Mux(gbl_tile_col === g_TILE_COL_END-1.U,
-                              g_LAST_N_ITEMS, 
-                              g_ITEM_COLS_PER_TILE)
-      rangeB.is_acc       := false.B
-      rangeB.is_accum     := false.B
-      rangeB.is_B_sp      := true.B
-      rangeB.garbage      := false.B
-      rangeB.fg_col_start := 0.U
-      rangeB.row_start    := gbl_B_alt_row_addr
+      rangeB.is_acc    := false.B
+      rangeB.is_accum  := false.B
+      rangeB.is_B_sp   := true.B
+      rangeB.garbage   := false.B
+      rangeB.rows      := loop2_k_item_dims
+      rangeB.cols      := Mux(gbl_tile_col === g_TILE_COL_END-1.U,
+                           g_LAST_N_ITEMS, 
+                           g_ITEM_COLS_PER_TILE)
+      rangeB.row_start := gbl_B_alt_row_addr
+      rangeB.col_start := 0.U
 
 
       // can't load next B-tile if we are already on the last one
@@ -633,8 +633,8 @@ class FgTilerFSM[T <: Data : Arithmetic]
       loop4_C_mem_addr := loop3_C_mem_addr
       loop4_D_mem_addr := loop3_D_mem_addr
 
-      gbl_A_row_addr     := 0.U
-      gbl_A_fg_col_start := 0.U
+      gbl_A_row_addr  := 0.U
+      gbl_A_col_start := 0.U
 
       // update next state
       state := s_MAYBE_MOVE_A_TILE_INTO_SP
@@ -644,14 +644,14 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters
       val A_mem_addr = loop4_A_mem_addr
       val rangeA = Wire(new FgLocalRange(config))
-      rangeA.rows         := gbl_item_rows
-      rangeA.cols         := loop2_k_item_dims
-      rangeA.is_acc       := false.B
-      rangeA.is_accum     := false.B
-      rangeA.is_B_sp      := false.B
-      rangeA.garbage      := false.B
-      rangeA.fg_col_start := gbl_A_fg_col_start
-      rangeA.row_start    := gbl_A_row_addr
+      rangeA.is_acc    := false.B
+      rangeA.is_accum  := false.B
+      rangeA.is_B_sp   := false.B
+      rangeA.garbage   := false.B
+      rangeA.rows      := gbl_item_rows
+      rangeA.cols      := loop2_k_item_dims
+      rangeA.row_start := gbl_A_row_addr
+      rangeA.col_start := gbl_A_col_start
 
       // only move A-tiles in during first column of tiles in the og
       when (gbl_tile_col =/= loop1_tile_col_start) {
@@ -672,15 +672,14 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // calculate mvin parameters (NOTE: we know D is valid at this point)
       val D_mem_addr = loop4_D_mem_addr
       val rangeD = Wire(new FgLocalRange(config))
-      rangeD.rows         := gbl_item_rows
-      rangeD.cols         := gbl_item_cols
-      rangeD.is_acc       := true.B
-      rangeD.is_accum     := false.B
-      rangeD.is_B_sp      := false.B
-      rangeD.garbage      := false.B
-      rangeD.fg_col_start := gbl_CD_fg_col_start
-      rangeD.row_start    := gbl_CD_row_addr
-
+      rangeD.is_acc    := true.B
+      rangeD.is_accum  := false.B
+      rangeD.is_B_sp   := false.B
+      rangeD.garbage   := false.B
+      rangeD.rows      := gbl_item_rows
+      rangeD.cols      := gbl_item_cols
+      rangeD.row_start := gbl_CD_row_addr
+      rangeD.col_start := gbl_CD_col_start
 
       // only move D-tiles in during first partial-sum in an output-group
       when((loop2_k_tile_col =/= 0.U) || !g_HAS_BIAS) {
@@ -701,27 +700,27 @@ class FgTilerFSM[T <: Data : Arithmetic]
       // on first tile in 4th loop: preload this B-tile
       // else:                      preload garbage B-tile (no spad load)
       val rangeB = Wire(new FgLocalRange(config))
-      rangeB.rows         := loop2_k_item_dims
-      rangeB.cols         := gbl_item_cols
-      rangeB.is_acc       := false.B
-      rangeB.is_accum     := false.B
-      rangeB.is_B_sp      := true.B
-      rangeB.garbage      := (gbl_tile_row =/= loop1_tile_row_start)
-      rangeB.fg_col_start := 0.U
-      rangeB.row_start    := gbl_B_cur_row_addr
+      rangeB.is_acc    := false.B
+      rangeB.is_accum  := false.B
+      rangeB.is_B_sp   := true.B
+      rangeB.garbage   := (gbl_tile_row =/= loop1_tile_row_start)
+      rangeB.rows      := loop2_k_item_dims
+      rangeB.cols      := gbl_item_cols
+      rangeB.row_start := gbl_B_cur_row_addr
+      rangeB.col_start := 0.U
 
       // if has D-bias already loaded: accumulate c in accumulator
       // elif first k-col in 2nd loop: overwrite c in accumulator
       // else:                         accumulate c in accumulator
       val rangeC = Wire(new FgLocalRange(config))
-      rangeC.rows         := gbl_item_rows
-      rangeC.cols         := gbl_item_cols
-      rangeC.is_acc       := true.B
-      rangeC.is_accum     := (g_HAS_BIAS || (loop2_k_tile_col > 0.U))
-      rangeC.is_B_sp      := false.B
-      rangeC.garbage      := false.B
-      rangeC.fg_col_start := gbl_CD_fg_col_start
-      rangeC.row_start    := gbl_CD_row_addr
+      rangeC.is_acc    := true.B
+      rangeC.is_accum  := (g_HAS_BIAS || (loop2_k_tile_col > 0.U))
+      rangeC.is_B_sp   := false.B
+      rangeC.garbage   := false.B
+      rangeC.rows      := gbl_item_rows
+      rangeC.cols      := gbl_item_cols
+      rangeC.row_start := gbl_CD_row_addr
+      rangeC.col_start := gbl_CD_col_start
 
       when (sched.ready >= 1.U) {
         sched.push               := 1.U
@@ -737,14 +736,14 @@ class FgTilerFSM[T <: Data : Arithmetic]
     is (s_DO_MATMUL) {
       // calculate compute parameters
       val rangeA = Wire(new FgLocalRange(config))
-      rangeA.rows         := gbl_item_rows
-      rangeA.cols         := loop2_k_item_dims
-      rangeA.is_acc       := false.B
-      rangeA.is_accum     := false.B
-      rangeA.is_B_sp      := false.B
-      rangeA.garbage      := false.B
-      rangeA.fg_col_start := gbl_A_fg_col_start
-      rangeA.row_start    := gbl_A_row_addr
+      rangeA.is_acc    := false.B
+      rangeA.is_accum  := false.B
+      rangeA.is_B_sp   := false.B
+      rangeA.garbage   := false.B
+      rangeA.rows      := gbl_item_rows
+      rangeA.cols      := loop2_k_item_dims
+      rangeA.row_start := gbl_A_row_addr
+      rangeA.col_start := gbl_A_col_start
 
       // on first tile in 4th loop: compute_preloaded
       // else: compute_accumulated
@@ -765,14 +764,14 @@ class FgTilerFSM[T <: Data : Arithmetic]
       val C_mem_stride   = g_C_BYTES_PER_ROW
 
       val rangeC = Wire(new FgLocalRange(config))
-      rangeC.rows         := gbl_item_rows
-      rangeC.cols         := gbl_item_cols
-      rangeC.is_acc       := true.B
-      rangeC.is_accum     := false.B
-      rangeC.is_B_sp      := false.B
-      rangeC.garbage      := false.B
-      rangeC.fg_col_start := gbl_CD_fg_col_start
-      rangeC.row_start    := gbl_CD_row_addr
+      rangeC.is_acc    := true.B
+      rangeC.is_accum  := false.B
+      rangeC.is_B_sp   := false.B
+      rangeC.garbage   := false.B
+      rangeC.rows      := gbl_item_rows
+      rangeC.cols      := gbl_item_cols
+      rangeC.row_start := gbl_CD_row_addr
+      rangeC.col_start := gbl_CD_col_start
 
       when(loop2_k_tile_col =/= g_K_TILE_COL_END) {
         state := s_NEXT_A_TILE_SUBROW_IN_SUBCOL
@@ -802,10 +801,10 @@ class FgTilerFSM[T <: Data : Arithmetic]
         gbl_A_row_addr  := gbl_A_row_addr_next
         gbl_CD_row_addr := gbl_CD_row_addr_next
         when (gbl_A_row_addr_next === 0.U) {
-          gbl_A_fg_col_start := gbl_A_fg_col_start + 1.U
+          gbl_A_col_start := gbl_A_col_start + FG_DIM.U
         }
         when (gbl_CD_row_addr_next === 0.U) {
-          gbl_CD_fg_col_start := gbl_CD_fg_col_start + SQRT_FG_NUM.U
+          gbl_CD_col_start := gbl_CD_col_start + (SQRT_FG_NUM * FG_DIM).U
         }
         update_tile_dims()
 
@@ -832,13 +831,14 @@ class FgTilerFSM[T <: Data : Arithmetic]
         val gbl_CD_row_addr_next = gbl_CD_row_addr + (SQRT_FG_NUM * FG_DIM).U
 
         // modify global state
-        gbl_tile_row_n     := loop1_tile_row_start
-        gbl_tile_col_n     := gbl_tile_col + 1.U
-        gbl_A_row_addr     := 0.U
-        gbl_CD_row_addr    := gbl_CD_row_addr_next
-        gbl_A_fg_col_start := 0.U
+        gbl_tile_row_n  := loop1_tile_row_start
+        gbl_tile_col_n  := gbl_tile_col + 1.U
+        gbl_A_row_addr  := 0.U
+        gbl_CD_row_addr := gbl_CD_row_addr_next
+        gbl_A_col_start := 0.U
         when (gbl_CD_row_addr_next === 0.U) {
-          gbl_CD_fg_col_start := gbl_CD_fg_col_start + g_FG_TILE_COLS_PER_TILE
+          gbl_CD_col_start := gbl_CD_col_start + 
+                              (g_FG_TILE_COLS_PER_TILE * FG_DIM.U)
         }
         update_tile_dims()
 
@@ -904,8 +904,8 @@ class FgTilerFSM[T <: Data : Arithmetic]
         }
    
         // reset global state that resets for each new output-group
-        gbl_CD_row_addr     := 0.U
-        gbl_CD_fg_col_start := 0.U
+        gbl_CD_row_addr  := 0.U
+        gbl_CD_col_start := 0.U
 
         // update the start/end tiles for this output-group (inclusive)
         val l_tile_col_start = gbl_tile_col_n

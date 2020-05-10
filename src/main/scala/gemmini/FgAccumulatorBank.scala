@@ -8,9 +8,9 @@ import freechips.rocketchip.tile._
 class FgAccumulatorBankReadReq[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val en           = Output(Bool())
-  val row          = Output(UInt(FG_DIM_IDX.W))
-  val fg_col_start = Output(UInt(FG_NUM_IDX.W))
+  val en        = Output(Bool())
+  val row       = Output(UInt(FG_DIM_IDX.W))
+  val col_start = Output(UInt(CD_ACC_ROW_ELEMS_IDX.W))
 }
 
 class FgAccumulatorBankReadResp[T <: Data](val config:FgGemminiArrayConfig[T])
@@ -28,12 +28,12 @@ class FgAccumulatorBankReadIO[T <: Data](val config:FgGemminiArrayConfig[T])
 class FgAccumulatorBankWriteReq[T <: Data](val config:FgGemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val en           = Output(Bool())
-  val row          = Output(UInt(FG_DIM_IDX.W))
-  val cols         = Output(UInt(CD_ACC_ROW_ELEMS_CTR.W))
-  val fg_col_start = Output(UInt(FG_NUM_IDX.W))
-  val data         = Output(UInt(D_LOAD_ROW_BITS.W))
-  val accum        = Output(Bool())
+  val en        = Output(Bool())
+  val row       = Output(UInt(FG_DIM_IDX.W))
+  val cols      = Output(UInt(CD_ACC_ROW_ELEMS_CTR.W))
+  val col_start = Output(UInt(CD_ACC_ROW_ELEMS_IDX.W))
+  val data      = Output(UInt(D_LOAD_ROW_BITS.W))
+  val accum     = Output(Bool())
 }
 
 //============================================================================
@@ -49,7 +49,7 @@ class FgAccumulatorBankConfigIO[T <: Data](val config:FgGemminiArrayConfig[T])
 
 //==========================================================================
 // Accumulator Bank
-// - fg_col_start shifts for reads/writes done WITHIN THE BANK!
+// - col_start shifts for reads/writes done WITHIN THE BANK!
 //==========================================================================
 class FgAccumulatorBank[T <: Data: Arithmetic]
   (config: FgGemminiArrayConfig[T])
@@ -72,23 +72,23 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   //-------------------------------------
   // unpack write signals
   //-------------------------------------
-  val wr_en           = io.write.en
-  val wr_row          = io.write.row
-  val wr_cols         = io.write.cols
-  val wr_fg_col_start = io.write.fg_col_start
-  val wr_accum        = io.write.accum
-  val wr_elemshift    = (wr_fg_col_start * FG_DIM.U)
-  val wr_bitshift     = wr_elemshift * OTYPE_BITS.U
-  val wr_data         = (io.write.data << wr_bitshift).asTypeOf(ROW_TYPE)
-  val wr_mask         = (((1.U << wr_cols) - 1.U) << wr_elemshift)
-                        .asTypeOf(Vec(CD_ACC_ROW_ELEMS, Bool()))
+  val wr_en        = io.write.en
+  val wr_row       = io.write.row
+  val wr_cols      = io.write.cols
+  val wr_col_start = io.write.col_start
+  val wr_accum     = io.write.accum
+  val wr_elemshift = wr_col_start
+  val wr_bitshift  = wr_elemshift * OTYPE_BITS.U
+  val wr_data      = (io.write.data << wr_bitshift).asTypeOf(ROW_TYPE)
+  val wr_mask      = (((1.U << wr_cols) - 1.U) << wr_elemshift)
+                     .asTypeOf(Vec(CD_ACC_ROW_ELEMS, Bool()))
 
   //-------------------------------------
   // unpack read signals
   //-------------------------------------
-  val rd_en           = io.read.req.en
-  val rd_row          = io.read.req.row
-  val rd_fg_col_start = io.read.req.fg_col_start
+  val rd_en        = io.read.req.en
+  val rd_row       = io.read.req.row
+  val rd_col_start = io.read.req.col_start
 
   //-------------------------------------
   // read from bank (for read or write req)
@@ -114,11 +114,11 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   //-------------------------------------
   // read/output the activated data 2 cycles later
   //-------------------------------------
-  val rd_en_buf           = ShiftRegister(rd_en,           1)
-  val rd_row_buf          = ShiftRegister(rd_row,          1)
-  val rd_fg_col_start_buf = ShiftRegister(rd_fg_col_start, 1)
+  val rd_en_buf        = ShiftRegister(rd_en,        1)
+  val rd_row_buf       = ShiftRegister(rd_row,       1)
+  val rd_col_start_buf = ShiftRegister(rd_col_start, 1)
 
-  val rd_elemshift    = rd_fg_col_start_buf * FG_DIM.U
+  val rd_elemshift    = rd_col_start_buf
   val rd_bitshift     = rd_elemshift * ITYPE_BITS.U
   val rd_shifted_data = (bank_rdata.asUInt()>>rd_bitshift).asTypeOf(ROW_TYPE)
 
