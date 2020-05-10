@@ -57,7 +57,8 @@ class FgDMABeatMerger[T <: Data]
 
   val is_first_txn          = data_start_idx >= txn_start_idx
   val first_rshift_bits     = (data_start_idx - txn_start_idx) * 8.U
-  val nonfirst_fg_col_start = (txn_start_idx - data_start_idx) / FG_DIM.U
+  val bytes_per_fg          = FG_DIM.U * elem_bytes
+  val nonfirst_fg_col_start = (txn_start_idx - data_start_idx) / bytes_per_fg
  
   val fg_col_start     = Mux(is_first_txn, 0.U, nonfirst_fg_col_start)
   val txn_rshift_bits  = Wire(UInt(log2Ceil(max_xfer_bits+1).W))
