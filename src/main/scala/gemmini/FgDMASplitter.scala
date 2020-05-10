@@ -88,7 +88,7 @@ class FgDMASplitter[T <: Data]
                               (beat_end_idx - data_end_idx)))
 
   val unshifted_mask = WireInit(~0.U(DMA_BUS_BYTES.W))
-  val lshifted_mask  = WireInit(~0.U(DMA_BUS_BYTES.W))
+  val lshifted_mask  = Wire(UInt(DMA_BUS_BYTES.W))
   lshifted_mask := (((unshifted_mask >> mask_start_offset)
                                      << mask_start_offset)
                                      << mask_end_offset)
