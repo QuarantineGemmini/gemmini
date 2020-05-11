@@ -14,9 +14,10 @@ class FgScratchpadBankReadReq[T <: Data]
   (val config: FgGemminiArrayConfig[T], val fg_cols: Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
+  val ROW_ELEMS  = fg_cols * FG_DIM
   val en        = Output(Bool())
   val row       = Output(UInt(FG_DIM_IDX.W))
-  val col_start = Output(UInt(log2Up(fg_cols * FG_DIM).W))
+  val col_start = Output(UInt(log2Up(ROW_ELEMS).W))
 }
 
 class FgScratchpadBankReadResp[T <: Data]
@@ -38,12 +39,13 @@ class FgScratchpadBankWriteReq[T <: Data]
   (val config:FgGemminiArrayConfig[T], val fg_cols:Int, val port_fg_cols:Int)
   (implicit p: Parameters) extends CoreBundle {
   import config._
+  val ROW_ELEMS  = fg_cols * FG_DIM
   val PORT_ELEMS = port_fg_cols * FG_DIM
   val PORT_BITS  = PORT_ELEMS * ITYPE_BITS
   val en        = Output(Bool())
   val row       = Output(UInt(FG_DIM_IDX.W))
   val cols      = Output(UInt(log2Up(PORT_ELEMS + 1).W))
-  val col_start = Output(UInt(log2Up(PORT_ELEMS + 1).W))
+  val col_start = Output(UInt(log2Up(ROW_ELEMS).W))
   val data      = Output(UInt(PORT_BITS.W))
 }
 
