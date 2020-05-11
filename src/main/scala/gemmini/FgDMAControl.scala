@@ -180,8 +180,17 @@ class FgDMAControl[T <: Data]
     useful_bytes_left     := tmp_total_bytes
     cur_vaddr             := next_vaddr
     cur_ppn_valid         := !needs_translate
-    state                 := Mux(needs_translate,
-                                 s_START_TRANSLATE, s_REQ_NEXT_CHUNK)
+    state                 := s_REQ_NEXT_CHUNK
+
+    // initiate TLB request if possible
+    when (needs_translate) {
+      state := s_START_TRANSLATE
+      io.tlb.req.valid := true.B
+      io.tlb.req.bits.tlb_req.vaddr := Cat(next_vpn, 0.U(pgIdxBits.W))
+      when (io.tlb.req.fire()) {
+        state := s_FINISH_TRANSLATE
+      }
+    }
   }
 
   switch (state) {
@@ -232,6 +241,11 @@ class FgDMAControl[T <: Data]
           }
         } .elsewhen (needs_translate) {
           state := s_START_TRANSLATE
+          io.tlb.req.valid := true.B
+          io.tlb.req.bits.tlb_req.vaddr := Cat(next_vpn, 0.U(pgIdxBits.W))
+          when (io.tlb.req.fire()) {
+            state := s_FINISH_TRANSLATE
+          }
         }
       }
     }

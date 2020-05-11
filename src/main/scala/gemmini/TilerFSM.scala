@@ -656,6 +656,7 @@ class TilerFSM[T <: Data : Arithmetic]
           l_did_row_incr := true.B
         }
         .otherwise {
+          // TODO: this is a bug!
           gbl_tile_row_n := gbl_tile_row
           gbl_tile_col_n := gbl_tile_col + 1.U
           update_tile_dims()
