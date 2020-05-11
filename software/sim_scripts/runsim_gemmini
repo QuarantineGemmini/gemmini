@@ -71,6 +71,7 @@ FSIM_RT_LAB3_HW="$FCFG_DIR/config_runtime__lab3__hw_tiler.ini"
 FSIM_RT_ORIG_GEMM="$FCFG_DIR/config_runtime__orig_tiler_gemm.ini"
 FSIM_RT_FSM_GEMM="$FCFG_DIR/config_runtime__fsm_tiler_gemm.ini"
 FSIM_RT_HW_GEMM="$FCFG_DIR/config_runtime__hw_tiler_gemm.ini"
+FSIM_RT_FG4_GEMM="$FCFG_DIR/config_runtime__fg4_tiler_gemm.ini"
 
 #=============================================================================
 # defaults
@@ -137,6 +138,7 @@ cat <<EOF
   orig_tiler_gemm: gemm-sweep on orig-tiler
   fsm_tiler_gemm:  gemm-sweep on fsm-tiler
   hw_tiler_gemm:   gemm-sweep on hw-tiler
+  fg4_tiler_gemm:  gemm-sweep on 16fg4-tiler
   
   hw simulator
   ------------
@@ -479,6 +481,7 @@ while [ $# -ne 0 ] ; do
     orig_tiler_gemm) runfiresim "$arg" "$FSIM_RT_ORIG_GEMM" ;;
     fsm_tiler_gemm)  runfiresim "$arg" "$FSIM_RT_FSM_GEMM" ;;
     hw_tiler_gemm)   runfiresim "$arg" "$FSIM_RT_HW_GEMM" ;;
+    fg4_tiler_gemm)  runfiresim "$arg" "$FSIM_RT_FG4_GEMM" ;;
     #-------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac

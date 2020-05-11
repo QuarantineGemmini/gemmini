@@ -36,6 +36,7 @@ FSIM_SW_HW="$FCFG_SW_DIR/hw_tiler.json"
 FSIM_SW_ORIG_GEMM="$FCFG_SW_DIR/orig_tiler_gemm.json"
 FSIM_SW_FSM_GEMM="$FCFG_SW_DIR/fsm_tiler_gemm.json"
 FSIM_SW_HW_GEMM="$FCFG_SW_DIR/hw_tiler_gemm.json"
+FSIM_SW_FG4_GEMM="$FCFG_SW_DIR/fg4_tiler_gemm.json"
 
 DEBUG_CFLAGS=""
 NODEBUG_CFLAGS="-DNODEBUG"
@@ -62,6 +63,7 @@ display_usage() {
   orig_tiler_gemm: big gemm sweep on orig tiler
   fsm_tiler_gemm:  big gemm sweep on fsm tiler
   hw_tiler_gemm:   big gemm sweep on hw tiler
+  fg4_tiler_gemm:  big gemm sweep on 16fg4 tiler
 
   other options
   -------------
@@ -172,6 +174,7 @@ while [ $# -ne 0 ] ; do
     orig_tiler_gemm) run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_ORIG_GEMM" ;;
     fsm_tiler_gemm)  run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_FSM_GEMM" ;;
     hw_tiler_gemm)   run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_HW_GEMM" ;;
+    fg4_tiler_gemm)  run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_FG4_GEMM" ;;
     #------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac
