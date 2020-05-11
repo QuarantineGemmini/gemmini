@@ -46,6 +46,7 @@ class FgDMABeatMerger[T <: Data]
   //---------------------------------
   val lrange           = io.peek.entry.lrange
   val elem_bytes       = Mux(lrange.is_acc, OTYPE_BYTES.U, ITYPE_BYTES.U)
+  val col_start        = lrange.col_start
   val txn_useful_bytes = io.peek.entry.txn_useful_bytes
   val txn_useful_elems = txn_useful_bytes / elem_bytes
   val data_start_idx   = io.peek.entry.data_start_idx
@@ -59,7 +60,7 @@ class FgDMABeatMerger[T <: Data]
   val bytes_per_fg       = FG_DIM.U * elem_bytes
   val nonfirst_col_start = (txn_start_idx - data_start_idx) / elem_bytes
  
-  val col_start        = Mux(is_first_txn, 0.U, nonfirst_col_start)
+  val full_col_start   = col_start + Mux(is_first_txn,0.U,nonfirst_col_start)
   val txn_rshift_bits  = Wire(UInt(DMA_TXN_BITS_CTR.W))
   val beat_lshift_bits = Wire(UInt(DMA_TXN_BITS_CTR.W))
   txn_rshift_bits     := Mux(is_first_txn, first_rshift_bits, 0.U)
@@ -81,7 +82,7 @@ class FgDMABeatMerger[T <: Data]
   io.chunk.valid                 := io.beat.fire() && is_last_beat
   io.chunk.bits.lrange           := lrange
   io.chunk.bits.lrange.cols      := txn_useful_elems
-  io.chunk.bits.lrange.col_start := col_start
+  io.chunk.bits.lrange.col_start := full_col_start
   io.chunk.bits.data             := data_next
 
   data := Mux(io.beat.fire(), Mux(is_last_beat, 0.U, data_next), data)

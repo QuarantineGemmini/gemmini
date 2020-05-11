@@ -119,7 +119,7 @@ class FgAccumulatorBank[T <: Data: Arithmetic]
   val rd_col_start_buf = ShiftRegister(rd_col_start, 1)
 
   val rd_elemshift    = rd_col_start_buf
-  val rd_bitshift     = rd_elemshift * ITYPE_BITS.U
+  val rd_bitshift     = rd_elemshift * OTYPE_BITS.U
   val rd_shifted_data = (bank_rdata.asUInt()>>rd_bitshift).asTypeOf(ROW_TYPE)
 
   val activated_rdata = WireInit(VecInit(rd_shifted_data.map(e => {

@@ -793,8 +793,10 @@ class FgTilerFSM[T <: Data : Arithmetic]
         state := s_NEXT_B_TILE_SUBCOL_IN_SUBROW
       }
       .otherwise {
-        val gbl_A_row_addr_next  = gbl_A_row_addr + g_ITEM_ROWS_PER_TILE
-        val gbl_CD_row_addr_next = gbl_CD_row_addr + g_ITEM_ROWS_PER_TILE
+        val gbl_A_row_addr_next  = Wire(UInt(A_SP_ROWS_IDX.W))
+        val gbl_CD_row_addr_next = Wire(UInt(CD_ACC_ROWS_IDX.W))
+        gbl_A_row_addr_next  := gbl_A_row_addr + g_ITEM_ROWS_PER_TILE
+        gbl_CD_row_addr_next := gbl_CD_row_addr + g_ITEM_ROWS_PER_TILE
 
         // modify global state
         gbl_tile_row_n  := gbl_tile_row + 1.U
@@ -828,7 +830,8 @@ class FgTilerFSM[T <: Data : Arithmetic]
       }
       .otherwise {
         // if we get here, the tile is SQRT_FG_NUM padded fg-tiles tall
-        val gbl_CD_row_addr_next = gbl_CD_row_addr + (SQRT_FG_NUM * FG_DIM).U
+        val gbl_CD_row_addr_next = Wire(UInt(CD_ACC_ROWS_IDX.W))
+        gbl_CD_row_addr_next := gbl_CD_row_addr + (SQRT_FG_NUM * FG_DIM).U
 
         // modify global state
         gbl_tile_row_n  := loop1_tile_row_start
@@ -865,6 +868,7 @@ class FgTilerFSM[T <: Data : Arithmetic]
         gbl_tile_row_n     := loop1_tile_row_start
         gbl_tile_col_n     := loop1_tile_col_start
         gbl_CD_row_addr    := 0.U
+        gbl_CD_col_start   := 0.U
         update_tile_dims()
 
         loop2_A_mem_addr := loop2_A_mem_addr + I_BYTE_COLS_PER_FG_TILE.U

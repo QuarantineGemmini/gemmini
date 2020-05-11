@@ -328,8 +328,8 @@ class FgMemUnitModuleImp[T <: Data: Arithmetic](outer: FgMemUnit[T])
 
     val is_writing = ex_wr_en || dma_wr_fire
     banks.zipWithIndex.foreach { case (bank, i) =>
-      when (ex_wr_en) {
-        val is_active      = (ex_wr_bank_start<=i.U) && (i.U<=ex_wr_bank_end)
+      when (ex_wr_en && (ex_wr_bank_start<=i.U) && (i.U<=ex_wr_bank_end)) {
+        val is_active      = true.B
         val bank_offset    = i.U - ex_wr_bank_start
         val max_bank_count = 1.U << io.a_fg_mux_sel
         val bits_per_bank  = (FG_NUM * FG_DIM * OTYPE_BITS).U / max_bank_count
