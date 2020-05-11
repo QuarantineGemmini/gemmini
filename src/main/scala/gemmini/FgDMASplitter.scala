@@ -73,14 +73,14 @@ class FgDMASplitter[T <: Data]
   beat_data_rshift      := (txn_start_idx * 8.U) + (beat_idx * DMA_BUS_BITS.U)
   val shifted_beat_data  = (shifted_req_data >> beat_data_rshift)
 
-  val mask_start_offset  = Wire(UInt(DMA_BUS_BYTES_IDX.W))
+  val mask_start_offset  = Wire(UInt(DMA_BUS_BYTES_CTR.W))
   val data_starts_before = (data_start_idx < beat_start_idx)
   val data_starts_after  = (data_start_idx > beat_end_idx)
   mask_start_offset     := Mux(data_starts_before, 0.U, 
                             Mux(data_starts_after, DMA_BUS_BYTES.U, 
                                 (data_start_idx - beat_start_idx)))
 
-  val mask_end_offset  = Wire(UInt(DMA_BUS_BYTES_IDX.W))
+  val mask_end_offset  = Wire(UInt(DMA_BUS_BYTES_CTR.W))
   val data_ends_before = (data_end_idx < beat_start_idx)
   val data_ends_after  = (data_end_idx > beat_end_idx)
   mask_end_offset     := Mux(data_ends_before, DMA_BUS_BYTES.U,
