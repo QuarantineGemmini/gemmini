@@ -167,16 +167,19 @@ class FgDMAControl[T <: Data]
   def init_transfer(dummy : Int = 0) = {
     assert(io.req.bits.lrange.rows === 1.U, 
       "cannot request more than 1 row at a time")
-    val tmp_vpn            = io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
-    val tmp_vpn_mapped     = cur_ppn_valid && (cur_vpn === tmp_vpn)
-    val tmp_total_bytes    = if(is_load_mode)
-                                io.req.bits.lrange.total_write_bytes() else
-                                io.req.bits.lrange.total_read_bytes()
+    val tmp_total_bytes = if(is_load_mode)
+                             io.req.bits.lrange.total_write_bytes() else
+                             io.req.bits.lrange.total_read_bytes()
+    val next_vaddr      = io.req.bits.vaddr
+    val next_vpn        = next_vaddr(coreMaxAddrBits-1, pgIdxBits)
+    val needs_translate = (next_vpn =/= cur_vpn) || !cur_ppn_valid
+
     req                   := io.req.bits
     total_bytes_requested := 0.U
     total_useful_bytes    := tmp_total_bytes
     useful_bytes_left     := tmp_total_bytes
-    cur_vaddr             := io.req.bits.vaddr
+    cur_vaddr             := next_vaddr
+    cur_ppn_valid         := !needs_translate
     state                 := Mux(tmp_vpn_mapped, 
                                  s_REQ_NEXT_CHUNK, s_START_TRANSLATE)
   }
@@ -217,8 +220,9 @@ class FgDMAControl[T <: Data]
         }
         
         total_bytes_requested := total_bytes_requested + cur_txn_bytes
-        useful_bytes_left := useful_bytes_left - cur_txn_useful_bytes
-        cur_vaddr := next_vaddr
+        useful_bytes_left     := useful_bytes_left - cur_txn_useful_bytes
+        cur_vaddr             := next_vaddr
+        cur_ppn_valid         := !needs_translate
 
         when (is_last_txn) {
           state := s_IDLE
