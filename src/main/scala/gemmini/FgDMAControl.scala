@@ -180,8 +180,8 @@ class FgDMAControl[T <: Data]
     useful_bytes_left     := tmp_total_bytes
     cur_vaddr             := next_vaddr
     cur_ppn_valid         := !needs_translate
-    state                 := Mux(tmp_vpn_mapped, 
-                                 s_REQ_NEXT_CHUNK, s_START_TRANSLATE)
+    state                 := Mux(needs_translate,
+                                 s_START_TRANSLATE, s_REQ_NEXT_CHUNK)
   }
 
   switch (state) {
