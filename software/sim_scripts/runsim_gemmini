@@ -26,6 +26,22 @@ HW_CONFIG_PROJECT=example
 HW_CONFIG_LAB3=GemminiEE290Lab3RocketConfig
 HW_CONFIG_G2=Gemmini2EE290Lab3RocketConfig
 
+# gemmini1 DSEs
+HW_CONFIG_G1_DSE5=Gemminidim16sp64acc16bus128
+HW_CONFIG_G1_DSE6=Gemminidim32sp64acc16bus128
+HW_CONFIG_G1_DSE7=Gemminidim16sp16acc64bus128
+HW_CONFIG_G1_DSE8=Gemminidim32sp16acc64bus128
+
+# gemmini2 DSEs
+HW_CONFIG_G2_DSE1=Gemmini2dim16sp64acc16bus064
+HW_CONFIG_G2_DSE2=Gemmini2dim32sp64acc16bus064
+HW_CONFIG_G2_DSE3=Gemmini2dim16sp16acc64bus064
+HW_CONFIG_G2_DSE4=Gemmini2dim32sp16acc64bus064
+HW_CONFIG_G2_DSE5=Gemmini2dim16sp64acc16bus128
+HW_CONFIG_G2_DSE6=Gemmini2dim32sp64acc16bus128
+HW_CONFIG_G2_DSE7=Gemmini2dim16sp16acc64bus128
+HW_CONFIG_G2_DSE8=Gemmini2dim32sp16acc64bus128
+
 # workloads (vcs, verilator)
 TEST_0=echo
 TEST_1=padded
@@ -37,6 +53,7 @@ TEST_6=very_large_matmul
 TEST_7=cifar_quant
 TEST_8=mobilenet
 TEST_9=resnet50
+TEST_10=gemm
 
 # firesim configs (workload and simulator)
 HWDB_CONFIG="$FCFG_DIR/config_hwdb.ini"
@@ -89,16 +106,17 @@ cat <<EOF
   
   spike/verilator/vcs workloads
   -----------------------------
-  0: $TEST_0 
-  1: $TEST_1 
-  2: $TEST_2 
-  3: $TEST_3 
-  4: $TEST_4 
-  5: $TEST_5 
-  6: $TEST_6 
-  7: $TEST_7
-  8: $TEST_8
-  9: $TEST_9
+  0:  $TEST_0 
+  1:  $TEST_1 
+  2:  $TEST_2 
+  3:  $TEST_3 
+  4:  $TEST_4 
+  5:  $TEST_5 
+  6:  $TEST_6 
+  7:  $TEST_7
+  8:  $TEST_8
+  9:  $TEST_9
+  10: $TEST_10
   
   firesim workloads
   -----------------
@@ -126,6 +144,20 @@ cat <<EOF
   ------------------------------------------------------
   -hw_lab3      --> the $HW_CONFIG_LAB3 Chisel config (default)
   -hw_g2        --> the $HW_CONFIG_G2 Chisel config
+
+  -hw_g1_dse5   --> the $HW_CONFIG_G1_DSE5
+  -hw_g1_dse6   --> the $HW_CONFIG_G1_DSE6
+  -hw_g1_dse7   --> the $HW_CONFIG_G1_DSE7
+  -hw_g1_dse8   --> the $HW_CONFIG_G1_DSE8
+
+  -hw_g2_dse1   --> the $HW_CONFIG_G2_DSE1
+  -hw_g2_dse2   --> the $HW_CONFIG_G2_DSE2
+  -hw_g2_dse3   --> the $HW_CONFIG_G2_DSE3
+  -hw_g2_dse4   --> the $HW_CONFIG_G2_DSE4
+  -hw_g2_dse5   --> the $HW_CONFIG_G2_DSE5
+  -hw_g2_dse6   --> the $HW_CONFIG_G2_DSE6
+  -hw_g2_dse7   --> the $HW_CONFIG_G2_DSE7
+  -hw_g2_dse8   --> the $HW_CONFIG_G2_DSE8
   
   -trace_start <c>  --> start tracing at this cycle (defaults to 0)
   -vcd_full         --> capture all signals in design
@@ -177,7 +209,8 @@ runsim() {
 
   # initialize logs, performance counter
   local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
-  local testname="${ts}__${SW_PLATFORM}__${SW_MODE}__${HW_CONFIG}__${binary_name}"
+  local testname="${ts}__${SW_PLATFORM}__${SW_MODE}"
+  local testname="${testname}__${HW_CONFIG}__${binary_name}"
   local starttime=$SECONDS
 
   # initialize simulator options
@@ -266,7 +299,8 @@ runsim() {
   if [ "$IS_DEBUGGER" -eq 1 ] ; then
     info "interactive debug started, no logfile generated!"
     stty -echo
-    $BIN $debugger_opts $extra_opts "$workload_binary" $workload_args
+    $NUMACTL $BIN 
+      $debugger_opts $extra_opts "$workload_binary" $workload_args
     stty echo
   elif [ "$IS_NOISY" -eq 1 ] ; then
     set -x
@@ -356,8 +390,22 @@ while [ $# -ne 0 ] ; do
     -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
     -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
     #-------------------------------------------------------------------------
-    -hw_lab3) HW_CONFIG="hw_lab3";  HW_CONFIG_FULL="$HW_CONFIG_LAB3" ;;
-    -hw_g2)   HW_CONFIG="hw_g2";    HW_CONFIG_FULL="$HW_CONFIG_G2"   ;;
+    -hw_lab3)    HW_CONFIG="hw_lab3";    HW_CONFIG_FULL="$HW_CONFIG_LAB3"   ;;
+    -hw_g2)      HW_CONFIG="hw_g2";      HW_CONFIG_FULL="$HW_CONFIG_G2"     ;;
+
+    -hw_g1_dse5) HW_CONFIG="hw_g1_dse5"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE5";;
+    -hw_g1_dse6) HW_CONFIG="hw_g1_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE6";;
+    -hw_g1_dse7) HW_CONFIG="hw_g1_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE7";;
+    -hw_g1_dse8) HW_CONFIG="hw_g1_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE8";;
+
+    -hw_g2_dse1) HW_CONFIG="hw_g2_dse1"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE1";;
+    -hw_g2_dse2) HW_CONFIG="hw_g2_dse2"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE2";;
+    -hw_g2_dse3) HW_CONFIG="hw_g2_dse3"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE3";;
+    -hw_g2_dse4) HW_CONFIG="hw_g2_dse4"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE4";;
+    -hw_g2_dse5) HW_CONFIG="hw_g2_dse5"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE5";;
+    -hw_g2_dse6) HW_CONFIG="hw_g2_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE6";;
+    -hw_g2_dse7) HW_CONFIG="hw_g2_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE7";;
+    -hw_g2_dse8) HW_CONFIG="hw_g2_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE8";;
     #-------------------------------------------------------------------------
     -noisy)       IS_NOISY=1    ;;
     -verbose)     IS_VERBOSE=1  ;;
@@ -386,16 +434,17 @@ while [ $# -ne 0 ] ; do
       ;;
     -h|-help) display_usage ;;
     #-------------------------------------------------------------------------
-    0) runsim "$(sw_dir bareMetalC)"   "$TEST_0" ;;
-    1) runsim "$(sw_dir bareMetalC)"   "$TEST_1" ;;
-    2) runsim "$(sw_dir bareMetalC)"   "$TEST_2" ;;
-    3) runsim "$(sw_dir bareMetalC)"   "$TEST_3" ;;
-    4) runsim "$(sw_dir ee290)"        "$TEST_4" ;;
-    5) runsim "$(sw_dir ee290)"        "$TEST_5" ;;
-    6) runsim "$(sw_dir ee290)"        "$TEST_6" ;;
-    7) runsim "$(sw_dir ee290)"        "$TEST_7" ;;
-    8) runsim "$(sw_dir imagenet)"     "$TEST_8" ;;
-    9) runsim "$(sw_dir imagenet)"     "$TEST_9" ;;
+    0)  runsim "$(sw_dir bareMetalC)"   "$TEST_0"  ;;
+    1)  runsim "$(sw_dir bareMetalC)"   "$TEST_1"  ;;
+    2)  runsim "$(sw_dir bareMetalC)"   "$TEST_2"  ;;
+    3)  runsim "$(sw_dir bareMetalC)"   "$TEST_3"  ;;
+    4)  runsim "$(sw_dir ee290)"        "$TEST_4"  ;;
+    5)  runsim "$(sw_dir ee290)"        "$TEST_5"  ;;
+    6)  runsim "$(sw_dir ee290)"        "$TEST_6"  ;;
+    7)  runsim "$(sw_dir ee290)"        "$TEST_7"  ;;
+    8)  runsim "$(sw_dir imagenet)"     "$TEST_8"  ;;
+    9)  runsim "$(sw_dir imagenet)"     "$TEST_9"  ;;
+    10) runsim "$(sw_dir ee290)"        "$TEST_10" ;;
     #-------------------------------------------------------------------------
     lab3_orig_tiler) runfiresim "$arg" "$FSIM_RT_LAB3_ORIG" ;;
     lab3_fsm_tiler)  runfiresim "$arg" "$FSIM_RT_LAB3_FSM" ;;

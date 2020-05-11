@@ -21,7 +21,8 @@ object WithGemminiConfig {
         implicit val v = implicitly[ValName]
         LazyModule(new Gemmini(OpcodeSet.custom3, config))
       })
-      case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
+      case SystemBusKey => 
+        up(SystemBusKey).copy(beatBytes = (config.dma_buswidth/8))
     })
   }
 }
@@ -34,7 +35,8 @@ object WithGemmini2Config {
         implicit val v = implicitly[ValName]
         LazyModule(new Gemmini2(OpcodeSet.custom3, config))
       })
-      case SystemBusKey => up(SystemBusKey).copy(beatBytes = 16)
+      case SystemBusKey => 
+        up(SystemBusKey).copy(beatBytes = (config.dma_buswidth/8))
     })
   }
 }
@@ -59,19 +61,23 @@ object GemminiConfigs {
     dataflow        = Dataflow.WS,
     acc_capacity    = CapacityInKilobytes(64),
     mem_pipeline    = 1,
-    dma_maxbytes    = 64, // TODO get this from cacheblockbytes
+    dma_maxbytes    = 128, // TODO get this from cacheblockbytes
     dma_buswidth    = 128, // TODO get this from SystemBusKey
     aligned_to      = 1,
     inputType       = SInt(8.W),
     outputType      = SInt(19.W),
     accType         = SInt(32.W),
-    pe_latency      = 0
   )
 }
 
 object WithDefaultGemminiConfig {
   def apply(dummy:Int=0) 
     = WithGemminiConfig(GemminiConfigs.defaultConfig)
+}
+
+object WithDefaultGemmini2Config {
+  def apply(dummy:Int=0) 
+    = WithGemmini2Config(GemminiConfigs.defaultConfig)
 }
 
 //===========================================================================
@@ -82,4 +88,8 @@ class GemminiConfig extends Config(
   new freechips.rocketchip.system.DefaultConfig
 )
 
+class Gemmini2Config extends Config(
+  WithDefaultGemmini2Config() ++
+  new freechips.rocketchip.system.DefaultConfig
+)
 

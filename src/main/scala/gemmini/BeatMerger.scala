@@ -25,8 +25,11 @@ class BeatMergerOut(val spadWidth: Int, val accWidth: Int, val spadRows: Int, va
   maxReqBytes: in bytes
   aligned_to: in bytes
  */
-class BeatMerger(beatBits: Int, maxShift: Int, spadWidth: Int, accWidth: Int, spadRows: Int, accRows: Int, maxReqBytes: Int, alignedTo: Int, meshRows: Int)
-  extends Module {
+class BeatMerger(
+  beatBits: Int, maxShift: Int, spadWidth: Int, accWidth: Int, 
+  spadRows: Int, accRows: Int, maxReqBytes: Int, alignedTo: Int, 
+  meshRows: Int) extends Module 
+{
   val io = IO(new Bundle {
     val req = Flipped(Decoupled(new XactTrackerEntry(maxShift, spadWidth, accWidth, spadRows, accRows, maxReqBytes)))
     val in = Flipped(Decoupled(UInt(beatBits.W)))

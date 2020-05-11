@@ -32,7 +32,6 @@ object DSEBaseConfig {
     inputType       = SInt(8.W),
     outputType      = SInt(19.W),
     accType         = SInt(32.W),
-    pe_latency      = 0
   )
 }
 

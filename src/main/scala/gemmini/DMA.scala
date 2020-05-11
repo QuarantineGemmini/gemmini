@@ -36,21 +36,27 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
 class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBits: Int, maxBytes: Int, spadWidth: Int, accWidth: Int, aligned_to: Int,
                    spad_rows: Int, acc_rows: Int, meshRows: Int)
                   (implicit p: Parameters) extends LazyModule {
-  val core = LazyModule(new StreamReaderCore(config, nXacts, beatBits, maxBytes, spadWidth, accWidth, aligned_to, spad_rows, acc_rows, meshRows))
+  val core = LazyModule(new StreamReaderCore(
+    config, nXacts, beatBits, maxBytes, spadWidth, accWidth, 
+    aligned_to, spad_rows, acc_rows, meshRows))
   val node = core.node
 
   lazy val module = new LazyModuleImp(this) {
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows)))
-      val resp = Decoupled(new StreamReadResponse(spadWidth, accWidth, spad_rows, acc_rows, aligned_to))
+      val req = Flipped(Decoupled(
+                  new StreamReadRequest(spad_rows, acc_rows)))
+      val resp = Decoupled(new StreamReadResponse(
+                    spadWidth, accWidth, spad_rows, acc_rows, aligned_to))
       val tlb = new FrontendTLBIO
       val busy = Output(Bool())
       val flush = Input(Bool())
     })
 
-    val xactTracker = Module(new XactTracker(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes))
+    val xactTracker = Module(new XactTracker(nXacts, maxBytes, spadWidth, 
+                        accWidth, spad_rows, acc_rows, maxBytes))
 
-    val beatPacker = Module(new BeatMerger(beatBits, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes, aligned_to, meshRows))
+    val beatPacker = Module(new BeatMerger(beatBits, maxBytes, spadWidth, 
+            accWidth, spad_rows, acc_rows, maxBytes, aligned_to, meshRows))
 
     core.module.io.req <> io.req
     io.tlb <> core.module.io.tlb
@@ -80,26 +86,32 @@ class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBi
   }
 }
 
-class StreamReadBeat (val nXacts: Int, val beatBits: Int, val maxReqBytes: Int) extends Bundle {
+class StreamReadBeat
+  (val nXacts: Int, val beatBits: Int, val maxReqBytes: Int) extends Bundle 
+{
   val xactid = UInt(log2Up(nXacts).W)
   val data = UInt(beatBits.W)
   val lg_len_req = UInt(log2Up(log2Up(maxReqBytes+1)+1).W)
   val last = Bool()
 }
 
-// TODO StreamReaderCore and StreamWriter are actually very alike. Is there some parent class they could both inherit from?
-class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBits: Int, maxBytes: Int,
-                                  spadWidth: Int, accWidth: Int, aligned_to: Int,
-                                  spad_rows: Int, acc_rows: Int, meshRows: Int)
-                                 (implicit p: Parameters) extends LazyModule {
+// TODO StreamReaderCore and StreamWriter are actually very alike. 
+// Is there some parent class they could both inherit from?
+class StreamReaderCore[T <: Data](
+  config: GemminiArrayConfig[T], nXacts: Int, beatBits: Int, maxBytes: Int,
+  spadWidth: Int, accWidth: Int, aligned_to: Int,
+  spad_rows: Int, acc_rows: Int, meshRows: Int)
+  (implicit p: Parameters) extends LazyModule 
+{
   val node = TLHelper.makeClientNode(
     name = "stream-reader", sourceId = IdRange(0, nXacts))
 
   require(isPow2(aligned_to))
 
-  // TODO when we request data from multiple rows which are actually contiguous in main memory, we should merge them into fewer requests
-
-  lazy val module = new LazyModuleImp(this) with HasCoreParameters with MemoryOpConstants {
+  // TODO when we request data from multiple rows which are actually 
+  // contiguous in main memory, we should merge them into fewer requests
+  lazy val module = new LazyModuleImp(this) 
+    with HasCoreParameters with MemoryOpConstants {
     val (tl, edge) = node.out(0)
 
     val spadWidthBytes = spadWidth / 8
@@ -107,22 +119,35 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val beatBytes = beatBits / 8
 
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows)))
-      val reserve = new XactTrackerAllocIO(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes)
-      val beatData = Decoupled(new StreamReadBeat(nXacts, beatBits, maxBytes))
+      val req = Flipped(Decoupled(
+                        new StreamReadRequest(spad_rows, acc_rows)))
+      val reserve = new XactTrackerAllocIO(nXacts, maxBytes, spadWidth, 
+                                    accWidth, spad_rows, acc_rows, maxBytes)
+      val beatData = Decoupled(
+                     new StreamReadBeat(nXacts, beatBits, maxBytes))
       val tlb = new FrontendTLBIO
       val flush = Input(Bool())
     })
 
-    val s_idle :: s_translate_req :: s_translate_resp :: s_req_new_block :: Nil = Enum(4)
+    val (s_idle :: 
+         s_translate_req :: 
+         s_translate_resp :: 
+         s_req_new_block :: 
+         Nil) = Enum(4)
     val state = RegInit(s_idle)
 
     val req = Reg(new StreamReadRequest(spad_rows, acc_rows))
 
     val vpn = req.vaddr(coreMaxAddrBits-1, pgIdxBits)
 
-    val bytesRequested = Reg(UInt(log2Ceil(spadWidthBytes max accWidthBytes max maxBytes).W)) // TODO this only needs to count up to (dataBytes/aligned_to), right?
-    val bytesLeft = Mux(req.is_acc, req.len * (config.accType.getWidth / 8).U, req.len * (config.inputType.getWidth / 8).U) - bytesRequested
+    // TODO this only needs to count up to (dataBytes/aligned_to), right?
+    val bytesRequested = Reg(UInt(
+      log2Ceil(spadWidthBytes max accWidthBytes max maxBytes).W)) 
+
+    val bytesLeft = Mux(req.is_acc, 
+      req.len * (config.accType.getWidth / 8).U, 
+      req.len * (config.inputType.getWidth / 8).U
+    ) - bytesRequested
 
     val state_machine_ready_for_req = WireInit(state === s_idle)
     io.req.ready := state_machine_ready_for_req
@@ -140,7 +165,9 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val paddr = Cat(ppn, req.vaddr(pgIdxBits-1, 0))
 
     val last_vpn_translated = RegEnable(vpn, io.tlb.resp.fire())
-    val last_vpn_translated_valid = withReset(reset.toBool() || io.flush) { RegInit(false.B) }
+    val last_vpn_translated_valid = withReset(reset.toBool() || io.flush) { 
+      RegInit(false.B) 
+    }
 
     when (io.tlb.resp.fire()) {
       last_vpn_translated_valid := true.B
@@ -158,14 +185,16 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
       val paddr = UInt(paddrBits.W)
     }
 
-    // TODO Can we filter out the larger read_sizes here if the systolic array is small, in the same way that we do so
+    // TODO Can we filter out the larger read_sizes here if the 
+    // systolic array is small, in the same way that we do so
     // for the write_sizes down below?
     val read_sizes = ((aligned_to max beatBytes) to maxBytes by aligned_to).
       filter(s => isPow2(s)).
       filter(s => s % beatBytes == 0)
     val read_packets = read_sizes.map { s =>
       val lg_s = log2Ceil(s)
-      val paddr_aligned_to_size = if (s == 1) paddr else Cat(paddr(paddrBits-1, lg_s), 0.U(lg_s.W))
+      val paddr_aligned_to_size = if (s == 1) paddr 
+                              else Cat(paddr(paddrBits-1, lg_s), 0.U(lg_s.W))
       val paddr_offset = if (s > 1) paddr(lg_s-1, 0) else 0.U
 
       val packet = Wire(new Packet())
@@ -185,7 +214,8 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val read_bytes_read = read_packet.bytes_read
     val read_shift = read_packet.shift
 
-    // Firing off TileLink read requests and allocating space inside the reservation buffer for them
+    // Firing off TileLink read requests and allocating space 
+    // inside the reservation buffer for them
     val get = edge.Get(
       fromSource = io.reserve.xactid,
       toAddress = read_paddr,
@@ -195,21 +225,29 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     tl.a.valid := state === s_req_new_block && io.reserve.ready
     tl.a.bits := get
 
-    io.reserve.valid := state === s_req_new_block && tl.a.ready // TODO decouple "reserve.valid" from "tl.a.ready"
+    // TODO decouple "reserve.valid" from "tl.a.ready"
+    io.reserve.valid := state === s_req_new_block && tl.a.ready 
     io.reserve.entry.shift := read_shift
     io.reserve.entry.is_acc := req.is_acc
     // io.reserve.entry.lg_len_req := read_lg_size
-    io.reserve.entry.lg_len_req := DontCare // TODO just remove this from the IO completely
+    // TODO just remove this from the IO completely
+    io.reserve.entry.lg_len_req := DontCare 
     io.reserve.entry.bytes_to_read := read_bytes_read
     io.reserve.entry.cmd_id := req.cmd_id
 
     io.reserve.entry.addr := req.spaddr + meshRows.U *
       Mux(req.is_acc,
-        // We only add "if" statements here to satisfy the Verilator linter. The code would be cleaner without the
+        // We only add "if" statements here to satisfy the Verilator linter. 
+        // The code would be cleaner without the
         // "if" condition and the "else" clause
-        if (bytesRequested.getWidth >= log2Up(accWidthBytes+1)) bytesRequested / accWidthBytes.U else 0.U,
-        if (bytesRequested.getWidth >= log2Up(spadWidthBytes+1)) bytesRequested / spadWidthBytes.U else 0.U)
-    io.reserve.entry.spad_row_offset := Mux(req.is_acc, bytesRequested % accWidthBytes.U, bytesRequested % spadWidthBytes.U)
+        if (bytesRequested.getWidth >= log2Up(accWidthBytes+1))
+          bytesRequested / accWidthBytes.U else 0.U,
+        if (bytesRequested.getWidth >= log2Up(spadWidthBytes+1))
+          bytesRequested / spadWidthBytes.U else 0.U
+      )
+      io.reserve.entry.spad_row_offset := Mux(req.is_acc, 
+        bytesRequested % accWidthBytes.U, 
+        bytesRequested % spadWidthBytes.U)
 
     when (tl.a.fire()) {
       val next_vaddr = req.vaddr + read_bytes_read // send_size

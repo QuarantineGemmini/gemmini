@@ -7,27 +7,32 @@ import chisel3.util._
 
 /**
   * A Tile is a purely combinational 2D array of passThrough PEs.
-  * a, b, s, and in_propag are broadcast across the entire array and are passed through to the Tile's outputs
+  * a, b, s, and in_propag are broadcast across the entire array and are 
+  * passed through to the Tile's outputs
   * @param width The data width of each PE in bits
   * @param rows Number of PEs on each row
   * @param columns Number of PEs on each column
   */
-class Tile[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T, df: Dataflow.Value, pe_latency: Int, val rows: Int, val columns: Int) extends Module {
+class Tile[T <: Data : Arithmetic]
+  (inputType: T, outputType: T, accType: T, val rows: Int, val columns: Int) 
+  extends Module {
+
   val io = IO(new Bundle {
-    val in_a        = Input(Vec(rows, inputType))
-    val in_b        = Input(Vec(columns, outputType)) // This is the output of the tile next to it
-    val in_d        = Input(Vec(columns, outputType))
-    val in_control  = Input(Vec(columns, new PEControl(accType)))
-    val out_a       = Output(Vec(rows, inputType))
-    val out_c       = Output(Vec(columns, outputType))
-    val out_b       = Output(Vec(columns, outputType))
-    val out_control = Output(Vec(columns, new PEControl(accType)))
+    val in_a     = Input(Vec(rows, inputType))
+    val in_b     = Input(Vec(columns, outputType)) 
+    val in_d     = Input(Vec(columns, outputType))
+    val in_ctrl  = Input(Vec(columns, new PEControl(accType)))
+    val out_a    = Output(Vec(rows, inputType))
+    val out_c    = Output(Vec(columns, outputType))
+    val out_b    = Output(Vec(columns, outputType))
+    val out_ctrl = Output(Vec(columns, new PEControl(accType)))
 
     val in_valid = Input(Vec(columns, Bool()))
     val out_valid = Output(Vec(columns, Bool()))
   })
 
-  val tile = Seq.fill(rows, columns)(Module(new PE(inputType, outputType, accType, df, pe_latency)))
+  val tile = Seq.fill(rows, columns)(
+    Module(new PE(inputType, outputType, accType)))
   val tileT = tile.transpose
 
   // TODO: abstract hori/vert broadcast, all these connections look the same
@@ -58,12 +63,12 @@ class Tile[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T, df: 
     }
   }
 
-  // Broadcast 'control' vertically across the Tile
+  // Broadcast 'ctrl' vertically across the Tile
   for (c <- 0 until columns) {
-    tileT(c).foldLeft(io.in_control(c)) {
+    tileT(c).foldLeft(io.in_ctrl(c)) {
       case (in_ctrl, pe) =>
-        pe.io.in_control := in_ctrl
-        pe.io.out_control
+        pe.io.in_ctrl := in_ctrl
+        pe.io.out_ctrl
     }
   }
 
@@ -80,7 +85,7 @@ class Tile[T <: Data : Arithmetic](inputType: T, outputType: T, accType: T, df: 
   for (c <- 0 until columns) {
     io.out_c(c) := tile(rows-1)(c).io.out_c
     io.out_b(c) := tile(rows-1)(c).io.out_b
-    io.out_control(c) := tile(rows-1)(c).io.out_control
+    io.out_ctrl(c) := tile(rows-1)(c).io.out_ctrl
     io.out_valid(c) := tile(rows-1)(c).io.out_valid
   }
 
