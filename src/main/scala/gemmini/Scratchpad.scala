@@ -12,13 +12,20 @@ import Util._
 
 class ScratchpadMemReadRequest
   (local_addr_t: LocalAddr)(implicit p: Parameters) extends CoreBundle {
-  val vaddr = UInt(coreMaxAddrBits.W)
+
+  // val matrix = UInt(2.W) // Which of A,B,C,D
+  // val start_row = UInt(16.W)
+  // val start_col = UInt(16.W)
+  // val rows = UInt(16.W)
+  // val cols = UInt(16.W)
+
   val laddr = local_addr_t.cloneType
 
+  // FIXME: getouttahere
+  val vaddr = UInt(coreMaxAddrBits.W)
   val len = UInt(8.W) // TODO don't use a magic number for the width here
 
   val cmd_id = UInt(8.W) // TODO don't use a magic number here
-
   val status = new MStatus
 
   override def cloneType: this.type 

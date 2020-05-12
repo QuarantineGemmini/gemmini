@@ -41,10 +41,12 @@ class CmdFSM[T <: Data: Arithmetic]
   val m              = RegInit(0.U(32.W))
   val n              = RegInit(0.U(32.W))
   val k              = RegInit(0.U(32.W))
-  val addr_a         = RegInit(0.U(xLen.W))
-  val addr_b         = RegInit(0.U(xLen.W))
-  val addr_c         = RegInit(0.U(xLen.W))
-  val addr_d         = RegInit(0.U(xLen.W))
+
+  val a              = RegInit(0.U.asTypeOf(new MatrixAddrConfig(config)))
+  val b              = RegInit(0.U.asTypeOf(new MatrixAddrConfig(config)))
+  val c              = RegInit(0.U.asTypeOf(new MatrixAddrConfig(config)))
+  val d              = RegInit(0.U.asTypeOf(new MatrixAddrConfig(config)))
+
   val in_rshift      = RegInit(0.U(log2Up(accType.getWidth).W))
   val acc_rshift     = RegInit(0.U(log2Up(accType.getWidth).W))
   val relu6_lshift   = RegInit(0.U(log2Up(accType.getWidth).W))
@@ -58,6 +60,12 @@ class CmdFSM[T <: Data: Arithmetic]
   val size1_valid = RegInit(false.B)
   val config_ex_valid = RegInit(false.B)
   val bias_valid = RegInit(false.B)
+  
+  // Address-configs default to row-major, and are valid without any configuration
+  val config_a_valid = RegInit(true.B)
+  val config_b_valid = RegInit(true.B)
+  val config_c_valid = RegInit(true.B)
+  val config_d_valid = RegInit(true.B)
 
   // pass CSR status bits to tiler (TODO: fix this api)
   val status = Reg(new MStatus)
@@ -75,10 +83,10 @@ class CmdFSM[T <: Data: Arithmetic]
   io.tiler.bits.m              := m
   io.tiler.bits.n              := n
   io.tiler.bits.k              := k
-  io.tiler.bits.addr_a         := addr_a
-  io.tiler.bits.addr_b         := addr_b
-  io.tiler.bits.addr_c         := addr_c
-  io.tiler.bits.addr_d         := addr_d
+  io.tiler.bits.a         := a
+  io.tiler.bits.b         := b
+  io.tiler.bits.c         := c
+  io.tiler.bits.d         := d
   io.tiler.bits.in_rshift      := in_rshift
   io.tiler.bits.acc_rshift     := acc_rshift
   io.tiler.bits.relu6_lshift   := relu6_lshift
@@ -161,14 +169,29 @@ class CmdFSM[T <: Data: Arithmetic]
         relu6_lshift := rs2(63,32)
         config_ex_valid := true.B
       }
+      .elsewhen (funct === CONFIG_ADDR_MODE) {
+        val mat_num = rs2(63,60)
+        if (mat_num != 0.U) { // only configure `A` for im2col, for now
+          state := s_ERROR
+        } else {
+          a.rows := rs1(63,32)
+          a.cols := rs1(31,0)
+          a.stride := rs2(63,48)
+          a.padding := rs2(47,40)
+          a.channels := rs2(39,32)
+          a.kernel_size := rs2(31,16)
+          a.batch_size := rs2(15,0)
+          config_a_valid := true.B 
+        }
+      }
       .elsewhen (funct === ADDR_AB) {
-        addr_a := rs1
-        addr_b := rs2
+        a.base_addr := rs1
+        b.base_addr := rs2
         addr_ab_valid := true.B
       }
       .elsewhen (funct === ADDR_CD) {
-        addr_c := rs1
-        addr_d := rs2
+        c.base_addr := rs1
+        d.base_addr := rs2
         addr_cd_valid := true.B
       }
       .elsewhen (funct === SIZE0) {

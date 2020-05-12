@@ -22,18 +22,46 @@ class GemminiCmd(rob_entries: Int)(implicit p: Parameters) extends Bundle {
 }
 
 //===========================================================================
+// Per-Matrix Addressing Mode
+// Supported Modes:
+// * Row-Major (default)
+// * Im2Col
+//===========================================================================
+class MatrixAddrConfig[T <: Data: Arithmetic]
+  (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle {
+  import config._
+  val base_addr      = UInt(xLen.W)
+  val addr_mode      = UInt(3.W)
+
+  // Im2Col-Mode Params
+  val rows = UInt(32.W);
+  val cols = UInt(32.W);
+  val batch_size = UInt(16.W);
+  val kernel_size = UInt(16.W);
+  val channels = UInt(8.W);
+  val padding = UInt(8.W);
+  val stride = UInt(8.W);
+
+  override def cloneType: this.type =
+    (new MatrixAddrConfig(config)).asInstanceOf[this.type]
+}
+
+//===========================================================================
 // TilerController Interface (gemmini2 mode only)
 //===========================================================================
 class TilerCmd[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit p: Parameters)extends CoreBundle {
+  (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle {
   import config._
+
   val m              = UInt(32.W)
   val n              = UInt(32.W)
   val k              = UInt(32.W)
-  val addr_a         = UInt(xLen.W)
-  val addr_b         = UInt(xLen.W)
-  val addr_c         = UInt(xLen.W)
-  val addr_d         = UInt(xLen.W)
+
+  val a              = new MatrixAddrConfig(config)
+  val b              = new MatrixAddrConfig(config)
+  val c              = new MatrixAddrConfig(config)
+  val d              = new MatrixAddrConfig(config)
+
   val in_rshift      = UInt(log2Up(accType.getWidth).W)
   val acc_rshift     = UInt(log2Up(accType.getWidth).W)
   val relu6_lshift   = UInt(log2Up(accType.getWidth).W)

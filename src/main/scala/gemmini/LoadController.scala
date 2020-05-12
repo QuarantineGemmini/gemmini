@@ -7,13 +7,15 @@ import Util._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
 
+
 // TODO deal with errors when reading scratchpad responses
-class LoadController[T <: Data](config: GemminiArrayConfig[T])
+class LoadController[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
   (implicit val p: Parameters) extends Module with HasCoreParameters {
   import config._
 
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
+    val cfg = Flipped(Decoupled(new TilerCmd(config)))
     val dma = new ScratchpadReadMemIO(local_addr_t)
     val completed = Decoupled(UInt(log2Up(rob_entries).W))
     val busy = Output(Bool())
@@ -31,7 +33,14 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T])
   val row_counter = RegInit(0.U(log2Ceil(block_rows).W))
 
   val cmd = Queue(io.cmd, ld_queue_length)
-  val vaddr = cmd.bits.cmd.rs1
+
+  // Index-based bit unpacking
+  val which_matrix = cmd.bits.cmd.rs1(63, 32)
+  val start_row = cmd.bits.cmd.rs1(31, 16)
+  val start_col = cmd.bits.cmd.rs1(15, 0)
+  
+  val vaddr = cmd.bits.cmd.rs1 // FIXME! getouttahere!
+  
   val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
   val cols = cmd.bits.cmd.rs2(32 + mvin_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvin_rows_bits, 48) // TODO magic numbers
@@ -46,6 +55,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T])
   val DoLoad = !DoConfig // TODO change this if more commands are added
 
   cmd.ready := false.B
+  io.cfg.ready := false.B
 
   // Command tracker instantiation
   val nCmds = 2 // TODO make this a config parameter

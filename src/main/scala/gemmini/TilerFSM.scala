@@ -220,7 +220,7 @@ class TilerFSM[T <: Data : Arithmetic]
   //=========================================================================
   switch (state) {
     is (s_IDLE) {
-      val l_HAS_BIAS      = (cmd.addr_d =/= 0.U)
+      val l_HAS_BIAS      = (cmd.d.base_addr =/= 0.U)
       val l_A_BYTE_WIDTH  = WireDefault(cmd.k << LOG2_ITYPE_BYTES.U)
       val l_BC_BYTE_WIDTH = WireDefault(cmd.n << LOG2_ITYPE_BYTES.U)
       val l_D_BYTE_WIDTH  = WireDefault(cmd.n << LOG2_OTYPE_BYTES.U)
@@ -234,10 +234,10 @@ class TilerFSM[T <: Data : Arithmetic]
       g_ACC_OUT_RSHIFT        := cmd.acc_rshift
       g_RELU6_IN_LSHIFT       := cmd.relu6_lshift
 
-      g_A_MEM_ADDR            := cmd.addr_a
-      g_B_MEM_ADDR            := cmd.addr_b
-      g_C_MEM_ADDR            := cmd.addr_c
-      g_D_MEM_ADDR            := cmd.addr_d
+      g_A_MEM_ADDR            := cmd.a.base_addr
+      g_B_MEM_ADDR            := cmd.b.base_addr
+      g_C_MEM_ADDR            := cmd.c.base_addr
+      g_D_MEM_ADDR            := cmd.d.base_addr
 
       g_A_BYTES_PER_TILE_ROW  := l_A_BYTE_WIDTH  << LOG2_DIM.U
       g_B_BYTES_PER_TILE_ROW  := l_BC_BYTE_WIDTH << LOG2_DIM.U

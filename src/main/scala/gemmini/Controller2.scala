@@ -75,6 +75,7 @@ class GemminiModule2[T <: Data: Arithmetic]
 
   val load = LoadController(outer.config)
   load.io.cmd             <> tiler.io.issue.load
+  load.io.cfg             <> cmd_fsm.io.tiler 
   tiler.io.completed.load <> load.io.completed
   spad.module.io.dma.read <> load.io.dma
 
