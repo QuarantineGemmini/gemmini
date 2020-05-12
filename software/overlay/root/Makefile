@@ -5,8 +5,8 @@ prefix				 := /usr/local
 abs_top_srcdir := /home/centos/chipyard/generators/gemmini/software/gemmini-rocc-tests/build/..
 XLEN           := 64
 ROCC 					 := examples
-CATEGORIES     := bareMetalC ee290 mlps imagenet 
-#CATEGORIES     := bareMetalC ee290
+#CATEGORIES     := bareMetalC ee290 mlps imagenet 
+CATEGORIES     := bareMetalC ee290
 
 #=============================================================================
 # targets
@@ -23,5 +23,3 @@ $(CATEGORIES):
 	 	src_dir=$(abs_top_srcdir)/$@ \
 	 	XLEN=$(XLEN) \
 	 	PREFIX=$(ROCC)-$@
-
-
