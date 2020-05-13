@@ -33,9 +33,12 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
   val cmd_id = UInt(8.W) // TODO magic number
 }
 
-class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBits: Int, maxBytes: Int, spadWidth: Int, accWidth: Int, aligned_to: Int,
-                   spad_rows: Int, acc_rows: Int, meshRows: Int)
-                  (implicit p: Parameters) extends LazyModule {
+class StreamReader[T <: Data]
+  (config: GemminiArrayConfig[T], nXacts: Int, beatBits: Int, 
+   maxBytes: Int, spadWidth: Int, accWidth: Int, aligned_to: Int,
+   spad_rows: Int, acc_rows: Int, meshRows: Int)
+  (implicit p: Parameters) extends LazyModule 
+{
   val core = LazyModule(new StreamReaderCore(
     config, nXacts, beatBits, maxBytes, spadWidth, accWidth, 
     aligned_to, spad_rows, acc_rows, meshRows))
@@ -287,21 +290,26 @@ class StreamReaderCore[T <: Data](
   }
 }
 
-class StreamWriteRequest(val dataWidth: Int)(implicit p: Parameters) extends CoreBundle {
+class StreamWriteRequest(val dataWidth: Int)(implicit p: Parameters) 
+  extends CoreBundle {
   val vaddr = UInt(coreMaxAddrBits.W)
   val data = UInt(dataWidth.W)
   val len = UInt(16.W) // The number of bytes to write // TODO magic number
   val status = new MStatus
 }
 
-class StreamWriter(nXacts: Int, beatBits: Int, maxBytes: Int, dataWidth: Int, aligned_to: Int)
-                  (implicit p: Parameters) extends LazyModule {
-  val node = TLHelper.makeClientNode(
-    name = "stream-writer", sourceId = IdRange(0, nXacts))
+class StreamWriter
+  (nXacts: Int, beatBits: Int, maxBytes: Int, dataWidth: Int, 
+   aligned_to: Int, name: String = "stream-writer")
+  (implicit p: Parameters) extends LazyModule 
+{
+  val node = TLHelper.makeClientNode(name=name, sourceId=IdRange(0, nXacts))
 
   require(isPow2(aligned_to))
 
-  lazy val module = new LazyModuleImp(this) with HasCoreParameters with MemoryOpConstants {
+  lazy val module = new LazyModuleImp(this) 
+    with HasCoreParameters with MemoryOpConstants 
+  {
     val (tl, edge) = node.out(0)
     val dataBytes = dataWidth / 8
     val beatBytes = beatBits / 8
@@ -491,7 +499,9 @@ class StreamWriter(nXacts: Int, beatBits: Int, maxBytes: Int, dataWidth: Int, al
 
       val vpn_already_translated = last_vpn_translated_valid &&
         last_vpn_translated === io.req.bits.vaddr(coreMaxAddrBits-1, pgIdxBits)
-      state := Mux(vpn_already_translated, s_writing_new_block, s_translate_req)
+      state := Mux(vpn_already_translated, 
+                   s_writing_new_block, 
+                   s_translate_req)
     }
   }
 }

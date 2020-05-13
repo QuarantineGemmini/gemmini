@@ -4,11 +4,9 @@ package gemmini
 import chisel3._
 import chisel3.util._
 
-class PEControl[T <: Data : Arithmetic](accType: T) extends Bundle {
+class PEControl extends Bundle {
   // Which register should be propagated (and which should be accumulated)?
   val propagate = UInt(1.W) 
-  override def cloneType: PEControl.this.type 
-    = new PEControl(accType).asInstanceOf[this.type]
 }
 
 // A PE implementing a MAC operation. Configured as fully combinational when 
@@ -26,8 +24,8 @@ class PE[T <: Data](inputType: T, outputType: T, accType: T)
     val out_b = Output(outputType)
     val out_c = Output(outputType)
 
-    val in_ctrl = Input(new PEControl(accType))
-    val out_ctrl = Output(new PEControl(accType))
+    val in_ctrl = Input(new PEControl)
+    val out_ctrl = Output(new PEControl)
 
     val in_valid = Input(Bool())
     val out_valid = Output(Bool())

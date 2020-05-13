@@ -14,63 +14,49 @@ import GemminiISA._
 //===========================================================================
 // From ROB to {exec,load,store,flush} units
 //===========================================================================
-class GemminiCmd(rob_entries: Int)(implicit p: Parameters) extends Bundle {
+class GemminiCmd(val ROB_ENTRIES_IDX: Int)
+  (implicit p: Parameters) extends CoreBundle {
   val cmd = new RoCCCommand
-  val rob_id = UInt(log2Up(rob_entries).W)
-  override def cloneType: this.type 
-    = (new GemminiCmd(rob_entries)).asInstanceOf[this.type]
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
 //===========================================================================
 // Per-Matrix Addressing Mode
-// Supported Modes:
-// * Row-Major (default)
-// * Im2Col
 //===========================================================================
-class MatrixAddrConfig[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle {
-  import config._
-  val base_addr      = UInt(xLen.W)
-  val addr_mode      = UInt(3.W)
-
-  // Im2Col-Mode Params
-  val rows = UInt(32.W);
-  val cols = UInt(32.W);
-  val batch_size = UInt(16.W);
-  val kernel_size = UInt(16.W);
-  val channels = UInt(8.W);
-  val padding = UInt(8.W);
-  val stride = UInt(8.W);
-
-  override def cloneType: this.type =
-    (new MatrixAddrConfig(config)).asInstanceOf[this.type]
+class TilerCmdAddrCfg(implicit p: Parameters) extends CoreBundle {
+  val mode        = UInt(1.W) // AddressMode
+  val in_rows     = UInt(32.W)
+  val in_cols     = UInt(32.W)
+  val stride      = UInt(16.W)
+  val padding     = UInt(8.W)
+  val in_channels = UInt(8.W)
+  val kernel_size = UInt(16.W)
 }
 
 //===========================================================================
 // TilerController Interface (gemmini2 mode only)
+// - NOTE: all gemminis support im2col interface, even if they don't use it.
+//         this includes the fg-array implementation too!
 //===========================================================================
-class TilerCmd[T <: Data: Arithmetic]
-  (config: GemminiArrayConfig[T])(implicit p: Parameters) extends CoreBundle {
-  import config._
-
+class TilerCmd(OTYPE_BITS_IDX: Int)
+  (implicit p: Parameters) extends CoreBundle {
   val m              = UInt(32.W)
   val n              = UInt(32.W)
   val k              = UInt(32.W)
-
-  val a              = new MatrixAddrConfig(config)
-  val b              = new MatrixAddrConfig(config)
-  val c              = new MatrixAddrConfig(config)
-  val d              = new MatrixAddrConfig(config)
-
-  val in_rshift      = UInt(log2Up(accType.getWidth).W)
-  val acc_rshift     = UInt(log2Up(accType.getWidth).W)
-  val relu6_lshift   = UInt(log2Up(accType.getWidth).W)
+  val addr_a         = UInt(xLen.W)
+  val addr_b         = UInt(xLen.W)
+  val addr_c         = UInt(xLen.W)
+  val addr_d         = UInt(xLen.W)
+  val addr_a_cfg     = new TilerCmdAddrCfg
+  val addr_b_cfg     = new TilerCmdAddrCfg
+  val addr_c_cfg     = new TilerCmdAddrCfg
+  val addr_d_cfg     = new TilerCmdAddrCfg
+  val in_rshift      = UInt(OTYPE_BITS_IDX.W)
+  val acc_rshift     = UInt(OTYPE_BITS_IDX.W)
+  val relu6_lshift   = UInt(OTYPE_BITS_IDX.W)
   val activation     = UInt(2.W)
   val repeating_bias = Bool()
   val status         = new MStatus
-
-  override def cloneType: this.type =
-    (new TilerCmd(config)).asInstanceOf[this.type]
 }
 
 //===========================================================================

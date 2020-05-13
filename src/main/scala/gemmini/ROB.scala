@@ -401,7 +401,7 @@ class ROB(nEntries: Int,  block_rows: Int, block_cols: Int)
 
   when (io.issue.ld.fire() || io.issue.st.fire() || io.issue.ex.fire() || !io.busy) {
     cycles_since_issue := 0.U
-  }.elsewhen(io.busy) {
+  }.elsewhen (io.busy) {
     cycles_since_issue := cycles_since_issue + 1.U
   }
   assert(cycles_since_issue < 10000.U, "pipeline stall")

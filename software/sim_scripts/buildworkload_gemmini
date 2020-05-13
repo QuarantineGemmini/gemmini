@@ -33,9 +33,16 @@ CFLAGS_HW_TILER="-DUSE_HW_TILER"
 FSIM_SW_ORIG="$FCFG_SW_DIR/orig_tiler.json"
 FSIM_SW_FSM="$FCFG_SW_DIR/fsm_tiler.json"
 FSIM_SW_HW="$FCFG_SW_DIR/hw_tiler.json"
+FSIM_SW_ORIG_GEMM="$FCFG_SW_DIR/orig_tiler_gemm.json"
+FSIM_SW_FSM_GEMM="$FCFG_SW_DIR/fsm_tiler_gemm.json"
+FSIM_SW_HW_GEMM="$FCFG_SW_DIR/hw_tiler_gemm.json"
+FSIM_SW_FG4_GEMM="$FCFG_SW_DIR/fg4_tiler_gemm.json"
 
 DEBUG_CFLAGS=""
 NODEBUG_CFLAGS="-DNODEBUG"
+
+IM2COL_MODE="orig_im2col"
+IM2COL_CFLAGS=""
 
 #=============================================================================
 # subroutines
@@ -53,6 +60,19 @@ display_usage() {
   orig_tiler: use the original tiler algorithm on the old ISA
   fsm_tiler:  use FSM-based tiler algorithm on the old ISA
   hw_tiler:   use the new gemmini2 ISA hardware tiler
+  
+  Firesim-only Loads
+  ------------------
+  orig_tiler_gemm: big gemm sweep on orig tiler
+  fsm_tiler_gemm:  big gemm sweep on fsm tiler
+  hw_tiler_gemm:   big gemm sweep on hw tiler
+  fg4_tiler_gemm:  big gemm sweep on 16fg4 tiler
+
+  im2col options
+  ------------------
+  -orig_im2col  --> use original im2col algorithm (default)
+  -new_im2col   --> use new software im2col
+  -hw_im2col    --> use hardware-accelerated im2col
 
   other options
   -------------
@@ -79,10 +99,14 @@ basicbuild() {
   cp "include/gemmini_params.h" "$dst_dir/"
 }
 
+# TODO: firemarshall does not delete the *-bin and *.img files when you rebuild
+# for some reason. figure out how to force overwrite these files!!!
+# NOTE: maybe its because i didn't have -force inside the firesimbuild!
 firesimbuild() {
   local name="$1"
   local fsim_sw_config="$2"
-  buildworkload_gemmini -noisy $name
+  local im2col_mode="$3"
+  buildworkload_gemmini -noisy -force -$im2col_mode $name
 
   cd "$SW_DIR/gemmini-rocc-tests"
   cp -fr build_${name}/* ../overlay/root/
@@ -102,17 +126,17 @@ run() {
 
   # init local variables
   local ts="$(date "+%Y-%m-%d_%H-%M-%S")"
-  local dst_dir="build_${target_name}"
-  local run_name="${ts}__${target_name}"
+  local dst_dir="build_${target_name}__${IM2COL_MODE}"
+  local run_name="${ts}__${target_name}__${IM2COL_MODE}"
   local logfile="$LOGDIR/${run_name}.log"
   local starttime=$SECONDS
   local cmdline="basicbuild $dst_dir"
 
   if [ "$IS_FIRESIM" -eq 1 ]; then
     logfile="$LOGDIR/${run_name}_firesim.log"
-    cmdline="firesimbuild $target_name $target_fsim_sw_config"
+    cmdline="firesimbuild $target_name $target_fsim_sw_config $IM2COL_MODE"
   else
-    export CFLAGS="$ORIG_CFLAGS $target_cflags"
+    export CFLAGS="$ORIG_CFLAGS $IM2COL_CFLAGS $target_cflags"
     if [ "$IS_DEBUG" -eq 1 ] ; then export CFLAGS="$CFLAGS $DEBUG_CFLAGS"; 
     else export CFLAGS="$CFLAGS $NODEBUG_CFLAGS"; fi
   fi
@@ -147,6 +171,9 @@ if [ $# -eq 0 ] ; then display_usage; fi
 while [ $# -ne 0 ] ; do
   arg=$1; shift;
   case $arg in
+    -orig_im2col) IM2COL_MODE="orig_im2col"; IM2COL_CFLAGS="";;
+    -new_im2col)  IM2COL_MODE="new_im2col"; IM2COL_CFLAGS="-DUSE_NEW_IM2COL";;
+    -hw_im2col)   IM2COL_MODE="hw_im2col";  IM2COL_CFLAGS="-DUSE_HW_IM2COL";;
     #-------------------------------------------------------------------------
     -firesim) IS_FIRESIM=1 ;;
     -noisy)   IS_NOISY=1 ;;
@@ -158,6 +185,10 @@ while [ $# -ne 0 ] ; do
     orig_tiler) run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_ORIG" ;;
     fsm_tiler)  run $arg "$CFLAGS_FSM_TILER"  "$FSIM_SW_FSM" ;;
     hw_tiler)   run $arg "$CFLAGS_HW_TILER"   "$FSIM_SW_HW" ;;
+    orig_tiler_gemm) run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_ORIG_GEMM" ;;
+    fsm_tiler_gemm)  run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_FSM_GEMM" ;;
+    hw_tiler_gemm)   run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_HW_GEMM" ;;
+    fg4_tiler_gemm)  run $arg "$CFLAGS_ORIG_TILER" "$FSIM_SW_FG4_GEMM" ;;
     #------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac

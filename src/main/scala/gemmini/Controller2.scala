@@ -54,7 +54,7 @@ class GemminiModule2[T <: Data: Arithmetic]
   //=========================================================================
   val raw_cmd = Queue(io.cmd)
 
-  val cmd_fsm = CmdFSM(outer.config)
+  val cmd_fsm = CmdFSM(OTYPE_BITS_IDX)
   cmd_fsm.io.cmd         <> raw_cmd
   tlb.io.exp.flush_retry := cmd_fsm.io.flush_retry
   tlb.io.exp.flush_skip  := cmd_fsm.io.flush_skip

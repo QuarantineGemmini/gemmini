@@ -31,9 +31,12 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int,
   val garbage_bit = if (localAddrBits - maxAddrBits >= 3) UInt(1.W) else UInt(0.W)
   val data = UInt(maxAddrBits.W)
 
-  def sp_bank(dummy: Int = 0) = if (spAddrBits == spBankRowBits) 0.U else data(spAddrBits - 1, spBankRowBits)
+  def sp_bank(dummy: Int = 0) = if (spAddrBits == spBankRowBits) 0.U 
+                                else data(spAddrBits - 1, spBankRowBits)
   def sp_row(dummy: Int = 0) = data(spBankRowBits - 1, 0)
-  def acc_bank(dummy: Int = 0) = if (accAddrBits == accBankRowBits) 0.U else data(accAddrBits - 1, accBankRowBits)
+
+  def acc_bank(dummy: Int = 0) = if (accAddrBits == accBankRowBits) 0.U 
+                                 else data(accAddrBits - 1, accBankRowBits)
   def acc_row(dummy: Int = 0) = data(accBankRowBits - 1, 0)
 
   def full_sp_addr(dummy: Int = 0) = data(spAddrBits - 1, 0)
@@ -55,11 +58,15 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int,
 
   def <=(other: LocalAddr) =
     is_acc_addr === other.is_acc_addr &&
-      Mux(is_acc_addr, full_acc_addr() <= other.full_acc_addr(), full_sp_addr() <= other.full_sp_addr())
+    Mux(is_acc_addr, 
+      full_acc_addr() <= other.full_acc_addr(), 
+      full_sp_addr() <= other.full_sp_addr())
 
   def >(other: LocalAddr) =
     is_acc_addr === other.is_acc_addr &&
-      Mux(is_acc_addr, full_acc_addr() > other.full_acc_addr(), full_sp_addr() > other.full_sp_addr())
+    Mux(is_acc_addr, 
+      full_acc_addr() > other.full_acc_addr(), 
+      full_sp_addr() > other.full_sp_addr())
 
   def make_this_garbage(dummy: Int = 0): Unit = {
     is_acc_addr := true.B
@@ -68,5 +75,7 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int,
     data := ~(0.U(maxAddrBits.W))
   }
 
-  override def cloneType: LocalAddr.this.type = new LocalAddr(sp_banks, sp_bank_entries, acc_banks, acc_bank_entries).asInstanceOf[this.type]
+  override def cloneType: LocalAddr.this.type 
+    = new LocalAddr(sp_banks, sp_bank_entries, acc_banks, 
+                    acc_bank_entries).asInstanceOf[this.type]
 }

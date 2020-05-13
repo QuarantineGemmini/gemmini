@@ -42,6 +42,14 @@ HW_CONFIG_G2_DSE6=Gemmini2dim32sp64acc16bus128
 HW_CONFIG_G2_DSE7=Gemmini2dim16sp16acc64bus128
 HW_CONFIG_G2_DSE8=Gemmini2dim32sp16acc64bus128
 
+# FgGemmini2 DSEs
+HW_CONFIG_FG_DSE1=FgGemmini2dim32fg32
+HW_CONFIG_FG_DSE2=FgGemmini2dim32fg16
+HW_CONFIG_FG_DSE3=FgGemmini2dim32fg8
+HW_CONFIG_FG_DSE4=FgGemmini2dim16fg16
+HW_CONFIG_FG_DSE5=FgGemmini2dim16fg8
+HW_CONFIG_FG_DSE6=FgGemmini2dim16fg4
+
 # workloads (vcs, verilator)
 TEST_0=echo
 TEST_1=padded
@@ -60,6 +68,10 @@ HWDB_CONFIG="$FCFG_DIR/config_hwdb.ini"
 FSIM_RT_LAB3_ORIG="$FCFG_DIR/config_runtime__lab3__orig_tiler.ini"
 FSIM_RT_LAB3_FSM="$FCFG_DIR/config_runtime__lab3__fsm_tiler.ini"
 FSIM_RT_LAB3_HW="$FCFG_DIR/config_runtime__lab3__hw_tiler.ini"
+FSIM_RT_ORIG_GEMM="$FCFG_DIR/config_runtime__orig_tiler_gemm.ini"
+FSIM_RT_FSM_GEMM="$FCFG_DIR/config_runtime__fsm_tiler_gemm.ini"
+FSIM_RT_HW_GEMM="$FCFG_DIR/config_runtime__hw_tiler_gemm.ini"
+FSIM_RT_FG4_GEMM="$FCFG_DIR/config_runtime__fg4_tiler_gemm.ini"
 
 #=============================================================================
 # defaults
@@ -70,6 +82,9 @@ SW_PLATFORM="pk"
 # SW_MODES: hw_tiler, orig_tiler, fsm_tiler
 SW_MODE="orig_tiler"
 SPIKE_EXT="gemmini"
+
+# IM2COL_MODES: orig_im2col, new_im2col, hw_im2col
+IM2COL_MODE="orig_im2col"
 
 # HW_CONFIG: lab3
 HW_CONFIG="hw_lab3"
@@ -123,6 +138,10 @@ cat <<EOF
   lab3_orig_tiler: orig_tiler variant of the ee290-lab3 workloads
   lab3_fsm_tiler:  fsm_tiler variant of the ee290-lab3 workloads
   lab3_hw_tiler:   hw_tiler variant of the ee290-lab3 workloads
+  orig_tiler_gemm: gemm-sweep on orig-tiler
+  fsm_tiler_gemm:  gemm-sweep on fsm-tiler
+  hw_tiler_gemm:   gemm-sweep on hw-tiler
+  fg4_tiler_gemm:  gemm-sweep on 16fg4-tiler
   
   hw simulator
   ------------
@@ -139,6 +158,10 @@ cat <<EOF
   -orig_tiler   --> use the original tiler algorithm on the old ISA (default)
   -fsm_tiler    --> use FSM-based tiler algorithm on the old ISA
   -hw_tiler     --> use the new gemmini2 ISA hardware tiler
+
+  -orig_im2col  --> use original im2col algorithm (default)
+  -new_im2col   --> use new software im2col
+  -hw_im2col    --> use hardware-accelerated im2col
   
   hw config, tracing, runtime verbosity (vcs, verilator)
   ------------------------------------------------------
@@ -158,6 +181,13 @@ cat <<EOF
   -hw_g2_dse6   --> the $HW_CONFIG_G2_DSE6
   -hw_g2_dse7   --> the $HW_CONFIG_G2_DSE7
   -hw_g2_dse8   --> the $HW_CONFIG_G2_DSE8
+
+  -hw_fg_dse1   --> the $HW_CONFIG_FG_DSE1
+  -hw_fg_dse2   --> the $HW_CONFIG_FG_DSE2
+  -hw_fg_dse3   --> the $HW_CONFIG_FG_DSE3
+  -hw_fg_dse4   --> the $HW_CONFIG_FG_DSE4
+  -hw_fg_dse5   --> the $HW_CONFIG_FG_DSE5
+  -hw_fg_dse6   --> the $HW_CONFIG_FG_DSE6
   
   -trace_start <c>  --> start tracing at this cycle (defaults to 0)
   -vcd_full         --> capture all signals in design
@@ -191,7 +221,7 @@ EOF
 # run spike, vcs, verilator
 #=============================================================================
 sw_dir() {
-  echo "${SW_DIR}/gemmini-rocc-tests/build_${SW_MODE}/$1"
+  echo "${SW_DIR}/gemmini-rocc-tests/build_${SW_MODE}__${IM2COL_MODE}/$1"
 }
 
 runsim() {
@@ -390,6 +420,10 @@ while [ $# -ne 0 ] ; do
     -fsm_tiler)  SW_MODE="fsm_tiler";  SPIKE_EXT="gemmini"  ;;
     -hw_tiler)   SW_MODE="hw_tiler";   SPIKE_EXT="gemmini2" ;;
     #-------------------------------------------------------------------------
+    -orig_im2col) IM2COL_MODE="orig_im2col" ;;
+    -new_im2col)  IM2COL_MODE="new_im2col"  ;;
+    -hw_im2col)   IM2COL_MODE="hw_im2col"   ;;
+    #-------------------------------------------------------------------------
     -hw_lab3)    HW_CONFIG="hw_lab3";    HW_CONFIG_FULL="$HW_CONFIG_LAB3"   ;;
     -hw_g2)      HW_CONFIG="hw_g2";      HW_CONFIG_FULL="$HW_CONFIG_G2"     ;;
 
@@ -406,6 +440,13 @@ while [ $# -ne 0 ] ; do
     -hw_g2_dse6) HW_CONFIG="hw_g2_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE6";;
     -hw_g2_dse7) HW_CONFIG="hw_g2_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE7";;
     -hw_g2_dse8) HW_CONFIG="hw_g2_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE8";;
+
+    -hw_fg_dse1) HW_CONFIG="hw_fg_dse1"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE1";;
+    -hw_fg_dse2) HW_CONFIG="hw_fg_dse2"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE2";;
+    -hw_fg_dse3) HW_CONFIG="hw_fg_dse3"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE3";;
+    -hw_fg_dse4) HW_CONFIG="hw_fg_dse4"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE4";;
+    -hw_fg_dse5) HW_CONFIG="hw_fg_dse5"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE5";;
+    -hw_fg_dse6) HW_CONFIG="hw_fg_dse6"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE6";;
     #-------------------------------------------------------------------------
     -noisy)       IS_NOISY=1    ;;
     -verbose)     IS_VERBOSE=1  ;;
@@ -449,6 +490,10 @@ while [ $# -ne 0 ] ; do
     lab3_orig_tiler) runfiresim "$arg" "$FSIM_RT_LAB3_ORIG" ;;
     lab3_fsm_tiler)  runfiresim "$arg" "$FSIM_RT_LAB3_FSM" ;;
     lab3_hw_tiler)   runfiresim "$arg" "$FSIM_RT_LAB3_HW" ;;
+    orig_tiler_gemm) runfiresim "$arg" "$FSIM_RT_ORIG_GEMM" ;;
+    fsm_tiler_gemm)  runfiresim "$arg" "$FSIM_RT_FSM_GEMM" ;;
+    hw_tiler_gemm)   runfiresim "$arg" "$FSIM_RT_HW_GEMM" ;;
+    fg4_tiler_gemm)  runfiresim "$arg" "$FSIM_RT_FG4_GEMM" ;;
     #-------------------------------------------------------------------------
     *) err "invalid option: $arg" ;;
   esac

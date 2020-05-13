@@ -96,12 +96,15 @@ class ScratchpadWriteIO(val n: Int, val w: Int, val mask_len: Int) extends Bundl
   val data = Output(UInt(w.W))
 }
 
-class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends Module {
-  // This is essentially a pipelined SRAM with the ability to stall pipeline stages
-
+class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) 
+  extends Module {
+  // This is essentially a pipelined SRAM with the ability to 
+  // stall pipeline stages
   require(w % aligned_to == 0 || w < aligned_to)
-  val mask_len = (w / (aligned_to * 8)) max 1 // How many mask bits are there?
-  val mask_elem = UInt((w min (aligned_to * 8)).W) // What datatype does each mask bit correspond to?
+  // How many mask bits are there?
+  val mask_len = (w / (aligned_to * 8)) max 1 
+  // What datatype does each mask bit correspond to?
+  val mask_elem = UInt((w min (aligned_to * 8)).W) 
 
   val io = IO(new Bundle {
     val read = Flipped(new ScratchpadReadIO(n, w))
@@ -113,9 +116,11 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
 
   when (io.write.en) {
     if (aligned_to >= w)
-      mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)))
+      mem.write(io.write.addr, 
+        io.write.data.asTypeOf(Vec(mask_len, mask_elem)))
     else
-      mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
+      mem.write(io.write.addr, 
+        io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
   }
 
   val raddr = io.read.req.bits.addr
@@ -123,13 +128,15 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
   val rdata = mem.read(raddr, ren).asUInt()
   val fromDMA = io.read.req.bits.fromDMA
 
-  // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
+  // Make a queue which buffers the result of an SRAM read if it 
+  // can't immediately be consumed
   val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.data := rdata
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
-  val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
+  val q_will_be_empty = 
+    (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
   io.read.req.ready := q_will_be_empty
 
   // Build the rest of the resp pipeline
@@ -182,15 +189,19 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
 
       // SRAM ports
       val srams = new Bundle {
-        val read = Flipped(Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, spad_w)))
-        val write = Flipped(Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, spad_w, (spad_w / (aligned_to * 8)) max 1)))
+        val read = Flipped(Vec(sp_banks, new ScratchpadReadIO(
+          sp_bank_entries, spad_w)))
+        val write = Flipped(Vec(sp_banks, new ScratchpadWriteIO(
+          sp_bank_entries, spad_w, (spad_w / (aligned_to * 8)) max 1)))
       }
 
       // Accumulator ports
-      // val acc = new AccumulatorMemIO(acc_bank_entries, Vec(meshColumns, Vec(tileColumns, accType)), Vec(meshColumns, Vec(tileColumns, inputType)))
       val acc = new Bundle {
-        val read = Flipped(Vec(acc_banks, new AccumulatorReadIO(acc_bank_entries, log2Up(accType.getWidth), Vec(meshColumns, Vec(tileColumns, inputType)))))
-        val write = Flipped(Vec(acc_banks, new AccumulatorWriteIO(acc_bank_entries, Vec(meshColumns, Vec(tileColumns, accType)))))
+        val read = Flipped(Vec(acc_banks, new AccumulatorReadIO(
+          acc_bank_entries, log2Up(accType.getWidth), 
+          Vec(meshColumns, Vec(tileColumns, inputType)))))
+        val write = Flipped(Vec(acc_banks, new AccumulatorWriteIO(
+          acc_bank_entries, Vec(meshColumns, Vec(tileColumns, accType)))))
       }
 
       // TLB ports
@@ -350,9 +361,13 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         val ex_read_req = io.acc.read(i).req
         val exread = ex_read_req.valid
 
-        // TODO we tie the write dispatch queue's, and write issue queue's, ready and valid signals together here
-        val dmawrite = write_dispatch_q.valid && write_issue_q.io.enq.ready &&
-          write_dispatch_q.bits.laddr.is_acc_addr && write_dispatch_q.bits.laddr.acc_bank() === i.U
+        // TODO we tie the write dispatch queue's, and write issue queue's, 
+        // ready and valid signals together here
+        val dmawrite = 
+          write_dispatch_q.valid && 
+          write_issue_q.io.enq.ready &&
+          write_dispatch_q.bits.laddr.is_acc_addr && 
+          write_dispatch_q.bits.laddr.acc_bank() === i.U
 
         bio.read.req.valid := exread || dmawrite
         bio.read.req.bits.shift := ex_read_req.bits.shift
@@ -364,7 +379,8 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         when (exread) {
           bio.read.req.bits.addr := ex_read_req.bits.addr
           bio.read.req.bits.fromDMA := false.B
-        }.elsewhen (dmawrite) {
+        }
+        .elsewhen (dmawrite) {
           bio.read.req.bits.addr := write_dispatch_q.bits.laddr.acc_row()
           bio.read.req.bits.fromDMA := true.B
 
@@ -379,19 +395,29 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         }
 
         val ex_read_resp = io.acc.read(i).resp
-        val dma_resp_ready = writer.module.io.req.ready &&
-          write_issue_q.io.deq.bits.laddr.is_acc_addr && write_issue_q.io.deq.bits.laddr.acc_bank() === i.U // I believe we don't need to check that write_issue_q is valid here, because if the accumulator bank's resp is valid, then that means that the write_issue_q's deq should also be valid
+        // I believe we don't need to check that write_issue_q is valid here, 
+        // because if the accumulator bank's resp is valid, then that means 
+        // that the write_issue_q's deq should also be valid
+        val dma_resp_ready = 
+          writer.module.io.req.ready &&
+          write_issue_q.io.deq.bits.laddr.is_acc_addr && 
+          write_issue_q.io.deq.bits.laddr.acc_bank() === i.U 
 
-        bio.read.resp.ready := Mux(bio.read.resp.bits.fromDMA, dma_resp_ready, ex_read_resp.ready)
-        ex_read_resp.valid := bio.read.resp.valid // TODO should we AND this with fromDMA?
+        bio.read.resp.ready := Mux(bio.read.resp.bits.fromDMA, 
+                                   dma_resp_ready, 
+                                   ex_read_resp.ready)
+        // TODO should we AND this with fromDMA?
+        ex_read_resp.valid := bio.read.resp.valid
         ex_read_resp.bits := bio.read.resp.bits
       }
 
       // Writing to the accumulator banks
       bank_ios.zipWithIndex.foreach { case (bio, i) =>
         val exwrite = io.acc.write(i).en
-        val dmaread = reader.module.io.resp.valid &&
-          reader.module.io.resp.bits.is_acc && reader.module.io.resp.bits.addr.asTypeOf(local_addr_t).acc_bank() === i.U
+        val dmaread = 
+          reader.module.io.resp.valid &&
+          reader.module.io.resp.bits.is_acc && 
+          reader.module.io.resp.bits.addr.asTypeOf(local_addr_t).acc_bank() === i.U
 
         bio.write.en := exwrite || dmaread
 
@@ -399,19 +425,25 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.write.addr := io.acc.write(i).addr
           bio.write.data := io.acc.write(i).data
           bio.write.acc := io.acc.write(i).acc
-          bio.write.mask := io.acc.write(i).mask // TODO add wmask to AccumulatorMem as well, so that we support non-aligned accesses
+          // TODO add wmask to AccumulatorMem as well, so that we support 
+          //      non-aligned accesses
+          bio.write.mask := io.acc.write(i).mask 
         }.elsewhen (dmaread) {
           bio.write.addr := reader.module.io.resp.bits.addr
           bio.write.data := reader.module.io.resp.bits.data.asTypeOf(acc_row_t)
           bio.write.acc := false.B
-          bio.write.mask := reader.module.io.resp.bits.mask // TODO add wmask to AccumulatorMem as well, so that we support non-aligned accesses
-
-          reader.module.io.resp.ready := true.B // TODO we combinationally couple valid and ready signals
+          // TODO add wmask to AccumulatorMem as well, so that we support 
+          //      non-aligned accesses
+          bio.write.mask := reader.module.io.resp.bits.mask 
+          // TODO we combinationally couple valid and ready signals
+          reader.module.io.resp.ready := true.B 
         }.otherwise {
           bio.write.addr := DontCare
           bio.write.data := DontCare
           bio.write.acc := DontCare
-          bio.write.mask := DontCare // TODO add wmask to AccumulatorMem as well, so that we support non-aligned accesses
+          // TODO add wmask to AccumulatorMem as well, so that we support 
+          //      non-aligned accesses
+          bio.write.mask := DontCare 
         }
       }
     }

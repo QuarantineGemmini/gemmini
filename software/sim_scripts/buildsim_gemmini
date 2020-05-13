@@ -39,6 +39,14 @@ HW_CONFIG_G2_DSE6=Gemmini2dim32sp64acc16bus128
 HW_CONFIG_G2_DSE7=Gemmini2dim16sp16acc64bus128
 HW_CONFIG_G2_DSE8=Gemmini2dim32sp16acc64bus128
 
+# FgGemmini2 DSEs
+HW_CONFIG_FG_DSE1=FgGemmini2dim32fg32
+HW_CONFIG_FG_DSE2=FgGemmini2dim32fg16
+HW_CONFIG_FG_DSE3=FgGemmini2dim32fg8
+HW_CONFIG_FG_DSE4=FgGemmini2dim16fg16
+HW_CONFIG_FG_DSE5=FgGemmini2dim16fg8
+HW_CONFIG_FG_DSE6=FgGemmini2dim16fg4
+
 # firesim configs
 FSIM_BUILD_CONFIG="$FCFG_DIR/config_build.ini"
 FSIM_RECIPES_CONFIG="$FCFG_DIR/config_build_recipes.ini"
@@ -62,8 +70,9 @@ VCS_PROFILE=0
 
 # this PRINTF pattern only prints the ROB accept/issue/final events
 #export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
-#export ENABLE_PRINTF_PATTERN=''
-export ENABLE_PRINTF_PATTERN='.*G2-PERF'
+#export ENABLE_PRINTF_PATTERN='.*G2-PERF'
+#export ENABLE_PRINTF_PATTERN='.*(G2-PERF|\"cycle.*entry.*(accept|issue|final)\[).*'
+export ENABLE_PRINTF_PATTERN=''
 
 # default hardware config (vcs,verilator)
 HW_CONFIG="hw_lab3"
@@ -106,6 +115,13 @@ display_usage() {
   -hw_g2_dse6   --> build $HW_CONFIG_G2_DSE6
   -hw_g2_dse7   --> build $HW_CONFIG_G2_DSE7
   -hw_g2_dse8   --> build $HW_CONFIG_G2_DSE8
+
+  -hw_fg_dse1   --> build $HW_CONFIG_FG_DSE1
+  -hw_fg_dse2   --> build $HW_CONFIG_FG_DSE2
+  -hw_fg_dse3   --> build $HW_CONFIG_FG_DSE3
+  -hw_fg_dse4   --> build $HW_CONFIG_FG_DSE4
+  -hw_fg_dse5   --> build $HW_CONFIG_FG_DSE5
+  -hw_fg_dse6   --> build $HW_CONFIG_FG_DSE6
   
   verilator options 
   -----------------
@@ -265,6 +281,13 @@ while [ $# -ne 0 ] ; do
     -hw_g2_dse6) HW_CONFIG="hw_g2_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE6";;
     -hw_g2_dse7) HW_CONFIG="hw_g2_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE7";;
     -hw_g2_dse8) HW_CONFIG="hw_g2_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE8";;
+
+    -hw_fg_dse1) HW_CONFIG="hw_fg_dse1"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE1";;
+    -hw_fg_dse2) HW_CONFIG="hw_fg_dse2"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE2";;
+    -hw_fg_dse3) HW_CONFIG="hw_fg_dse3"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE3";;
+    -hw_fg_dse4) HW_CONFIG="hw_fg_dse4"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE4";;
+    -hw_fg_dse5) HW_CONFIG="hw_fg_dse5"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE5";;
+    -hw_fg_dse6) HW_CONFIG="hw_fg_dse6"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE6";;
     #------------------------------------------------------------------------
     -vl8_threads)
       if [ $# -eq 0 ] ; then err "-vl8_threads requires arg. see usage"; fi
