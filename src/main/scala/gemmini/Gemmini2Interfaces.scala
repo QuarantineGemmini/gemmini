@@ -29,7 +29,7 @@ class TilerCmdAddrCfg(implicit p: Parameters) extends CoreBundle {
   val in_cols     = UInt(32.W)
   val stride      = UInt(16.W)
   val padding     = UInt(8.W)
-  val in_channels = UInt(8.W)
+  val in_channels = UInt(16.W)
   val kernel_size = UInt(16.W)
 }
 

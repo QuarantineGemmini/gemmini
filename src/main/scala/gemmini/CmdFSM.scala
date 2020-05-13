@@ -92,6 +92,7 @@ class CmdFSM(OTYPE_BITS_IDX: Int)
   val (s_LISTENING :: s_EX_PENDING Nil) = Enum(2)
   val state = RegInit(s_LISTENING)
 
+  // gemmini implicitly resets all state after each compute() insn
   def reset_and_listen(check: Boolean): Unit = {
     if(check) {
       assert(config_ex_valid)
@@ -190,8 +191,8 @@ class CmdFSM(OTYPE_BITS_IDX: Int)
           addr_a_cfg.in_cols     := rs1(31,0)
           addr_a_cfg.stride      := rs2(63,48)
           addr_a_cfg.padding     := rs2(47,40)
-          addr_a_cfg.in_channels := rs2(39,32)
-          addr_a_cfg.kernel_size := rs2(31,16)
+          addr_a_cfg.in_channels := rs2(39,24)
+          addr_a_cfg.kernel_size := rs2(23,8)
           addr_a_cfg.mode        := rs2(0)
         }
         .elsewhen (funct === CONFIG_ADDR_MODE_B_CMD) {
@@ -199,8 +200,8 @@ class CmdFSM(OTYPE_BITS_IDX: Int)
           addr_b_cfg.in_cols     := rs1(31,0)
           addr_b_cfg.stride      := rs2(63,48)
           addr_b_cfg.padding     := rs2(47,40)
-          addr_b_cfg.in_channels := rs2(39,32)
-          addr_b_cfg.kernel_size := rs2(31,16)
+          addr_b_cfg.in_channels := rs2(39,24)
+          addr_b_cfg.kernel_size := rs2(23,8)
           addr_b_cfg.mode        := rs2(0)
         }
         .elsewhen (funct === CONFIG_ADDR_MODE_C_CMD) {
@@ -208,8 +209,8 @@ class CmdFSM(OTYPE_BITS_IDX: Int)
           addr_c_cfg.in_cols     := rs1(31,0)
           addr_c_cfg.stride      := rs2(63,48)
           addr_c_cfg.padding     := rs2(47,40)
-          addr_c_cfg.in_channels := rs2(39,32)
-          addr_c_cfg.kernel_size := rs2(31,16)
+          addr_c_cfg.in_channels := rs2(39,24)
+          addr_c_cfg.kernel_size := rs2(23,8)
           addr_c_cfg.mode        := rs2(0)
         }
         .elsewhen (funct === CONFIG_ADDR_MODE_D_CMD) {
@@ -217,8 +218,8 @@ class CmdFSM(OTYPE_BITS_IDX: Int)
           addr_d_cfg.in_cols     := rs1(31,0)
           addr_d_cfg.stride      := rs2(63,48)
           addr_d_cfg.padding     := rs2(47,40)
-          addr_d_cfg.in_channels := rs2(39,32)
-          addr_d_cfg.kernel_size := rs2(31,16)
+          addr_d_cfg.in_channels := rs2(39,24)
+          addr_d_cfg.kernel_size := rs2(23,8)
           addr_d_cfg.mode        := rs2(0)
         }
         .otherwise {
