@@ -105,18 +105,11 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   io.read(0).req.cols := a_lrange.cols
 
   // get data back 2 cycles later
-  val conflict_buf1  = ShiftRegister(bank_conflict, SP_RD_LATENCY+1)
-  val conflict_buf   = ShiftRegister(bank_conflict, SP_RD_LATENCY)
-  val a_read_en_buf  = ShiftRegister(a_read_en, SP_RD_LATENCY)
-
   // possibly buffer 1 extra cycle if b_data had a bank-conflict
-  val a_zero_data = WireInit(0.asTypeOf(Vec(DIM, inputType)))
-  val a_data      = Mux(a_read_en_buf, 
-                        io.read(0).resp.data.asTypeOf(Vec(DIM, inputType)),
-                        a_zero_data)
-  val a_data_buf  = RegNext(a_data)
-  val a_data_out  = Mux(conflict_buf1, a_data_buf, 
-                     Mux(conflict_buf, a_zero_data, a_data))
+  val conflict_buf1 = ShiftRegister(bank_conflict, SP_RD_LATENCY+1)
+  val a_data     = io.read(0).resp.data.asTypeOf(Vec(DIM, inputType))
+  val a_data_buf = RegNext(a_data)
+  val a_data_out = Mux(conflict_buf1, a_data_buf, a_data)
 
   //----------------------------------------
   // b_data input
@@ -131,12 +124,7 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
 
   // get data back 2 cycles later
   val b_data_fire_buf = ShiftRegister(b_data_fire, SP_RD_LATENCY)
-  val b_read_en_buf   = ShiftRegister(b_read_en, SP_RD_LATENCY)
-
-  val b_zero_data = WireInit(0.asTypeOf(Vec(DIM, inputType)))
-  val b_data      = Mux(b_read_en_buf, 
-                        io.read(1).resp.data.asTypeOf(Vec(DIM, inputType)),
-                        b_zero_data)
+  val b_data = io.read(1).resp.data.asTypeOf(Vec(DIM, inputType))
 
   //=========================================================================
   // global FSM
@@ -231,7 +219,7 @@ class ExecuteController[T <: Data](config: GemminiArrayConfig[T])
   // write next command for meshq input datapath to handle
   //------------------------------------------------------------------------
   mesh_ctrl.in_valid    := (state === s_PRELOAD || state === s_MUL) ||
-                           (state === s_MUL_PRE && b_data_fire_buf)
+                           (state === s_MUL_PRE && b_data_fire)
   mesh_ctrl.has_preload := (state === s_PRELOAD) || (state === s_MUL_PRE)
   mesh_ctrl.rob_id      := cmd.bits(preload_idx).rob_id
   mesh_ctrl.c_lrange    := c_lrange

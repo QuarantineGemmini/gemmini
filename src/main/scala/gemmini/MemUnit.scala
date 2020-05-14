@@ -314,8 +314,7 @@ class MemUnitModuleImp[T <: Data: Arithmetic](outer: MemUnit[T])
     // send the accumulator read data or queued data to dma-store if ready
     when (dma_rd_q.io.deq.valid) {
       store.module.io.req <> dma_rd_q.io.deq
-    } 
-    .otherwise {
+    } .otherwise {
       store.module.io.req.valid       := dma_rd_en_buf
       store.module.io.req.bits.data   := dma_rd_data
       store.module.io.req.bits.vaddr  := dma_rd_vaddr_buf
