@@ -1,99 +1,120 @@
-
+//===========================================================================
+// - this module is the level of hierarchy between the fine-grained execute
+// controller and the fine-grained meshes themselves
+//===========================================================================
 package gemmini
 
+import scala.math.{pow}
 import chisel3._
 import chisel3.util._
-import chisel3.experimental._
 import freechips.rocketchip.config._
 import freechips.rocketchip.tile._
+import gemmini.Util._
+import GemminiISA._
 
-// A Grid is a 2D array of Tile modules with registers in between each 
-// tile and registers from the bottom row and rightmost column of 
-// tiles to the Grid outputs.
-// @param width
-// @param tileRows
-// @param tileCols
-// @param meshRows
-// @param meshCols
-class Mesh[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
-  (implicit val p: Parameters) extends Module {
+class MeshQueueTag[T <: Data](val config: GemminiArrayConfig[T])
+  (implicit val p: Parameters) extends Bundle with TagQueueTag {
   import config._
-  //=========================================================================
-  // module interface
-  //=========================================================================
-  val io = IO(new Bundle {
-    val in_a    = Input(Vec(meshRows, Vec(tileRows, inputType)))
-    val in_b    = Input(Vec(meshCols, Vec(tileCols, inputType)))
-    val in_d    = Input(Vec(meshCols, Vec(tileCols, inputType)))
-    val in_ctrl = Input(Vec(meshCols, Vec(tileCols, new PEControl)))
-    val out_b   = Output(Vec(meshCols, Vec(tileCols, outputType)))
-    val out_c   = Output(Vec(meshCols, Vec(tileCols, outputType)))
-    val in_valid  = Input(Vec(meshCols, Vec(tileCols, Bool())))
-    val out_valid = Output(Vec(meshCols, Vec(tileCols, Bool())))
-  })
+  val do_writeback = Bool()
+  val rob_id = UInt(ROB_ENTRIES_IDX.W)
+  val wb_lrange = new LocalRange(config)
 
-  //=========================================================================
-  // body
-  //=========================================================================
-  // mesh(r)(c) => Tile at row r, column c
-  val mesh: Seq[Seq[Tile[T]]] = Seq.fill(meshRows, meshCols)(
-    Module(new Tile(inputType, outputType, accType, tileRows, tileCols)))
-  val meshT = mesh.transpose
-
-  // Chain tile_a_out -> tile_a_in (pipeline a across each row)
-  // TODO clock-gate A signals with in_garbage
-  for (r <- 0 until meshRows) {
-    mesh(r).foldLeft(io.in_a(r)) {
-      case (in_a, tile) =>
-        tile.io.in_a := RegNext(in_a)
-        tile.io.out_a
-    }
-  }
-  // Chain tile_out_b -> tile_b_in (pipeline b across each column)
-  for (c <- 0 until meshCols) {
-    meshT(c).foldLeft((io.in_b(c), io.in_valid(c))) {
-      case ((in_b, valid), tile) =>
-        tile.io.in_b := RegEnable(in_b, valid.head)
-        (tile.io.out_b, tile.io.out_valid)
-    }
-  }
-  // Chain tile_out -> tile_propag (pipeline output across each column)
-  for (c <- 0 until meshCols) {
-    meshT(c).foldLeft((io.in_d(c), io.in_valid(c))) {
-      case ((in_propag, valid), tile) =>
-        tile.io.in_d := RegEnable(in_propag, valid.head)
-        (tile.io.out_c, tile.io.out_valid)
-    }
-  }
-  // Chain ctrl signals (pipeline across each column)
-  for (c <- 0 until meshCols) {
-    meshT(c).foldLeft((io.in_ctrl(c), io.in_valid(c))) {
-      case ((in_ctrl, valid), tile) =>
-        (tile.io.in_ctrl, in_ctrl, valid).zipped.foreach { 
-          case (tile_ctrl, ctrl, v) =>
-            tile_ctrl.propagate := RegEnable(ctrl.propagate, v)
-        }
-        (tile.io.out_ctrl, tile.io.out_valid)
-    }
-  }
-  // Chain in_valid (pipeline across each column)
-  for (c <- 0 until meshCols) {
-    meshT(c).foldLeft(io.in_valid(c)) {
-      case (in_v, tile) =>
-        tile.io.in_valid := RegNext(in_v)
-        tile.io.out_valid
-    }
-  }
-  // Capture out_vec and out_ctrl_vec (connect IO to bottom row of mesh)
-  // (The only reason we have so many zips is because Scala doesn't 
-  // provide a zipped function for Tuple4)
-  for (((b, c), (v, tile)) <- ((io.out_b zip io.out_c), 
-                               (io.out_valid zip mesh.last)).zipped) {
-    // TODO we pipelined this to make physical design easier. 
-    //  Consider removing these if possible
-    // TODO shouldn't we clock-gate these signals with "garbage" as well?
-    b := RegNext(tile.io.out_b)
-    c := RegNext(tile.io.out_c)
-    v := RegNext(tile.io.out_valid)
+  override def make_this_garbage(dummy: Int = 0): Unit = {
+    do_writeback := false.B
+    wb_lrange.garbage := true.B
   }
 }
+
+class Mesh[T <: Data : Arithmetic](val config: GemminiArrayConfig[T])
+  (implicit val p: Parameters)
+  extends Module with HasCoreParameters {
+    import config._
+
+  //========================================================================
+  // I/O interface
+  //========================================================================
+  val io = IO(new Bundle {
+    val in_valid     = Input(Bool())
+    val a            = Input(Vec(DIM, inputType))
+    val b            = Input(Vec(DIM, inputType))
+    val flipped      = Input(Bool())
+    val tag_in       = Flipped(Decoupled(new MeshQueueTag(config)))
+    val out_valid    = Output(Bool())
+    val out          = Output(Vec(DIM, accType))
+    val tag_out      = Output(new Bundle {
+      val bits   = new MeshQueueTag(config)
+      val commit = Bool()
+    })
+    val busy = Output(Bool())
+  })
+
+  //==========================================================================
+  // flipping double-buffer logic
+  //==========================================================================
+  val b_idx   = RegInit(0.U(2.W))
+  val b_idx_n = Mux(io.in_valid && io.flipped, 
+                  Mux(b_idx === 2.U, 0.U, b_idx + 1.U), b_idx)
+  b_idx := b_idx_n
+
+  val b_idx_fast_n = Mux(b_idx_n === 2.U, 0.U, b_idx_n + 1.U)
+
+  //=========================================================================
+  // Create inner Mesh
+  //=========================================================================
+  val mesh = Module(new MeshInner(config))
+
+  for(i <- 0 until DIM) {
+    // slow path
+    mesh.io.in_valid(i)      := ShiftRegister(io.in_valid, i)
+    mesh.io.in_a(i)          := ShiftRegister(io.a(DIM-1-i), i)
+    mesh.io.in_b_idx(i)      := ShiftRegister(b_idx_n, i)
+    // fast path
+    mesh.io.in_b_fast(i)     := ShiftRegister(io.b(i), i)
+    mesh.io.in_b_idx_fast(i) := ShiftRegister(b_idx_fast_n, i)
+  }
+
+  //=========================================================================
+  // mesh->ex-ctrller output
+  //=========================================================================
+  io.out_valid := ShiftRegister(mesh.io.out_valid(0), DIM-1)
+  for(i <- 0 until DIM) {
+    io.out(i) := ShiftRegister(mesh.io.out_c(i), DIM-1-i)
+  }
+
+  //=========================================================================
+  // Tags
+  //=========================================================================
+  // tag is written to on the very last cycle of input-data
+  val tag_queue = Queue(io.tag_in, 5)
+  tag_queue.ready := false.B
+
+  // this current tag allows delaying the written tag_in by 1 matmul, since
+  // we load the tag for the preload, and have to write the tag out after
+  // the FOLLOWING compute
+  val garbage_tag = Wire(UDValid(new MeshQueueTag(config)))
+  garbage_tag.pop()
+  garbage_tag.bits := DontCare
+  garbage_tag.bits.make_this_garbage()
+  val current_tag = RegInit(garbage_tag)
+
+  // we are busy if we still have unfinished, valid tags
+  io.busy := tag_queue.valid || 
+             (current_tag.valid && current_tag.bits.do_writeback)
+
+  val output_counter = RegInit(0.U(DIM_IDX.W))
+  val is_last_row_output = (output_counter === (DIM-1).U)
+  output_counter := wrappingAdd(output_counter, io.out_valid, DIM)
+
+  io.tag_out.commit := false.B
+  io.tag_out.bits := current_tag.bits
+  io.tag_out.bits.wb_lrange.row_start := 
+                      current_tag.bits.wb_lrange.row_start + output_counter
+
+  when (is_last_row_output && io.out_valid) {
+    io.tag_out.commit := current_tag.valid
+    tag_queue.ready := true.B
+    current_tag.push(tag_queue.bits)
+    assert(tag_queue.fire(), "mesh missing next tag!")
+  }
+}
+

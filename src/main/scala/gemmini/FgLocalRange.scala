@@ -21,6 +21,9 @@ class FgLocalRange[T <: Data](val config: FgGemminiArrayConfig[T])
   val row_start = UInt(15.W)
   val col_start = UInt(15.W)
 
+  //---------------------------------------------------------------
+  // methods
+  //---------------------------------------------------------------
   def total_read_bytes(dummy: Int = 0) = rows * cols * ITYPE_BYTES.U
   def total_write_bytes(dummy: Int = 0) 
     = rows * cols * Mux(is_acc, OTYPE_BYTES.U, ITYPE_BYTES.U)

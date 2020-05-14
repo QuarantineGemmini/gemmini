@@ -35,20 +35,42 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   accType: T,
   headerFileName: String = "gemmini_params.h"
 ) {
+  //==========================================================================
+  // deprecate the following
+  //==========================================================================
   val meshCols = meshColumns
   val tileCols = tileColumns
 
-  //==========================================================================
-  // sanity check mesh size
-  //==========================================================================
   def BLOCK_ROWS = tileRows * meshRows
   def BLOCK_COLS = tileColumns * meshColumns
   require(BLOCK_ROWS == BLOCK_COLS, "BLOCK_ROWS != BLOCK_COLS!")
 
-  def DIM             = BLOCK_ROWS
-  def LOG2_DIM        = log2Up(DIM)
-  def LOG2_DIM_COUNT  = log2Up(DIM + 1)
-  require(DIM >= 2, "the systolic array must have DIM of at least 2")
+  //==========================================================================
+  // mesh size/fg-mesh size
+  //==========================================================================
+  def DIM     = dim
+  def DIM_IDX = log2Up(DIM)
+  def DIM_CTR = log2Up(DIM+1)
+  require(DIM >= 2)
+
+  //==========================================================================
+  // ROB tag entries
+  //==========================================================================
+  def ROB_ENTRIES     = rob_entries
+  def ROB_ENTRIES_IDX = log2Up(rob_entries)
+
+  //==========================================================================
+  // input/output element sizes
+  //==========================================================================
+  def ITYPE_BITS   = inputType.getWidth
+  def ITYPE_BYTES  = (inputType.getWidth+7) / 8
+  def OTYPE_BITS   = accType.getWidth
+  def OTYPE_BYTES  = (accType.getWidth+7) / 8
+
+  def ITYPE_BITS_IDX  = log2Up(ITYPE_BITS)
+  def OTYPE_BITS_IDX  = log2Up(OTYPE_BITS)
+  def ITYPE_BYTES_IDX = log2Ceil(ITYPE_BYTES) // can be 0
+  def OTYPE_BYTES_IDX = log2Ceil(OTYPE_BYTES) // can be 0
 
   //==========================================================================
   // gemmini1 hardware-specific global constants
@@ -79,24 +101,8 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
   def tagWidth = 32
 
   //==========================================================================
-  // gemmini2 miscellaneous constants (some redundant with above)
-  //==========================================================================
-  def ROB_ENTRIES      = rob_entries
-  def LOG2_ROB_ENTRIES = log2Up(rob_entries)
-
-  //==========================================================================
   // gemmini2 hardware-specific compile-time global constants
   //==========================================================================
-
-  def ITYPE_BITS       = inputType.getWidth
-  def ITYPE_BYTES      = (inputType.getWidth+7) / 8
-  def LOG2_ITYPE_BYTES = if(ITYPE_BYTES <= 1) 0 else log2Up(ITYPE_BYTES)
-
-  def OTYPE_BITS       = accType.getWidth
-  def LOG2_OTYPE_BITS  = log2Up(OTYPE_BITS)
-  def OTYPE_BYTES      = (accType.getWidth+7) / 8
-  def LOG2_OTYPE_BYTES = if(OTYPE_BYTES <= 1) 0 else log2Up(OTYPE_BYTES)
-
   def SP_BANKS        = sp_banks
   def SP_BANK_ROWS    = sp_bank_entries
   def SP_ROWS         = SP_BANKS * SP_BANK_ROWS
@@ -140,35 +146,35 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
 
   def BYTE_ROWS_PER_TILE = DIM
 
-  //==========================================================================
-  // other stuff
-  //==========================================================================
-  // TODO remove these requirements
-  require(isPow2(sp_bank_entries), 
-    "each SRAM bank must have a power-of-2 rows, " + 
-    "to simplify address calculations") 
-  require(sp_bank_entries % DIM == 0, 
-    "the number of rows in a bank must be a multiple of " +
-    "the dimensions of the systolic array")
-  require(acc_bank_entries % DIM == 0, 
-    "the number of rows in an accumulator bank must be a " +
-    "multiple of the dimensions of the systolic array")
+  require(isPow2(sp_bank_entries) 
+  require(sp_bank_entries % DIM == 0)
+  require(acc_bank_entries % DIM == 0)
 
+  //==========================================================================
+  // header file generation
+  //==========================================================================
   def generateHeader(guard: String = "GEMMINI_PARAMS_H"): String = {
     // Returns the (min,max) values for a dataType
     def limitsOfDataType(dataType: Data): (String, String) = {
-      assert(dataType.getWidth <= 32) // Above 32 bits, we need to append UL to the number, which isn't done yet
+      // >32 bits, we need to append UL to the number, which isn't done yet
+      assert(dataType.getWidth <= 32) 
 
       dataType match {
         case dt: UInt => ("0", BigInt(2).pow(dt.getWidth).-(1).toString)
-        case dt: SInt => ("-" + BigInt(2).pow(dt.getWidth - 1).toString, BigInt(2).pow(dt.getWidth - 1).-(1).toString)
+        case dt: SInt => ("-" + BigInt(2).pow(dt.getWidth - 1).toString, 
+                                BigInt(2).pow(dt.getWidth - 1).-(1).toString)
         case dt: Float =>
           (dt.expWidth, dt.sigWidth) match {
-            case (8, 24) => (scala.Float.MinValue.toString, scala.Float.MaxValue.toString)
-            case (11, 53) => (scala.Double.MinValue.toString, scala.Double.MaxValue.toString)
-            case _ => throw new IllegalArgumentException(s"Only single- and double-precision IEEE754 floating point types are currently supported")
+            case (8, 24) => (scala.Float.MinValue.toString, 
+                             scala.Float.MaxValue.toString)
+            case (11, 53) => (scala.Double.MinValue.toString, 
+                              scala.Double.MaxValue.toString)
+            case _ => throw new IllegalArgumentException(
+              s"Only single- and double-precision IEEE754 floating point " +
+              s"types are currently supported")
           }
-        case _ => throw new IllegalArgumentException(s"Data type $dataType is unknown")
+        case _ => throw new IllegalArgumentException(
+                    s"Data type $dataType is unknown")
       }
     }
 
@@ -180,9 +186,12 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
           (dt.expWidth, dt.sigWidth) match {
             case (8, 24) => "float"
             case (11, 53) => "double"
-            case _ => throw new IllegalArgumentException(s"Only single- and double-precision IEEE754 floating point types are currently supported")
+            case _ => throw new IllegalArgumentException(
+              s"Only single- and double-precision " +
+              s"IEEE754 floating point types are currently supported")
           }
-        case _ => throw new IllegalArgumentException(s"Data type $dataType is unknown")
+        case _ => throw new IllegalArgumentException(
+                    s"Data type $dataType is unknown")
       }
     }
 
@@ -191,7 +200,8 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
         case dt: UInt => "uint64_t"
         case dt: SInt => "int64_t"
         case dt: Float => "double"
-        case _ => throw new IllegalArgumentException(s"Data type $dataType is unknown")
+        case _ => throw new IllegalArgumentException(
+                    s"Data type $dataType is unknown")
       }
     }
 
@@ -219,13 +229,15 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
     header ++= s"#define MAX_BYTES $max_bytes\n"
 
     if (tileColumns*meshColumns*inputType.getWidth/8 <= max_bytes) {
-      header ++= s"#define MAX_BLOCK_LEN (MAX_BYTES/(DIM*${inputType.getWidth/8}))\n"
+      header ++= s"#define MAX_BLOCK_LEN " +
+                 s"(MAX_BYTES/(DIM*${inputType.getWidth/8}))\n"
     } else {
       header ++= s"#define MAX_BLOCK_LEN 1\n"
     }
 
     if (tileColumns*meshColumns*accType.getWidth/8 <= max_bytes) {
-      header ++= s"#define MAX_BLOCK_LEN_ACC (MAX_BYTES/(DIM*${accType.getWidth / 8}))\n\n"
+      header ++= s"#define MAX_BLOCK_LEN_ACC " +
+                 s"(MAX_BYTES/(DIM*${accType.getWidth / 8}))\n\n"
     } else {
       header ++= s"#define MAX_BLOCK_LEN_ACC 1\n\n"
     }
@@ -242,16 +254,20 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
       header ++= "#define ELEM_T_IS_FLOAT\n\n"
     }
 
-    header ++= s"#define row_align(blocks) __attribute__((aligned(blocks*DIM*sizeof(elem_t))))\n"
-    header ++= s"#define row_align_acc(blocks) __attribute__((aligned(blocks*DIM*sizeof(acc_t))))\n\n"
+    header ++= s"#define row_align(blocks) " +
+                "__attribute__((aligned(blocks*DIM*sizeof(elem_t))))\n"
+    header ++= s"#define row_align_acc(blocks) " +
+               s"__attribute__((aligned(blocks*DIM*sizeof(acc_t))))\n\n"
 
     header ++= s"#endif // $guard"
     header.toString()
   }
 
   def headerFilePath: String = {
-    val chipyard_directory = "./generators/gemmini/software/gemmini-rocc-tests/include"
-    val project_template_directory = "./gemmini-rocc-tests/include" // Old root directory; rendered obsolete by Chipyard
+    val chipyard_directory 
+      = "./generators/gemmini/software/gemmini-rocc-tests/include"
+    // Old root directory; rendered obsolete by Chipyard
+    val project_template_directory = "./gemmini-rocc-tests/include" 
     val default_directory = "."
 
     val in_chipyard = {

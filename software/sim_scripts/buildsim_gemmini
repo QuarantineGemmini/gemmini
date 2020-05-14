@@ -71,8 +71,8 @@ VCS_PROFILE=0
 # this PRINTF pattern only prints the ROB accept/issue/final events
 #export ENABLE_PRINTF_PATTERN='.*\"cycle.*entry.*(accept|issue|final)\[.*'
 #export ENABLE_PRINTF_PATTERN='.*G2-PERF'
-#export ENABLE_PRINTF_PATTERN='.*(G2-PERF|\"cycle.*entry.*(accept|issue|final)\[).*'
-export ENABLE_PRINTF_PATTERN=''
+export ENABLE_PRINTF_PATTERN='.*(G2-PERF|\"cycle.*entry.*(accept|issue|final)\[).*'
+#export ENABLE_PRINTF_PATTERN=''
 
 # default hardware config (vcs,verilator)
 HW_CONFIG="hw_lab3"
