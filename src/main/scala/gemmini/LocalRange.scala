@@ -16,24 +16,13 @@ import GemminiISA._
 class LocalRange[T <: Data](val config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  // which local memory/bank is this data range
   val is_acc    = Bool()
   val is_accum  = Bool()
   val garbage   = Bool()
-  val rows      = UInt(32.W)
-  val row_start = UInt(32.W)
-
-  // normal-mode cols
-  val cols = UInt(DIM.W)
-
-  // im2col-mode fields
-  val is_im2col = Bool()
-  val krows     = UInt(16.U)
-  val kcols     = UInt(16.U)
-  val in_chans  = UInt(16.U)
-  val krow      = UInt(16.U)
-  val kcol      = UInt(16.U)
-  val in_chan   = UInt(16.U)
+  val matrix_id = UInt(2.W)
+  val cols      = UInt(11.W)
+  val row_start = UInt(24.W)
+  val rows      = UInt(24.W)
 
   //---------------------------------------------------------------
   // methods

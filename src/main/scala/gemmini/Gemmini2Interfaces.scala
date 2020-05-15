@@ -12,46 +12,41 @@ import freechips.rocketchip.tile._
 import GemminiISA._
 
 //===========================================================================
-// From ROB to {exec,load,store,flush} units
+// From ROB to {exec,load,store} units
 //===========================================================================
 class GemminiCmd(val ROB_ENTRIES_IDX: Int)
   (implicit p: Parameters) extends CoreBundle {
-  val cmd = new RoCCCommand
+  val funct  = UInt(7.W)
+  val rs1    = UInt(xLen.W)
+  val rs2    = UInt(xLen.W)
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }
 
 //===========================================================================
-// Per-Matrix Addressing Mode
+// Gemmini Internal Control Status Registers
 //===========================================================================
-class TilerCmdAddrCfg(implicit p: Parameters) extends CoreBundle {
-  val mode        = UInt(1.W) // AddressMode
-  val in_rows     = UInt(32.W)
-  val in_cols     = UInt(32.W)
-  val stride      = UInt(16.W)
-  val padding     = UInt(8.W)
-  val in_channels = UInt(16.W)
-  val kernel_size = UInt(16.W)
+class GemminiCSRAddr(implicit p: Parameters) extends CoreBundle {
+  val vaddr         = UInt(xLen.W)
+  val mode          = UInt(1.W)
+  val normal_stride = Input(UInt(32.W)) // normal-mode byte stride
+  val in_rows       = UInt(32.W)        // im2col-mode configs
+  val in_cols       = UInt(32.W)
+  val stride        = UInt(16.W)
+  val padding       = UInt(8.W)
+  val in_channels   = UInt(16.W)
+  val kernel_size   = UInt(16.W)
 }
 
-//===========================================================================
-// TilerController Interface (gemmini2 mode only)
-// - NOTE: all gemminis support im2col interface, even if they don't use it.
-//         this includes the fg-array implementation too!
-//===========================================================================
-class TilerCmd(OTYPE_BITS_IDX: Int)
+// TODO: change the fields in this depending on if orig_tiler or hw_tiler
+class GemminiCSR(OTYPE_BITS_IDX: Int)
   (implicit p: Parameters) extends CoreBundle {
   val m              = UInt(32.W)
   val n              = UInt(32.W)
   val k              = UInt(32.W)
-  val addr_a         = UInt(xLen.W)
-  val addr_b         = UInt(xLen.W)
-  val addr_c         = UInt(xLen.W)
-  val addr_d         = UInt(xLen.W)
-  val addr_a_cfg     = new TilerCmdAddrCfg
-  val addr_b_cfg     = new TilerCmdAddrCfg
-  val addr_c_cfg     = new TilerCmdAddrCfg
-  val addr_d_cfg     = new TilerCmdAddrCfg
-  val in_rshift      = UInt(OTYPE_BITS_IDX.W)
+  val addr_a_cfg     = new GemminiCSRAddr
+  val addr_b_cfg     = new GemminiCSRAddr
+  val addr_c_cfg     = new GemminiCSRAddr
+  val addr_d_cfg     = new GemminiCSRAddr
   val acc_rshift     = UInt(OTYPE_BITS_IDX.W)
   val relu6_lshift   = UInt(OTYPE_BITS_IDX.W)
   val activation     = UInt(2.W)

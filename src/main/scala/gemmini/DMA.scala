@@ -32,8 +32,10 @@ class DMALoadRequest[T <: Data](val config: GemminiArrayConfig[T])
 class DMALoadDataChunk[T <: Data](val config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
+  val is_acc = Bool()
+  val row    = UInt((ACC_ROWS_IDX max SP_ROWS_IDX).W)
+  val mask   = UInt(DIM.W)
   val data   = UInt(ACC_ROW_BITS.W)
-  val lrange = new LocalRange(config)
 }
 
 class DMALoad[T <: Data](
@@ -131,9 +133,9 @@ class DMALoad[T <: Data](
 class DMAStoreRequest[T <: Data](val config: GemminiArrayConfig[T])
   (implicit p: Parameters) extends CoreBundle {
   import config._
-  val data   = UInt(SP_ROW_BITS.W)
   val vaddr  = UInt(coreMaxAddrBits.W)
-  val lrange = new LocalRange(config)
+  val data   = UInt(SP_ROW_BITS.W)
+  val cols   = UInt(DIM_CTR.W) // don't support col2im output!
   val status = new MStatus
   val rob_id = UInt(ROB_ENTRIES_IDX.W)
 }

@@ -170,24 +170,17 @@ class MemUnitModuleImp[T <: Data: Arithmetic](outer: MemUnit[T])
     //--------------------------------------
     // write-datapath
     //--------------------------------------
-    val dma_wr_fire   = load.module.io.chunk.fire()
-    val dma_wr_data   = load.module.io.chunk.bits.data
-    val dma_wr_mask   = load.module.io.chunk.bits.mask
-    val dma_wr_lrange = load.module.io.chunk.bits.lrange
-    val dma_wr_row    = dma_wr_lrange.row_start_within_bank()
-    val dma_wr_bank   = dma_wr_lrange.bank_start()
+    val load_chunk    = load.module.io.chunk
+    val dma_wr_is_acc = load_chunk.bits.is_acc
+    val dma_wr_bank   = load_chunk.bits.row(SP_ROWS_IDX-1,SP_BANK_ROWS_IDX)
+    val dma_wr_row    = load_chunk.bits.row(SP_BANK_ROWS_IDX-1,0)
+    val dma_wr_mask   = load_chunk.bits.mask
+    val dma_wr_data   = load_chunk.bits.data
 
-    when (!dma_wr_lrange.is_acc) {
-      load.module.io.chunk.ready := true.B
-
-      when (dma_wr_fire) {
-        assert(!dma_rd_lrange.is_acc)
-        assert(!dma_rd_lrange.is_accum)
-        assert(!dma_rd_lrange.is_garbage)
-        assert(dma_rd_lrange.rows === 1)
-        assert(dma_rd_lrange.row_start < SP_ROWS)
-
-        // datapath into scratchpads
+    when (!dma_wr_is_acc) {
+      load_chunk.ready := true.B
+      when (load_chunk.fire()) {
+        assert(dma_wr_bank < SP_BANKS)
         banks(dma_wr_bank).io.write.en   := true.B
         banks(dma_wr_bank).io.write.row  := dma_wr_row
         banks(dma_wr_bank).io.write.mask := dma_wr_mask
@@ -225,30 +218,23 @@ class MemUnitModuleImp[T <: Data: Arithmetic](outer: MemUnit[T])
       banks(ex_wr_bank).io.write.data  := ex_wr_data
     }
 
-    val dma_wr_fire   = load.module.io.chunk.fire()
-    val dma_wr_data   = load.module.io.chunk.bits.data
-    val dma_wr_mask   = load.module.io.chunk.bits.mask
-    val dma_wr_lrange = load.module.io.chunk.bits.lrange
-    val dma_wr_row    = dma_wr_lrange.row_start_within_bank()
-    val dma_wr_bank   = dma_wr_lrange.bank_start()
+    val load_chunk    = load.module.io.chunk
+    val dma_wr_is_acc = load_chunk.bits.is_acc
+    val dma_wr_bank   = load_chunk.bits.row(ACC_ROWS_IDX-1,ACC_BANK_ROWS_IDX)
+    val dma_wr_row    = load_chunk.bits.row(ACC_BANK_ROWS_IDX-1,0)
+    val dma_wr_mask   = load_chunk.bits.mask
+    val dma_wr_data   = load_chunk.bits.data
 
-    when (dma_wr_lrange.is_acc) {
-      // execute write takes precedence over dma load to same bank
-      load.module.io.chunk.ready := !ex_wr_req || (dma_wr_bank != ex_wr_bank)
-    }
-    when (dma_wr_fire) {
-      assert(dma_wr_lrange.is_acc)
-      assert(!dma_wr_lrange.is_accum) // dma load doesn't accumulate
-      assert(!dma_wr_lrange.is_garbage)
-      assert(dma_wr_lrange.rows === 1)
-      assert(dma_wr_bank < ACC_BANKS)
-
-      // datapath into scratchpads
-      banks(dma_wr_bank).io.write.en    := true.B
-      banks(dma_wr_bank).io.write.row   := dma_wr_row
-      banks(dma_wr_bank).io.write.accum := false.B
-      banks(dma_wr_bank).io.write.mask  := dma_wr_mask
-      banks(dma_wr_bank).io.write.data  := dma_wr_data
+    when (dma_wr_is_acc) {
+      load_chunk.ready := !ex_wr_req || (dma_wr_bank =/= ex_wr_bank)
+      when (load_chunk.fire()) {
+        assert(dma_wr_bank < ACC_BANKS)
+        banks(dma_wr_bank).io.write.en    := true.B
+        banks(dma_wr_bank).io.write.row   := dma_wr_row
+        banks(dma_wr_bank).io.write.accum := false.B
+        banks(dma_wr_bank).io.write.mask  := dma_wr_mask
+        banks(dma_wr_bank).io.write.data  := dma_wr_data
+      }
     }
 
     //--------------------------------------
@@ -305,20 +291,21 @@ class MemUnitModuleImp[T <: Data: Arithmetic](outer: MemUnit[T])
     // queue accumulator read if can't send to dma-store unit this cycle
     dma_rd_q.io.enq.valid := dma_rd_en_buf && (!store.module.io.req.ready || 
                                                dma_rd_q.io.deq.valid)
-    dma_rd_q.io.enq.bits.data   := dma_rd_data
     dma_rd_q.io.enq.bits.vaddr  := dma_rd_vaddr_buf
-    dma_rd_q.io.enq.bits.lrange := dma_rd_lrange_buf
+    dma_rd_q.io.enq.bits.data   := dma_rd_data
+    dma_rd_q.io.enq.bits.cols   := dma_rd_lrange_buf.cols
     dma_rd_q.io.enq.bits.status := dma_rd_status_buf
     dma_rd_q.io.enq.bits.rob_id := dma_rd_rob_id_buf
 
     // send the accumulator read data or queued data to dma-store if ready
     when (dma_rd_q.io.deq.valid) {
       store.module.io.req <> dma_rd_q.io.deq
-    } .otherwise {
+    } 
+    .otherwise {
       store.module.io.req.valid       := dma_rd_en_buf
-      store.module.io.req.bits.data   := dma_rd_data
       store.module.io.req.bits.vaddr  := dma_rd_vaddr_buf
-      store.module.io.req.bits.lrange := dma_rd_lrange_buf
+      store.module.io.req.bits.data   := dma_rd_data
+      store.module.io.req.bits.cols   := dma_rd_lrange_buf.cols
       store.module.io.req.bits.status := dma_rd_status_buf
       store.module.io.req.bits.rob_id := dma_rd_rob_id_buf
     }
