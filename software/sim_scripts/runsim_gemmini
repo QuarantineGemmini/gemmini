@@ -31,6 +31,7 @@ HW_CONFIG_G1_DSE5=Gemminidim16sp64acc16bus128
 HW_CONFIG_G1_DSE6=Gemminidim32sp64acc16bus128
 HW_CONFIG_G1_DSE7=Gemminidim16sp16acc64bus128
 HW_CONFIG_G1_DSE8=Gemminidim32sp16acc64bus128
+HW_CONFIG_G1_DSE9=Gemminidim32sp16acc64bus128largeBoom
 
 # gemmini2 DSEs
 HW_CONFIG_G2_DSE1=Gemmini2dim16sp64acc16bus064
@@ -41,6 +42,7 @@ HW_CONFIG_G2_DSE5=Gemmini2dim16sp64acc16bus128
 HW_CONFIG_G2_DSE6=Gemmini2dim32sp64acc16bus128
 HW_CONFIG_G2_DSE7=Gemmini2dim16sp16acc64bus128
 HW_CONFIG_G2_DSE8=Gemmini2dim32sp16acc64bus128
+HW_CONFIG_G2_DSE9=Gemmini2dim32sp16acc64bus128largeBoom
 
 # FgGemmini2 DSEs
 HW_CONFIG_FG_DSE1=FgGemmini2dim32fg32
@@ -158,29 +160,31 @@ cat <<EOF
   
   hw config, tracing, runtime verbosity (vcs, verilator)
   ------------------------------------------------------
-  -hw_lab3      --> the $HW_CONFIG_LAB3 Chisel config (default)
-  -hw_g2        --> the $HW_CONFIG_G2 Chisel config
+  -hw_lab3      --> run $HW_CONFIG_LAB3 Chisel config (default)
+  -hw_g2        --> run $HW_CONFIG_G2 Chisel config
 
-  -hw_g1_dse5   --> the $HW_CONFIG_G1_DSE5
-  -hw_g1_dse6   --> the $HW_CONFIG_G1_DSE6
-  -hw_g1_dse7   --> the $HW_CONFIG_G1_DSE7
-  -hw_g1_dse8   --> the $HW_CONFIG_G1_DSE8
+  -hw_g1_dse5   --> run $HW_CONFIG_G1_DSE5
+  -hw_g1_dse6   --> run $HW_CONFIG_G1_DSE6
+  -hw_g1_dse7   --> run $HW_CONFIG_G1_DSE7
+  -hw_g1_dse8   --> run $HW_CONFIG_G1_DSE8
+  -hw_g1_dse9   --> run $HW_CONFIG_G1_DSE9
 
-  -hw_g2_dse1   --> the $HW_CONFIG_G2_DSE1
-  -hw_g2_dse2   --> the $HW_CONFIG_G2_DSE2
-  -hw_g2_dse3   --> the $HW_CONFIG_G2_DSE3
-  -hw_g2_dse4   --> the $HW_CONFIG_G2_DSE4
-  -hw_g2_dse5   --> the $HW_CONFIG_G2_DSE5
-  -hw_g2_dse6   --> the $HW_CONFIG_G2_DSE6
-  -hw_g2_dse7   --> the $HW_CONFIG_G2_DSE7
-  -hw_g2_dse8   --> the $HW_CONFIG_G2_DSE8
+  -hw_g2_dse1   --> run $HW_CONFIG_G2_DSE1
+  -hw_g2_dse2   --> run $HW_CONFIG_G2_DSE2
+  -hw_g2_dse3   --> run $HW_CONFIG_G2_DSE3
+  -hw_g2_dse4   --> run $HW_CONFIG_G2_DSE4
+  -hw_g2_dse5   --> run $HW_CONFIG_G2_DSE5
+  -hw_g2_dse6   --> run $HW_CONFIG_G2_DSE6
+  -hw_g2_dse7   --> run $HW_CONFIG_G2_DSE7
+  -hw_g2_dse8   --> run $HW_CONFIG_G2_DSE8
+  -hw_g2_dse9   --> run $HW_CONFIG_G2_DSE9
 
-  -hw_fg_dse1   --> the $HW_CONFIG_FG_DSE1
-  -hw_fg_dse2   --> the $HW_CONFIG_FG_DSE2
-  -hw_fg_dse3   --> the $HW_CONFIG_FG_DSE3
-  -hw_fg_dse4   --> the $HW_CONFIG_FG_DSE4
-  -hw_fg_dse5   --> the $HW_CONFIG_FG_DSE5
-  -hw_fg_dse6   --> the $HW_CONFIG_FG_DSE6
+  -hw_fg_dse1   --> run $HW_CONFIG_FG_DSE1
+  -hw_fg_dse2   --> run $HW_CONFIG_FG_DSE2
+  -hw_fg_dse3   --> run $HW_CONFIG_FG_DSE3
+  -hw_fg_dse4   --> run $HW_CONFIG_FG_DSE4
+  -hw_fg_dse5   --> run $HW_CONFIG_FG_DSE5
+  -hw_fg_dse6   --> run $HW_CONFIG_FG_DSE6
   
   -trace_start <c>  --> start tracing at this cycle (defaults to 0)
   -vcd_full         --> capture all signals in design
@@ -419,6 +423,7 @@ while [ $# -ne 0 ] ; do
     -hw_g1_dse6) HW_CONFIG="hw_g1_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE6";;
     -hw_g1_dse7) HW_CONFIG="hw_g1_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE7";;
     -hw_g1_dse8) HW_CONFIG="hw_g1_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE8";;
+    -hw_g1_dse9) HW_CONFIG="hw_g1_dse9"; HW_CONFIG_FULL="$HW_CONFIG_G1_DSE9";;
 
     -hw_g2_dse1) HW_CONFIG="hw_g2_dse1"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE1";;
     -hw_g2_dse2) HW_CONFIG="hw_g2_dse2"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE2";;
@@ -428,6 +433,7 @@ while [ $# -ne 0 ] ; do
     -hw_g2_dse6) HW_CONFIG="hw_g2_dse6"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE6";;
     -hw_g2_dse7) HW_CONFIG="hw_g2_dse7"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE7";;
     -hw_g2_dse8) HW_CONFIG="hw_g2_dse8"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE8";;
+    -hw_g2_dse9) HW_CONFIG="hw_g2_dse9"; HW_CONFIG_FULL="$HW_CONFIG_G2_DSE9";;
 
     -hw_fg_dse1) HW_CONFIG="hw_fg_dse1"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE1";;
     -hw_fg_dse2) HW_CONFIG="hw_fg_dse2"; HW_CONFIG_FULL="$HW_CONFIG_FG_DSE2";;

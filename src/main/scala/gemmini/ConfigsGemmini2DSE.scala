@@ -78,7 +78,7 @@ object Gemmini2DSEConfigs {
   )
   val dim32sp16acc64bus128 = base.copy(
     // TODO TODO TODO: actually look into the dma_buswidth...
-    dma_buswidth   = 256,
+    //dma_buswidth   = 256,
     meshRows       = 32,
     meshColumns    = 32,
     sp_capacity    = CapacityInKilobytes(32),
